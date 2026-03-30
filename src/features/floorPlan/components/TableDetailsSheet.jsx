@@ -18,14 +18,14 @@ export default function TableDetailsSheet({
     <div
       className={[
         embedded
-          ? "border-t border-neutral-200 bg-white/98 p-4 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] dark:border-neutral-800 dark:bg-neutral-950/98"
-          : "fixed inset-x-0 bottom-0 z-[70] max-h-[58vh] overflow-y-auto rounded-t-[28px] border border-neutral-200 bg-white p-4 shadow-[0_-18px_50px_rgba(15,23,42,0.18)] overscroll-contain [touch-action:pan-y] dark:border-neutral-800 dark:bg-neutral-950",
+          ? "border-t border-neutral-200 bg-white/98 p-3 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] sm:p-4 dark:border-neutral-800 dark:bg-neutral-950/98"
+          : "fixed inset-x-0 bottom-0 z-[70] max-h-[58vh] overflow-y-auto rounded-t-[28px] border border-neutral-200 bg-white p-3 shadow-[0_-18px_50px_rgba(15,23,42,0.18)] overscroll-contain [touch-action:pan-y] sm:p-4 dark:border-neutral-800 dark:bg-neutral-950",
       ].join(" ")}
     >
       <div className="mx-auto max-w-3xl">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <div className="flex flex-wrap items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-neutral-50">
+            <div className="flex flex-wrap items-center gap-2 text-base font-semibold text-neutral-900 sm:text-lg dark:text-neutral-50">
               <span>{tableNode.displayName}</span>
               <span className="rounded-full border border-neutral-200 bg-neutral-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
                 {areaLabel}
@@ -42,7 +42,7 @@ export default function TableDetailsSheet({
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 text-sm">
+        <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
           <div className="rounded-2xl bg-neutral-100 px-3 py-2.5 dark:bg-neutral-900">
             <div className="text-[11px] uppercase tracking-[0.16em] text-neutral-500">{t("Capacity")}</div>
             <div className="mt-1 font-semibold text-neutral-900 dark:text-neutral-50">

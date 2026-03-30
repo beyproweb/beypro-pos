@@ -3,13 +3,21 @@ import { useTranslation } from "react-i18next";
 import FloorPlanToolbar from "./FloorPlanToolbar";
 import FloorPlanCanvas from "./FloorPlanCanvas";
 import FloorPlanElementEditor from "./FloorPlanElementEditor";
+import FloorPlanLegendHeader from "./FloorPlanLegendHeader";
 import FloorPlanPreview from "./FloorPlanPreview";
 import {
   buildGeneratedFloorPlan,
+  buildFloorPlanZoneGroups,
   createFloorPlanId,
+  getFloorPlanTableNumberSize,
+  getFloorPlanLinkedTableNumber,
   normalizeFloorPlanLayout,
+  renumberFloorPlanTables,
   resolveFloorPlanCanvas,
+  syncFloorPlanLayoutWithTables,
 } from "../utils/floorPlan";
+
+const HISTORY_LIMIT = 50;
 
 function rectanglesOverlap(a, b) {
   return (
@@ -91,6 +99,7 @@ function createElement(kind, tables = [], existingElements = [], canvas = {}, tr
       kind: "table",
       name: linkedTable?.label || `${translate("Table")} ${tableNumber || existingElements.length + 1}`,
       table_number: Number.isFinite(tableNumber) && tableNumber > 0 ? tableNumber : null,
+      linked_table_number: Number.isFinite(tableNumber) && tableNumber > 0 ? tableNumber : null,
       shape: "circle",
       col: slot.col,
       row: slot.row,
@@ -131,11 +140,23 @@ export default function FloorPlanDesigner({
   const { t } = useTranslation();
   const defaultLayout = React.useMemo(() => buildGeneratedFloorPlan(tables), [tables]);
   const normalizedValue = React.useMemo(
-    () => normalizeFloorPlanLayout(value) || defaultLayout,
-    [defaultLayout, value]
+    () => syncFloorPlanLayoutWithTables(value, tables) || defaultLayout,
+    [defaultLayout, tables, value]
   );
   const [selectedIds, setSelectedIds] = React.useState([]);
   const [previewMode, setPreviewMode] = React.useState(false);
+  const [history, setHistory] = React.useState({ past: [], future: [] });
+  const normalizedSnapshot = React.useMemo(
+    () => JSON.stringify(normalizedValue),
+    [normalizedValue]
+  );
+  const latestSnapshotRef = React.useRef(normalizedSnapshot);
+
+  React.useEffect(() => {
+    if (normalizedSnapshot === latestSnapshotRef.current) return;
+    latestSnapshotRef.current = normalizedSnapshot;
+    setHistory({ past: [], future: [] });
+  }, [normalizedSnapshot]);
 
   React.useEffect(() => {
     if (!selectedIds.length) return;
@@ -168,6 +189,10 @@ export default function FloorPlanDesigner({
         .map((element) => String(element.id)),
     [normalizedValue.elements]
   );
+  const zoneGroups = React.useMemo(
+    () => buildFloorPlanZoneGroups({ elements: normalizedValue.elements || [], tables }),
+    [normalizedValue.elements, tables]
+  );
 
   const selectedTableCount = React.useMemo(
     () =>
@@ -179,13 +204,68 @@ export default function FloorPlanDesigner({
 
   const allTablesSelected =
     tableElementIds.length > 0 && selectedTableCount === tableElementIds.length;
+  const centerWholeMap = Boolean(
+    normalizedValue?.metadata?.center_whole_map ?? normalizedValue?.metadata?.centerWholeMap
+  );
+  const tableNumbering = React.useMemo(() => {
+    const config =
+      normalizedValue?.metadata?.table_numbering &&
+      typeof normalizedValue.metadata.table_numbering === "object"
+        ? normalizedValue.metadata.table_numbering
+        : normalizedValue?.metadata?.tableNumbering &&
+            typeof normalizedValue.metadata.tableNumbering === "object"
+          ? normalizedValue.metadata.tableNumbering
+          : {};
+
+    return {
+      mode: config.mode === "column-based" ? "column-based" : "row-based",
+      direction: ["ltr", "rtl", "ttb", "btt"].includes(config.direction) ? config.direction : "ltr",
+      startNumber: Math.max(1, Number(config.startNumber) || 1),
+      alternateColumns: Boolean(config.alternateColumns),
+    };
+  }, [normalizedValue?.metadata]);
+  const tableNumberSize = React.useMemo(
+    () => getFloorPlanTableNumberSize(normalizedValue, 1),
+    [normalizedValue]
+  );
+
+  const applyLayout = React.useCallback(
+    (nextLayout, { recordHistory = true } = {}) => {
+      const normalizedLayout = normalizeFloorPlanLayout(nextLayout);
+      if (!normalizedLayout) return;
+      const nextSnapshot = JSON.stringify(normalizedLayout);
+      if (nextSnapshot === latestSnapshotRef.current) return;
+      if (recordHistory) {
+        setHistory((prev) => ({
+          past: [...prev.past, normalizedValue].slice(-HISTORY_LIMIT),
+          future: [],
+        }));
+      }
+      latestSnapshotRef.current = nextSnapshot;
+      onChange?.(normalizedLayout);
+    },
+    [normalizedValue, onChange]
+  );
 
   const commit = React.useCallback(
     (nextLayout) => {
-      onChange?.(normalizeFloorPlanLayout(nextLayout));
+      applyLayout(nextLayout);
     },
-    [onChange]
+    [applyLayout]
   );
+
+  const undoLayoutChange = React.useCallback(() => {
+    setHistory((prev) => {
+      if (!prev.past.length) return prev;
+      const previousLayout = prev.past[prev.past.length - 1];
+      latestSnapshotRef.current = JSON.stringify(previousLayout);
+      onChange?.(previousLayout);
+      return {
+        past: prev.past.slice(0, -1),
+        future: [normalizedValue, ...prev.future].slice(0, HISTORY_LIMIT),
+      };
+    });
+  }, [normalizedValue, onChange]);
 
   const updateElement = React.useCallback(
     (elementId, patch) => {
@@ -229,24 +309,84 @@ export default function FloorPlanDesigner({
     [commit, normalizedValue]
   );
 
+  const updateTableNumbering = React.useCallback(
+    (patch) => {
+      if (!patch || typeof patch !== "object") return;
+      applyLayout(
+        {
+          ...normalizedValue,
+          metadata: {
+            ...(normalizedValue.metadata || {}),
+            table_numbering: {
+              ...(normalizedValue.metadata?.table_numbering || {}),
+              ...patch,
+            },
+          },
+        },
+        { recordHistory: false }
+      );
+    },
+    [applyLayout, normalizedValue]
+  );
+
+  const updateCenterWholeMap = React.useCallback(
+    (enabled) => {
+      applyLayout(
+        {
+          ...normalizedValue,
+          metadata: {
+            ...(normalizedValue.metadata || {}),
+            center_whole_map: Boolean(enabled),
+          },
+        },
+        { recordHistory: false }
+      );
+    },
+    [applyLayout, normalizedValue]
+  );
+
+  const updateTableNumberSize = React.useCallback(
+    (value) => {
+      applyLayout(
+        {
+          ...normalizedValue,
+          metadata: {
+            ...(normalizedValue.metadata || {}),
+            table_number_size: getFloorPlanTableNumberSize(
+              { metadata: { table_number_size: value } },
+              1
+            ),
+          },
+        },
+        { recordHistory: false }
+      );
+    },
+    [applyLayout, normalizedValue]
+  );
+
   const arrangeTables = React.useCallback(
-    ({ rows, columns }) => {
+    ({ rows, columns, mode, direction, startNumber, alternateColumns }) => {
       const nextRows = Math.max(1, Number(rows) || 1);
       const nextColumns = Math.max(1, Number(columns) || 1);
       const tableElements = (normalizedValue.elements || [])
         .filter((element) => element.kind === "table")
         .sort((a, b) => {
-          const aNumber = Number(a.table_number || 0);
-          const bNumber = Number(b.table_number || 0);
+          const aNumber = Number((getFloorPlanLinkedTableNumber(a) ?? a.table_number) || 0);
+          const bNumber = Number((getFloorPlanLinkedTableNumber(b) ?? b.table_number) || 0);
           if (aNumber && bNumber && aNumber !== bNumber) return aNumber - bNumber;
           return String(a.id).localeCompare(String(b.id));
         });
-      const actualTableRows = Math.max(nextRows, Math.ceil(tableElements.length / nextColumns));
+      const requestedCapacity = nextRows * nextColumns;
+      const actualTableColumns = nextColumns;
+      const actualTableRows =
+        tableElements.length > requestedCapacity
+          ? Math.max(nextRows, Math.ceil(tableElements.length / Math.max(1, nextColumns)))
+          : nextRows;
       const tableIdSet = new Set(tableElements.map((element) => String(element.id)));
       const arrangedTables = tableElements.map((element, index) => ({
         ...element,
-        row: Math.floor(index / nextColumns),
-        col: index % nextColumns,
+        row: Math.floor(index / actualTableColumns),
+        col: index % actualTableColumns,
       }));
       const staticSource = (normalizedValue.elements || []).filter(
         (element) => !tableIdSet.has(String(element.id))
@@ -261,19 +401,44 @@ export default function FloorPlanDesigner({
           row: actualTableRows + relativeRow,
         };
       });
+      const requiredCanvasRows = [...arrangedTables, ...staticElements].reduce((maxRows, element) => {
+        const row = Number(element.row || 0);
+        const rowSpan = Math.max(1, Number(element.row_span || element.rowSpan || 1));
+        return Math.max(maxRows, row + rowSpan);
+      }, actualTableRows);
+      const requiredCanvasColumns = [...arrangedTables, ...staticElements].reduce((maxColumns, element) => {
+        const col = Number(element.col || 0);
+        const colSpan = Math.max(1, Number(element.col_span || element.colSpan || 1));
+        return Math.max(maxColumns, col + colSpan);
+      }, actualTableColumns);
 
-      commit({
+      const arrangedLayout = renumberFloorPlanTables({
         ...normalizedValue,
+        metadata: {
+          ...(normalizedValue.metadata || {}),
+          table_numbering: {
+            ...(normalizedValue.metadata?.table_numbering || {}),
+            mode: mode || tableNumbering.mode,
+            direction: direction || tableNumbering.direction,
+            startNumber: Math.max(1, Number(startNumber) || tableNumbering.startNumber || 1),
+            alternateColumns:
+              typeof alternateColumns === "boolean"
+                ? alternateColumns
+                : tableNumbering.alternateColumns,
+          },
+        },
         canvas: {
           ...(normalizedValue.canvas || {}),
-          columns: nextColumns,
-          rows: Math.max(actualTableRows, Number(normalizedValue.canvas?.rows || 0)),
+          columns: Math.max(1, requiredCanvasColumns),
+          rows: Math.max(1, requiredCanvasRows),
         },
         elements: [...arrangedTables, ...staticElements],
       });
+
+      commit(arrangedLayout);
       setSelectedIds(arrangedTables.map((element) => element.id));
     },
-    [commit, normalizedValue]
+    [commit, normalizedValue, tableNumbering.alternateColumns, tableNumbering.direction, tableNumbering.mode, tableNumbering.startNumber]
   );
 
   const addElement = React.useCallback(
@@ -390,6 +555,19 @@ export default function FloorPlanDesigner({
     [commit, normalizedValue, selectedIdSet]
   );
 
+  const updateAllTables = React.useCallback(
+    (patch) => {
+      if (!patch || typeof patch !== "object") return;
+      commit({
+        ...normalizedValue,
+        elements: (normalizedValue.elements || []).map((element) =>
+          element.kind === "table" ? { ...element, ...patch } : element
+        ),
+      });
+    },
+    [commit, normalizedValue]
+  );
+
   const resetLayout = React.useCallback(() => {
     commit(defaultLayout);
     setSelectedIds([]);
@@ -414,7 +592,11 @@ export default function FloorPlanDesigner({
       <FloorPlanToolbar
         onAddElement={addElement}
         onArrangeTables={arrangeTables}
+        onTableNumberingChange={updateTableNumbering}
+        onTableNumberSizeChange={updateTableNumberSize}
         onTableSpacingChange={updateCanvas}
+        onCenterWholeMapChange={updateCenterWholeMap}
+        onUndo={undoLayoutChange}
         onSelectAllTables={selectAllTables}
         onClearSelection={clearSelection}
         onResizeSelectedSmaller={() => resizeSelectedTables("shrink")}
@@ -429,7 +611,11 @@ export default function FloorPlanDesigner({
         selectedTableCount={selectedTableCount}
         tableCount={tableElementIds.length}
         allTablesSelected={allTablesSelected}
+        canUndo={history.past.length > 0}
         canvas={normalizedValue.canvas}
+        tableNumbering={tableNumbering}
+        tableNumberSize={tableNumberSize}
+        centerWholeMap={centerWholeMap}
       />
 
       {previewMode ? (
@@ -442,19 +628,28 @@ export default function FloorPlanDesigner({
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.7fr)_380px] xl:items-start">
           <div className="rounded-[32px] border border-neutral-200 bg-[linear-gradient(180deg,_rgba(255,255,255,0.9),_rgba(244,244,245,0.92))] p-4 shadow-sm dark:border-neutral-800 dark:bg-[linear-gradient(180deg,_rgba(10,10,11,0.92),_rgba(17,24,39,0.92))]">
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
-              <FloorPlanCanvas
-                layout={normalizedValue}
-                elements={normalizedValue.elements || []}
-                selectedIds={selectedIds}
-                onSelect={handleCanvasSelect}
-                onElementChange={updateElement}
-                onElementsMove={moveSelectedElements}
-              />
+              <div className="space-y-3">
+                <FloorPlanLegendHeader
+                  elements={(normalizedValue.elements || []).filter((element) => element.kind === "table")}
+                  showStatuses={false}
+                  showZones
+                />
+                <FloorPlanCanvas
+                  layout={normalizedValue}
+                  elements={normalizedValue.elements || []}
+                  selectedIds={selectedIds}
+                  onSelect={handleCanvasSelect}
+                  onElementChange={updateElement}
+                  onElementsMove={moveSelectedElements}
+                />
+              </div>
               <div className="xl:sticky xl:top-4">
                 <FloorPlanElementEditor
                   element={selectedElement}
                   tables={tables}
+                  zoneGroups={zoneGroups}
                   onChange={updateElement}
+                  onUpdateAllTables={updateAllTables}
                   selectionCount={selectedIds.length}
                   selectedTableCount={selectedTableCount}
                 />

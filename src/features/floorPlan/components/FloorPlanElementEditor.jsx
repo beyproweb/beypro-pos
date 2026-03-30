@@ -1,6 +1,16 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { FLOOR_PLAN_TABLE_TYPES } from "../utils/floorPlan";
+import {
+  FLOOR_PLAN_TABLE_TYPES,
+  formatFloorPlanZoneLabel,
+} from "../utils/floorPlan";
+
+const TABLE_SHAPE_OPTIONS = [
+  { value: "circle", label: "Circle" },
+  { value: "square", label: "Square" },
+  { value: "rectangle", label: "Rectangle" },
+  { value: "oval", label: "Oval" },
+];
 
 function Input({ label, children }) {
   return (
@@ -16,12 +26,23 @@ function Input({ label, children }) {
 export default function FloorPlanElementEditor({
   element,
   tables = [],
+  zoneGroups = [],
   onChange,
+  onUpdateAllTables = null,
   selectionCount = 0,
   selectedTableCount = 0,
 }) {
   const { t } = useTranslation();
   const [nudgeStep, setNudgeStep] = React.useState(8);
+  const linkedTableNumber = element?.linked_table_number ?? element?.table_number ?? "";
+  const zoneOptions = (() => {
+    const values = zoneGroups.flatMap((group) => group.zones || []);
+    const currentLabel = String(element?.zone || "").trim();
+    if (currentLabel && !values.some((zone) => zone.label === currentLabel)) {
+      return [{ key: currentLabel.toLowerCase(), label: currentLabel }, ...values];
+    }
+    return values;
+  })();
 
   if (!element && selectionCount > 1) {
     return (
@@ -45,6 +66,7 @@ export default function FloorPlanElementEditor({
   }
 
   const update = (key, value) => onChange?.(element.id, { [key]: value });
+  const updatePatch = (patch) => onChange?.(element.id, patch);
   const moveByPixels = (deltaX, deltaY) =>
     onChange?.(element.id, {
       offset_x: Number(element.offset_x || 0) + deltaX,
@@ -71,8 +93,25 @@ export default function FloorPlanElementEditor({
         <>
           <Input label={t("Linked Table")}>
             <select
-              value={element.table_number || ""}
-              onChange={(event) => update("table_number", Number(event.target.value) || null)}
+              value={linkedTableNumber || ""}
+              onChange={(event) => {
+                const nextTableNumber = Number(event.target.value) || null;
+                const linkedTable = tables.find((table) => {
+                  const tableNumber = Number(
+                    table?.number ?? table?.tableNumber ?? table?.table_number
+                  );
+                  return tableNumber === nextTableNumber;
+                });
+
+                updatePatch({
+                  table_number: nextTableNumber,
+                  linked_table_number: nextTableNumber,
+                  name:
+                    linkedTable?.label ||
+                    (nextTableNumber ? `${t("Table")} ${String(nextTableNumber).padStart(2, "0")}` : ""),
+                  zone: String(linkedTable?.area || linkedTable?.zone || "").trim(),
+                });
+              }}
               className="w-full rounded-2xl border border-neutral-200 bg-white px-3 py-2.5 text-sm dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50"
             >
               <option value="">{t("Unlinked")}</option>
@@ -93,10 +132,11 @@ export default function FloorPlanElementEditor({
                 onChange={(event) => update("shape", event.target.value)}
                 className="w-full rounded-2xl border border-neutral-200 bg-white px-3 py-2.5 text-sm dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50"
               >
-                <option value="circle">{t("Circle")}</option>
-                <option value="square">{t("Square")}</option>
-                <option value="rectangle">{t("Rectangle")}</option>
-                <option value="oval">{t("Oval")}</option>
+                {TABLE_SHAPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {t(option.label)}
+                  </option>
+                ))}
               </select>
             </Input>
             <Input label={t("Table Type")}>
@@ -122,24 +162,90 @@ export default function FloorPlanElementEditor({
               />
             </Input>
             <Input label={t("Zone")}>
-              <input
-                type="text"
+              <select
                 value={element.zone || ""}
                 onChange={(event) => update("zone", event.target.value)}
                 className="w-full rounded-2xl border border-neutral-200 bg-white px-3 py-2.5 text-sm dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50"
+              >
+                <option value="">{t("Main Hall")}</option>
+                {zoneOptions.map((zone) => (
+                  <option key={zone.key || zone.label} value={zone.label}>
+                    {t(formatFloorPlanZoneLabel(zone.label))}
+                  </option>
+                ))}
+              </select>
+            </Input>
+          </div>
+          <Input label={t("All Tables Shape")}>
+            <select
+              value=""
+              onChange={(event) => {
+                const nextShape = String(event.target.value || "").trim();
+                if (!nextShape) return;
+                onUpdateAllTables?.({ shape: nextShape });
+                event.target.value = "";
+              }}
+              className="w-full rounded-2xl border border-neutral-200 bg-white px-3 py-2.5 text-sm dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50"
+            >
+              <option value="">{t("Apply one shape to every table")}</option>
+              {TABLE_SHAPE_OPTIONS.map((option) => (
+                <option key={`all-${option.value}`} value={option.value}>
+                  {t(option.label)}
+                </option>
+              ))}
+            </select>
+          </Input>
+        </>
+      ) : (
+        <>
+          <Input label={t("Text")}>
+            <input
+              type="text"
+              value={element.text || ""}
+              onChange={(event) => update("text", event.target.value)}
+              className="w-full rounded-2xl border border-neutral-200 bg-white px-3 py-2.5 text-sm dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50"
+            />
+          </Input>
+          <div className="grid grid-cols-2 gap-3">
+            <Input label={t("Fill Color")}>
+              <input
+                type="color"
+                value={element.color || "#ffffff"}
+                onChange={(event) => update("color", event.target.value)}
+                className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-2 py-1 dark:border-neutral-800 dark:bg-neutral-950"
+              />
+            </Input>
+            <Input label={t("Font Color")}>
+              <input
+                type="color"
+                value={element.text_color || "#52525b"}
+                onChange={(event) => update("text_color", event.target.value)}
+                className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-2 py-1 dark:border-neutral-800 dark:bg-neutral-950"
               />
             </Input>
           </div>
+          <Input label={t("Font Size")}>
+            <div className="space-y-2">
+              <input
+                type="range"
+                min="10"
+                max="48"
+                step="1"
+                value={Math.min(48, Math.max(10, Number(element.text_size || (element.kind === "label" ? 16 : 14))))}
+                onChange={(event) =>
+                  update(
+                    "text_size",
+                    Number(event.target.value) || (element.kind === "label" ? 16 : 14)
+                  )
+                }
+                className="w-full"
+              />
+              <div className="rounded-2xl border border-neutral-200 bg-white px-3 py-2.5 text-center text-sm font-semibold text-neutral-700 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-100">
+                {Math.min(48, Math.max(10, Number(element.text_size || (element.kind === "label" ? 16 : 14))))}px
+              </div>
+            </div>
+          </Input>
         </>
-      ) : (
-        <Input label={t("Text")}>
-          <input
-            type="text"
-            value={element.text || ""}
-            onChange={(event) => update("text", event.target.value)}
-            className="w-full rounded-2xl border border-neutral-200 bg-white px-3 py-2.5 text-sm dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50"
-          />
-        </Input>
       )}
 
       <div className="grid grid-cols-2 gap-3">
@@ -250,14 +356,16 @@ export default function FloorPlanElementEditor({
             />
           </div>
         </Input>
-        <Input label={t("Color")}>
-          <input
-            type="color"
-            value={element.color || "#ffffff"}
-            onChange={(event) => update("color", event.target.value)}
-            className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-2 py-1 dark:border-neutral-800 dark:bg-neutral-950"
-          />
-        </Input>
+        {element.kind === "table" ? (
+          <Input label={t("Color")}>
+            <input
+              type="color"
+              value={element.color || "#ffffff"}
+              onChange={(event) => update("color", event.target.value)}
+              className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-2 py-1 dark:border-neutral-800 dark:bg-neutral-950"
+            />
+          </Input>
+        ) : null}
         <Input label={t("Move")}>
           <div className="space-y-2">
             <input

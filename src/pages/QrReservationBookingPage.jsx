@@ -9,6 +9,7 @@ import {
   buildPublicMenuPath,
   resolvePublicBookingIdentifier,
 } from "../features/qrmenu/publicBookingRoutes";
+import { mergeFloorPlanVisualStyles } from "../features/floorPlan/utils/floorPlan";
 import BookingPageLayout from "../features/floorPlan/components/BookingPageLayout";
 import BookingSection from "../features/floorPlan/components/BookingSection";
 import BookingSummaryCard from "../features/floorPlan/components/BookingSummaryCard";
@@ -306,7 +307,7 @@ export default function QrReservationBookingPage() {
           `/public/floor-plan/${encodeURIComponent(identifier)}${query ? `?${query}` : ""}`
         );
         if (cancelled) return;
-        setFloorPlan(response?.layout || null);
+        setFloorPlan(mergeFloorPlanVisualStyles(response?.layout || null, settings?.qr_floor_plan_layout));
         setFloorPlanSource(String(response?.source || "generated"));
         setTableStates(Array.isArray(response?.table_states) ? response.table_states : []);
       } catch (error) {
@@ -331,6 +332,7 @@ export default function QrReservationBookingPage() {
     hasGuestCompositionInput,
     identifier,
     menCount,
+    settings,
     selectedGuestCount,
     womenCount,
   ]);

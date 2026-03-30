@@ -3,6 +3,7 @@ import { Rnd } from "react-rnd";
 import {
   getFloorPlanElementFrame,
   getFloorPlanRenderSize,
+  getFloorPlanTableNumberSize,
   getFloorPlanTableScale,
   resolveFloorPlanCanvas,
 } from "../utils/floorPlan";
@@ -42,6 +43,64 @@ function baseKindStyle(kind) {
   }
 }
 
+function rotatePoint(x, y, centerX, centerY, angleDegrees) {
+  const radians = (Number(angleDegrees || 0) * Math.PI) / 180;
+  if (!radians) {
+    return { x, y };
+  }
+  const dx = x - centerX;
+  const dy = y - centerY;
+  const cos = Math.cos(-radians);
+  const sin = Math.sin(-radians);
+  return {
+    x: centerX + dx * cos - dy * sin,
+    y: centerY + dx * sin + dy * cos,
+  };
+}
+
+function getElementHitMetrics(element, canvas) {
+  const frame = getFloorPlanElementFrame(element, canvas);
+  const isTable = element.kind === "table";
+  const visualScale = isTable ? getFloorPlanTableScale(element, canvas) : { scaleX: 1, scaleY: 1 };
+  const centerX = frame.left + frame.width / 2;
+  const centerY = frame.top + frame.height / 2;
+  return {
+    element,
+    frame,
+    centerX,
+    centerY,
+    width: frame.width * Number(visualScale.scaleX || 1),
+    height: frame.height * Number(visualScale.scaleY || 1),
+    rotation: Number(element.rotation || 0),
+    shape: isTable ? element.shape || "circle" : "rectangle",
+  };
+}
+
+function getHitScore(metrics, pointX, pointY) {
+  const rotatedPoint = rotatePoint(
+    pointX,
+    pointY,
+    metrics.centerX,
+    metrics.centerY,
+    metrics.rotation
+  );
+  const localX = rotatedPoint.x - metrics.centerX;
+  const localY = rotatedPoint.y - metrics.centerY;
+  const halfWidth = Math.max(1, metrics.width / 2);
+  const halfHeight = Math.max(1, metrics.height / 2);
+
+  if (metrics.shape === "circle" || metrics.shape === "oval") {
+    const ellipseScore = (localX * localX) / (halfWidth * halfWidth) + (localY * localY) / (halfHeight * halfHeight);
+    return ellipseScore <= 1 ? ellipseScore : null;
+  }
+
+  if (Math.abs(localX) <= halfWidth && Math.abs(localY) <= halfHeight) {
+    return Math.max(Math.abs(localX) / halfWidth, Math.abs(localY) / halfHeight);
+  }
+
+  return null;
+}
+
 export default function FloorPlanCanvas({
   layout,
   elements = [],
@@ -51,9 +110,11 @@ export default function FloorPlanCanvas({
   onElementsMove,
 }) {
   const canvas = resolveFloorPlanCanvas(layout?.canvas);
+  const centerWholeMap = Boolean(layout?.metadata?.center_whole_map ?? layout?.metadata?.centerWholeMap);
+  const tableNumberSize = getFloorPlanTableNumberSize(layout, 1);
   const renderSize = React.useMemo(
-    () => getFloorPlanRenderSize(layout, elements),
-    [elements, layout]
+    () => getFloorPlanRenderSize(layout, elements, { preserveCanvasSize: centerWholeMap }),
+    [centerWholeMap, elements, layout]
   );
   const width = Number(renderSize.width || canvas.width || 1200);
   const height = Number(renderSize.height || canvas.height || 780);
@@ -63,11 +124,108 @@ export default function FloorPlanCanvas({
     () => new Set((selectedIds || []).map((value) => String(value))),
     [selectedIds]
   );
+  const hitMetrics = React.useMemo(
+    () => elements.map((element) => getElementHitMetrics(element, canvas)),
+    [canvas, elements]
+  );
+  const occupiedBounds = React.useMemo(() => {
+    if (!elements.length) {
+      return { minLeft: 0, minTop: 0, width, height };
+    }
+    const logicalCellWidth = Math.max(24, Number(canvas.cellSize || canvas.gridSize || 84));
+    const logicalRowHeight = Math.max(24, Number(canvas.rowHeight || logicalCellWidth));
+    const bounds = elements.reduce(
+      (acc, element) => {
+        const frame = getFloorPlanElementFrame(element, canvas);
+        if (element.kind === "table") {
+          const tableScale = getFloorPlanTableScale(element, canvas);
+          const scaledWidth = frame.width * Number(tableScale.scaleX || 1);
+          const scaledHeight = frame.height * Number(tableScale.scaleY || 1);
+          const visibleLeft = frame.left + (frame.width - scaledWidth) / 2;
+          const visibleTop = frame.top + (frame.height - scaledHeight) / 2;
+          const visibleRight = visibleLeft + scaledWidth;
+          const visibleBottom = visibleTop + scaledHeight;
+          return {
+            minLeft: Math.min(acc.minLeft, visibleLeft),
+            minTop: Math.min(acc.minTop, visibleTop),
+            maxRight: Math.max(acc.maxRight, visibleRight),
+            maxBottom: Math.max(acc.maxBottom, visibleBottom),
+          };
+        }
+        const logicalWidth = Math.max(
+          24,
+          Math.max(1, Number(element.col_span || element.colSpan || 1)) * logicalCellWidth
+        );
+        const logicalHeight = Math.max(
+          24,
+          Math.max(1, Number(element.row_span || element.rowSpan || 1)) * logicalRowHeight
+        );
+        return {
+          minLeft: Math.min(acc.minLeft, frame.left),
+          minTop: Math.min(acc.minTop, frame.top),
+          maxRight: Math.max(acc.maxRight, frame.left + logicalWidth),
+          maxBottom: Math.max(acc.maxBottom, frame.top + logicalHeight),
+        };
+      },
+      { minLeft: Number.POSITIVE_INFINITY, minTop: Number.POSITIVE_INFINITY, maxRight: 0, maxBottom: 0 }
+    );
+    return {
+      minLeft: Number.isFinite(bounds.minLeft) ? bounds.minLeft : 0,
+      minTop: Number.isFinite(bounds.minTop) ? bounds.minTop : 0,
+      width: Math.max(1, bounds.maxRight - (Number.isFinite(bounds.minLeft) ? bounds.minLeft : 0)),
+      height: Math.max(1, bounds.maxBottom - (Number.isFinite(bounds.minTop) ? bounds.minTop : 0)),
+    };
+  }, [canvas, elements, height, width]);
+  const contentOffsetX = centerWholeMap ? Math.max(0, (width - occupiedBounds.width) / 2 - occupiedBounds.minLeft) : 0;
+  const contentOffsetY = centerWholeMap ? Math.max(0, (height - occupiedBounds.height) / 2 - occupiedBounds.minTop) : 0;
+
+  const handleCanvasMouseDownCapture = React.useCallback(
+    (event) => {
+      if (event.button !== 0) return;
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const pointX = event.clientX - bounds.left - contentOffsetX;
+      const pointY = event.clientY - bounds.top - contentOffsetY;
+      const scoredHits = hitMetrics
+        .map((metrics) => ({
+          id: metrics.element.id,
+          score: getHitScore(metrics, pointX, pointY),
+        }))
+        .filter((entry) => entry.score !== null)
+        .sort((a, b) => a.score - b.score);
+
+      if (scoredHits.length > 0) {
+        onSelect?.(scoredHits[0].id, {
+          toggle: Boolean(event.metaKey || event.ctrlKey || event.shiftKey),
+        });
+        return;
+      }
+
+      const frameHit = [...hitMetrics]
+        .reverse()
+        .find(({ frame }) => (
+          pointX >= frame.left &&
+          pointX <= frame.left + frame.width &&
+          pointY >= frame.top &&
+          pointY <= frame.top + frame.height
+        ));
+
+      if (frameHit) {
+        onSelect?.(frameHit.element.id, {
+          toggle: Boolean(event.metaKey || event.ctrlKey || event.shiftKey),
+        });
+        return;
+      }
+
+      onSelect?.("", { toggle: false });
+    },
+    [contentOffsetX, contentOffsetY, hitMetrics, onSelect]
+  );
 
   return (
     <div className="overflow-auto rounded-[28px] border border-neutral-200 bg-white/90 p-3 dark:border-neutral-800 dark:bg-neutral-950/80">
       <div
-        className="relative mx-auto min-w-full rounded-[24px] border border-dashed border-neutral-300 bg-[linear-gradient(0deg,rgba(255,255,255,0.96),rgba(255,255,255,0.96)),linear-gradient(90deg,rgba(15,23,42,0.04)_1px,transparent_1px),linear-gradient(0deg,rgba(15,23,42,0.04)_1px,transparent_1px)] shadow-inner dark:border-neutral-700 dark:bg-[linear-gradient(0deg,rgba(10,10,11,0.96),rgba(10,10,11,0.96)),linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(0deg,rgba(255,255,255,0.04)_1px,transparent_1px)]"
+        className="relative mx-auto rounded-[24px] border border-dashed border-neutral-300 bg-[linear-gradient(0deg,rgba(255,255,255,0.96),rgba(255,255,255,0.96)),linear-gradient(90deg,rgba(15,23,42,0.04)_1px,transparent_1px),linear-gradient(0deg,rgba(15,23,42,0.04)_1px,transparent_1px)] shadow-inner dark:border-neutral-700 dark:bg-[linear-gradient(0deg,rgba(10,10,11,0.96),rgba(10,10,11,0.96)),linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(0deg,rgba(255,255,255,0.04)_1px,transparent_1px)]"
+        onMouseDownCapture={handleCanvasMouseDownCapture}
         style={{
           width,
           height,
@@ -78,30 +236,49 @@ export default function FloorPlanCanvas({
           const isSelected = selectedIdSet.has(String(element.id));
           const isTable = element.kind === "table";
           const frame = getFloorPlanElementFrame(element, canvas);
+          const logicalWidth = Math.max(
+            24,
+            Math.max(1, Number(element.col_span || element.colSpan || 1)) * cellSize
+          );
+          const logicalHeight = Math.max(
+            24,
+            Math.max(1, Number(element.row_span || element.rowSpan || 1)) * rowHeight
+          );
           const visualScale = isTable ? getFloorPlanTableScale(element, canvas) : null;
+          const scaleX = Number(visualScale?.scaleX || 1);
+          const scaleY = Number(visualScale?.scaleY || 1);
           const stepX = Math.max(12, cellSize - Number(canvas.tableGapX || 0));
           const stepY = Math.max(12, rowHeight - Number(canvas.tableGapY || 0));
           const offsetX = Number(element.offset_x || 0);
           const offsetY = Number(element.offset_y || 0);
-          const resizeGrid = isTable ? [cellSize, rowHeight] : [8, 8];
-          const minWidth = isTable ? cellSize : 24;
-          const minHeight = isTable ? rowHeight : 24;
+          const renderWidth = isTable ? frame.width * scaleX : frame.width;
+          const renderHeight = isTable ? frame.height * scaleY : frame.height;
+          const renderShiftX = isTable
+            ? (frame.width - renderWidth) / 2
+            : (logicalWidth - frame.width) / 2;
+          const renderShiftY = isTable
+            ? (frame.height - renderHeight) / 2
+            : (logicalHeight - frame.height) / 2;
+          const resizeGrid = isTable ? [Math.max(8, cellSize * scaleX), Math.max(8, rowHeight * scaleY)] : [8, 8];
+          const minWidth = isTable ? Math.max(24, cellSize * scaleX) : 24;
+          const minHeight = isTable ? Math.max(24, rowHeight * scaleY) : 24;
           const contentTransform = isTable
-            ? `rotate(${Number(element.rotation || 0)}deg) scale(${visualScale.scaleX}, ${visualScale.scaleY})`
+            ? `rotate(${Number(element.rotation || 0)}deg)`
             : `rotate(${Number(element.rotation || 0)}deg)`;
           return (
             <Rnd
               key={element.id}
               bounds="parent"
-              size={{ width: frame.width, height: frame.height }}
-              position={{ x: frame.left, y: frame.top }}
+              size={{ width: renderWidth, height: renderHeight }}
+              position={{ x: frame.left + renderShiftX + contentOffsetX, y: frame.top + renderShiftY + contentOffsetY }}
+              style={{ zIndex: isSelected ? 20 : 1 }}
               dragGrid={[stepX, stepY]}
               resizeGrid={resizeGrid}
               minWidth={minWidth}
               minHeight={minHeight}
               onDragStop={(event, data) => {
-                const nextCol = toGridIndex(data.x - offsetX, stepX);
-                const nextRow = toGridIndex(data.y - offsetY, stepY);
+                const nextCol = toGridIndex(data.x - contentOffsetX - offsetX - renderShiftX, stepX);
+                const nextRow = toGridIndex(data.y - contentOffsetY - offsetY - renderShiftY, stepY);
                 if ((selectedIds || []).length > 1) {
                   onElementsMove?.(element.id, nextCol, nextRow);
                   return;
@@ -114,20 +291,17 @@ export default function FloorPlanCanvas({
               onResizeStop={(event, direction, ref, delta, position) => {
                 const nextWidth = Math.max(minWidth, ref.offsetWidth);
                 const nextHeight = Math.max(minHeight, ref.offsetHeight);
+                const storedWidth = isTable ? nextWidth / Math.max(scaleX, 0.01) : nextWidth;
+                const storedHeight = isTable ? nextHeight / Math.max(scaleY, 0.01) : nextHeight;
                 onElementChange?.(element.id, {
-                  col: toGridIndex(position.x - offsetX, stepX),
-                  row: toGridIndex(position.y - offsetY, stepY),
-                  col_span: Math.max(1, Math.ceil(nextWidth / cellSize)),
-                  row_span: Math.max(1, Math.ceil(nextHeight / rowHeight)),
-                  width: nextWidth,
-                  height: nextHeight,
+                  col: toGridIndex(position.x - contentOffsetX - offsetX - renderShiftX, stepX),
+                  row: toGridIndex(position.y - contentOffsetY - offsetY - renderShiftY, stepY),
+                  col_span: Math.max(1, Math.ceil(storedWidth / cellSize)),
+                  row_span: Math.max(1, Math.ceil(storedHeight / rowHeight)),
+                  width: storedWidth,
+                  height: storedHeight,
                 });
               }}
-              onClick={(event) =>
-                onSelect?.(element.id, {
-                  toggle: Boolean(event.metaKey || event.ctrlKey || event.shiftKey),
-                })
-              }
               className="overflow-visible"
             >
               <div
@@ -139,24 +313,31 @@ export default function FloorPlanCanvas({
                 style={{
                   transform: contentTransform,
                   transformOrigin: "center center",
-                  borderColor: isSelected ? "#0ea5e9" : "#d4d4d8",
+                  pointerEvents: "none",
+                  borderColor: isSelected ? "#2563eb" : "#d4d4d8",
+                  borderWidth: isSelected ? "4px" : undefined,
                   backgroundColor: element.color || undefined,
                   boxShadow: isSelected
-                    ? "inset 0 0 0 3px rgba(103,232,249,0.92), 0 10px 18px rgba(15,23,42,0.14)"
+                    ? "0 0 0 5px rgba(37,99,235,0.18), 0 12px 24px rgba(15,23,42,0.16)"
                     : undefined,
                 }}
               >
                 <div className="flex h-full w-full flex-col items-center justify-center px-2 text-center">
-                  <div className="max-w-full overflow-hidden break-words text-[11px] font-semibold uppercase leading-tight tracking-[0.14em]">
+                  <div
+                    className="max-w-full overflow-hidden break-words text-[14px] font-semibold leading-tight tracking-[0.08em]"
+                    style={
+                      isTable
+                        ? { fontSize: `${Math.max(12, 14 * tableNumberSize)}px` }
+                        : {
+                            color: element.text_color || undefined,
+                            fontSize: `${Math.max(10, Number(element.text_size || (element.kind === "label" ? 16 : 14)))}px`,
+                          }
+                    }
+                  >
                     {element.kind === "table"
-                      ? element.name || (element.table_number ? `Table ${element.table_number}` : "Table")
+                      ? element.table_number || element.name || "-"
                       : element.text || element.label || element.name}
                   </div>
-                  {isTable ? (
-                    <div className="mt-1 text-[11px] opacity-80">
-                      {element.capacity ? `${element.capacity} guests` : element.zone || "Unassigned"}
-                    </div>
-                  ) : null}
                 </div>
               </div>
             </Rnd>

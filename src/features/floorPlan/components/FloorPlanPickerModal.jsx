@@ -3,7 +3,76 @@ import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import FloorPlanView from "./FloorPlanView";
 import TableDetailsSheet from "./TableDetailsSheet";
-import { buildFloorPlanElements } from "../utils/floorPlan";
+import {
+  buildFloorPlanElements,
+  buildFloorPlanZoneGroups,
+  FLOOR_PLAN_STATUS_STYLES,
+  formatFloorPlanZoneLabel,
+  getFloorPlanLinkedTableNumber,
+} from "../utils/floorPlan";
+
+const STATUS_FILTER_KEYS = ["available", "reserved", "occupied", "blocked"];
+const ALL_ZONES_KEY = "__all__";
+const PICKER_STATUS_TONES = {
+  available: {
+    fill: "#eff6ff",
+    border: "#3b82f6",
+    text: "#1d4ed8",
+    dot: "#60a5fa",
+  },
+};
+const PICKER_TABLE_STATUS_STYLES = {
+  available: {
+    fill: "#dbeafe",
+    border: "#60a5fa",
+    text: "#1e3a8a",
+  },
+  selected: {
+    fill: "#2563eb",
+    border: "#1d4ed8",
+    text: "#eff6ff",
+  },
+};
+
+function FilterPill({
+  active,
+  compact = false,
+  dotColor,
+  label,
+  value = "",
+  onClick,
+  tone = {},
+  className = "",
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "inline-flex items-center gap-2 rounded-full border font-semibold transition",
+        compact ? "min-h-[34px] px-3 py-1.5 text-[11px] sm:min-h-[36px]" : "min-h-[38px] px-3 py-2 text-[11px] sm:min-h-[40px] sm:px-4 sm:text-xs",
+        className,
+      ].join(" ")}
+      style={
+        active
+          ? {
+              backgroundColor: tone.fill,
+              borderColor: tone.border,
+              color: tone.text,
+            }
+          : {
+              backgroundColor: "transparent",
+              borderColor: tone.border,
+              color: tone.border,
+            }
+      }
+    >
+      <span className={compact ? "h-2 w-2 rounded-full" : "h-2.5 w-2.5 rounded-full"} style={{ backgroundColor: dotColor }} />
+      <span>{label}</span>
+      {value ? <span className="opacity-75">{value}</span> : null}
+    </button>
+  );
+}
 
 export default function FloorPlanPickerModal({
   open = false,
@@ -23,29 +92,103 @@ export default function FloorPlanPickerModal({
     [layout, tableStates, tables]
   );
   const [activeTable, setActiveTable] = React.useState(null);
+  const [selectedStatuses, setSelectedStatuses] = React.useState(STATUS_FILTER_KEYS);
+  const [selectedZone, setSelectedZone] = React.useState(ALL_ZONES_KEY);
+
+  const tableElements = React.useMemo(
+    () => elements.filter((element) => element.kind === "table"),
+    [elements]
+  );
+  const statusFilteredTables = React.useMemo(
+    () => tableElements.filter((element) => selectedStatuses.includes(String(element.status || "available").toLowerCase())),
+    [selectedStatuses, tableElements]
+  );
+  const zoneGroups = React.useMemo(
+    () => buildFloorPlanZoneGroups({ elements: tableElements }),
+    [tableElements]
+  );
+  const zoneOptions = React.useMemo(() => {
+    const counts = new Map();
+    statusFilteredTables.forEach((element) => {
+      const key = String(element.zone || "Main Hall").trim() || "Main Hall";
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+
+    const allZones = zoneGroups.flatMap((group) => group.zones || []);
+    return allZones.map((zone) => ({
+      key: zone.label,
+      label: zone.label,
+      count: counts.get(zone.label) || 0,
+      swatch: zone.swatch,
+    }));
+  }, [statusFilteredTables, zoneGroups]);
+  const filteredTables = React.useMemo(
+    () =>
+      statusFilteredTables.filter((element) =>
+        selectedZone === ALL_ZONES_KEY ? true : String(element.zone || "Main Hall").trim() === selectedZone
+      ),
+    [selectedZone, statusFilteredTables]
+  );
+  const filteredElements = React.useMemo(
+    () =>
+      elements.filter((element) => {
+        if (element.kind !== "table") return true;
+        return filteredTables.some((table) => String(table.id) === String(element.id));
+      }),
+    [elements, filteredTables]
+  );
+  const summaryCounts = React.useMemo(
+    () =>
+      STATUS_FILTER_KEYS.reduce((acc, key) => {
+        acc[key] = tableElements.filter((element) => {
+          const sameZone = selectedZone === ALL_ZONES_KEY
+            ? true
+            : String(element.zone || "Main Hall").trim() === selectedZone;
+          return sameZone && String(element.status || "available").toLowerCase() === key;
+        }).length;
+        return acc;
+      }, {}),
+    [selectedZone, tableElements]
+  );
 
   React.useEffect(() => {
     if (!open) {
       setActiveTable(null);
+      setSelectedStatuses(STATUS_FILTER_KEYS);
+      setSelectedZone(ALL_ZONES_KEY);
     }
   }, [open]);
+
+  React.useEffect(() => {
+    if (!activeTable) return;
+    const stillVisible = filteredTables.some(
+      (table) => String(table.id) === String(activeTable.id)
+    );
+    if (!stillVisible) {
+      setActiveTable(null);
+    }
+  }, [activeTable, filteredTables]);
 
   if (!open) return null;
 
   const activeStatus = String(activeTable?.status || "").toLowerCase();
   const canConfirm = activeStatus === "available" || activeStatus === "selected";
   const highlightedTableNumber =
-    activeTable?.table_number != null ? activeTable.table_number : selectedTableNumber;
+    activeTable?.linked_table_number != null
+      ? activeTable.linked_table_number
+      : activeTable?.table_number != null
+        ? activeTable.table_number
+        : selectedTableNumber;
 
   return (
     <div className="fixed inset-0 z-[90] bg-black/55 backdrop-blur-sm">
-      <div className="flex h-full flex-col bg-[linear-gradient(180deg,_#fafaf9_0%,_#f5f5f4_100%)] dark:bg-[linear-gradient(180deg,_#09090b_0%,_#111827_100%)]">
-        <div className="sticky top-0 z-10 border-b border-black/5 bg-white/95 px-4 py-3 backdrop-blur dark:border-white/10 dark:bg-neutral-950/95">
+      <div className="flex h-[100dvh] min-h-0 flex-col bg-[linear-gradient(180deg,_#fafaf9_0%,_#f5f5f4_100%)] shadow-[0_32px_120px_rgba(15,23,42,0.28)] dark:bg-[linear-gradient(180deg,_#09090b_0%,_#111827_100%)] dark:shadow-[0_36px_140px_rgba(0,0,0,0.55)]">
+        <div className="sticky top-0 z-10 border-b border-black/5 bg-white/95 px-3 py-3 shadow-[0_10px_30px_rgba(15,23,42,0.06)] backdrop-blur sm:px-4 dark:border-white/10 dark:bg-neutral-950/95 dark:shadow-[0_12px_34px_rgba(0,0,0,0.28)]">
           <div className="mx-auto flex max-w-4xl items-center gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-neutral-200 bg-white text-neutral-900 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-50"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-neutral-200 bg-white text-neutral-900 shadow-sm sm:h-11 sm:w-11 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-50"
               aria-label="Close"
             >
               <X className="h-5 w-5" />
@@ -59,37 +202,91 @@ export default function FloorPlanPickerModal({
           </div>
         </div>
 
-        <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col overflow-hidden px-4 py-4">
-          <div className="flex-1 overflow-y-auto pb-4">
-            <div className="grid grid-cols-4 gap-2">
-              {[
-                ["available", "Available"],
-                ["reserved", "Reserved"],
-                ["occupied", "Occupied"],
-                ["blocked", "Blocked"],
-              ].map(([key, label]) => {
-                const tone =
-                  key === "available"
-                    ? "bg-teal-700 text-white"
-                    : key === "reserved"
-                        ? "bg-amber-400 text-neutral-950"
-                        : key === "occupied"
-                          ? "bg-rose-500 text-white"
-                          : "bg-neutral-300 text-neutral-800";
-                return (
-                  <div key={key} className={`rounded-2xl px-3 py-2 text-center text-xs font-semibold ${tone}`}>
-                    {t(label)}
+        <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col overflow-hidden px-3 py-3 sm:px-4 sm:py-4">
+          <div className="min-h-0 flex-1 overflow-y-auto pb-8 sm:pb-10">
+            <div className="sticky top-0 z-10 -mx-1 mb-4 space-y-3 border-b border-black/5 bg-[#fafaf9]/95 px-1 pb-3 backdrop-blur dark:border-white/10 dark:bg-[#09090b]/95">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {STATUS_FILTER_KEYS.map((key) => {
+                  const statusTone = FLOOR_PLAN_STATUS_STYLES[key] || FLOOR_PLAN_STATUS_STYLES.available;
+                  const pickerTone = PICKER_STATUS_TONES[key];
+                  const active = selectedStatuses.includes(key);
+                  return (
+                    <FilterPill
+                      key={key}
+                      compact
+                      active={active}
+                      dotColor={pickerTone?.dot || statusTone.border}
+                      label={t(statusTone.badge)}
+                      className="w-full justify-center"
+                      tone={{
+                        fill: pickerTone?.fill || `${statusTone.fill}22`,
+                        border: pickerTone?.border || statusTone.border,
+                        text: pickerTone?.text || statusTone.border,
+                      }}
+                      onClick={() => {
+                        setSelectedStatuses((prev) => {
+                          if (prev.includes(key)) {
+                            return prev.length === 1 ? prev : prev.filter((value) => value !== key);
+                          }
+                          return [...prev, key];
+                        });
+                      }}
+                    />
+                  );
+                })}
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div className="text-xs font-medium leading-relaxed text-neutral-500 dark:text-neutral-400">
+                  {t("{{available}} Available", { available: summaryCounts.available || 0 })} • {t("{{reserved}} Reserved", { reserved: summaryCounts.reserved || 0 })} • {t("{{occupied}} Occupied", { occupied: summaryCounts.occupied || 0 })}
+                </div>
+                <div className="w-full sm:max-w-[260px]">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500 dark:text-neutral-400">
+                    {t("Section")}
                   </div>
-                );
-              })}
+                  <select
+                    value={selectedZone}
+                    onChange={(event) => setSelectedZone(event.target.value)}
+                    className="w-full rounded-2xl border border-neutral-200 bg-white px-3 py-2.5 text-sm font-semibold text-neutral-900 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-50"
+                  >
+                    <option value={ALL_ZONES_KEY}>
+                      {`${t("All")} (${statusFilteredTables.length})`}
+                    </option>
+                    {zoneOptions.map((zone) => (
+                      <option key={zone.key} value={zone.key}>
+                        {`${t(formatFloorPlanZoneLabel(zone.label))} (${zone.count})`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
-            <div className="mt-4">
-              <FloorPlanView
-                layout={layout}
-                elements={elements}
-                selectedTableNumber={highlightedTableNumber}
-                onTableClick={(node) => setActiveTable(node)}
-              />
+            {filteredTables.length === 0 ? (
+              <div className="mb-4 rounded-[24px] border border-dashed border-neutral-300 bg-white/80 px-4 py-5 text-center text-sm font-medium text-neutral-500 sm:px-5 sm:py-6 dark:border-neutral-700 dark:bg-neutral-950/60 dark:text-neutral-400">
+                {selectedZone === ALL_ZONES_KEY
+                  ? t("No tables match the selected availability filters")
+                  : t("No available tables in this section")}
+              </div>
+            ) : null}
+            <div className="mt-3 sm:mt-4">
+              <div className="mx-auto w-full max-w-[430px] overflow-hidden rounded-[26px] border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
+                <FloorPlanView
+                  layout={layout}
+                  elements={filteredElements}
+                  boundsElements={elements}
+                  selectedTableNumber={highlightedTableNumber}
+                  onTableClick={(node) =>
+                    setActiveTable({
+                      ...node,
+                      linked_table_number: getFloorPlanLinkedTableNumber(node) ?? node.table_number ?? null,
+                    })
+                  }
+                  showCanvasOutline={false}
+                  compactPadding
+                  viewportPadding={18}
+                  scrollMode="none"
+                  statusStyleOverrides={PICKER_TABLE_STATUS_STYLES}
+                />
+              </div>
             </div>
           </div>
           <TableDetailsSheet

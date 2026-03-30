@@ -8,6 +8,26 @@ const DEFAULT_CANVAS = {
   rows: 8,
 };
 
+const MAX_TABLE_GAP = 72;
+const MIN_TABLE_NUMBER_SIZE = 0.6;
+const MAX_TABLE_NUMBER_SIZE = 1.8;
+
+function clampTableGap(value) {
+  return Math.max(-MAX_TABLE_GAP, Math.min(MAX_TABLE_GAP, asNumber(value, 0)));
+}
+
+export function normalizeFloorPlanTableNumberSize(value, fallback = 1) {
+  const parsed = asNumber(value, fallback);
+  return Math.min(MAX_TABLE_NUMBER_SIZE, Math.max(MIN_TABLE_NUMBER_SIZE, parsed));
+}
+
+export function getFloorPlanTableNumberSize(layout = null, fallback = 1) {
+  return normalizeFloorPlanTableNumberSize(
+    layout?.metadata?.table_number_size ?? layout?.metadata?.tableNumberSize,
+    fallback
+  );
+}
+
 export const FLOOR_PLAN_TABLE_TYPES = [
   { value: "regular", label: "Regular" },
   { value: "vip", label: "VIP" },
@@ -75,6 +95,34 @@ export const FLOOR_PLAN_STATUS_STYLES = {
 
 export const FLOOR_PLAN_TABLE_BASE_SCALE = 1;
 export const FLOOR_PLAN_TABLE_BASE_SCALE_Y = 1;
+const FLOOR_PLAN_ZONE_CATEGORY_ORDER = [
+  "premium",
+  "main",
+  "upper",
+  "private",
+  "outdoor",
+  "service",
+  "other",
+];
+const FLOOR_PLAN_ZONE_CATEGORY_LABELS = {
+  premium: "Premium",
+  main: "Main Seating",
+  upper: "Upper Level",
+  private: "Private",
+  outdoor: "Outdoor",
+  service: "Service",
+  other: "Other",
+};
+const FLOOR_PLAN_ZONE_SWATCHES = [
+  { fill: "#dbeafe", border: "#2563eb", text: "#1e3a8a" },
+  { fill: "#dcfce7", border: "#16a34a", text: "#14532d" },
+  { fill: "#fef3c7", border: "#d97706", text: "#92400e" },
+  { fill: "#fce7f3", border: "#db2777", text: "#9d174d" },
+  { fill: "#ede9fe", border: "#7c3aed", text: "#5b21b6" },
+  { fill: "#cffafe", border: "#0891b2", text: "#164e63" },
+  { fill: "#fee2e2", border: "#dc2626", text: "#991b1b" },
+  { fill: "#f3f4f6", border: "#4b5563", text: "#1f2937" },
+];
 
 function asText(value, fallback = "") {
   const next = String(value ?? "").trim();
@@ -95,8 +143,145 @@ function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== "";
 }
 
+function normalizeFloorPlanTextSize(value, fallback = 14) {
+  const parsed = asNumber(value, fallback);
+  return Math.min(48, Math.max(10, parsed));
+}
+
 function normalizeArray(values) {
   return Array.isArray(values) ? values : [];
+}
+
+function getZoneMatchSource(zoneName = "") {
+  return String(zoneName || "").trim().toLowerCase();
+}
+
+function isFiniteNumber(value) {
+  return Number.isFinite(Number(value));
+}
+
+function getNormalizedTableLinkNumber(element = {}) {
+  return (
+    asPositiveInt(
+      element.linked_table_number ??
+        element.linkedTableNumber ??
+        element.source_table_number ??
+        element.sourceTableNumber,
+      0
+    ) || null
+  );
+}
+
+function getClusterTolerance(values = [], explicitTolerance = null) {
+  if (isFiniteNumber(explicitTolerance) && Number(explicitTolerance) >= 0) {
+    return Number(explicitTolerance);
+  }
+  const sortedValues = [...new Set(values.map((value) => Number(value)).filter(Number.isFinite))].sort(
+    (a, b) => a - b
+  );
+  let minGap = Number.POSITIVE_INFINITY;
+  for (let index = 1; index < sortedValues.length; index += 1) {
+    const gap = sortedValues[index] - sortedValues[index - 1];
+    if (gap > 0 && gap < minGap) {
+      minGap = gap;
+    }
+  }
+  if (!Number.isFinite(minGap)) return 0.49;
+  return minGap > 1 ? 1 : 0.49;
+}
+
+function buildAxisClusterMap(elements = [], axis = "row", explicitTolerance = null) {
+  const values = elements.map((element) => Number(element?.[axis] || 0));
+  const tolerance = getClusterTolerance(values, explicitTolerance);
+  const sorted = [...elements].sort((a, b) => {
+    const aValue = Number(a?.[axis] || 0);
+    const bValue = Number(b?.[axis] || 0);
+    if (aValue !== bValue) return aValue - bValue;
+    return String(a?.id || "").localeCompare(String(b?.id || ""));
+  });
+  const clusters = [];
+  const clusterMap = new Map();
+
+  sorted.forEach((element) => {
+    const value = Number(element?.[axis] || 0);
+    const lastCluster = clusters[clusters.length - 1];
+    if (!lastCluster || Math.abs(value - lastCluster.anchor) > tolerance) {
+      clusters.push({ anchor: value, values: [value] });
+      clusterMap.set(String(element.id), clusters.length - 1);
+      return;
+    }
+    lastCluster.values.push(value);
+    lastCluster.anchor = lastCluster.values.reduce((sum, item) => sum + item, 0) / lastCluster.values.length;
+    clusterMap.set(String(element.id), clusters.length - 1);
+  });
+
+  return clusterMap;
+}
+
+function rectanglesOverlap(a, b) {
+  return (
+    a.col < b.col + b.colSpan &&
+    a.col + a.colSpan > b.col &&
+    a.row < b.row + b.rowSpan &&
+    a.row + a.rowSpan > b.row
+  );
+}
+
+function findNextGridSlot(existingElements = [], { columns = 12, colSpan = 1, rowSpan = 1 } = {}) {
+  for (let row = 0; row < 128; row += 1) {
+    for (let col = 0; col <= Math.max(0, columns - colSpan); col += 1) {
+      const candidate = { col, row, colSpan, rowSpan };
+      const blocked = existingElements.some((element) =>
+        rectanglesOverlap(candidate, {
+          col: Number(element.col || 0),
+          row: Number(element.row || 0),
+          colSpan: Number(element.col_span || element.colSpan || 1),
+          rowSpan: Number(element.row_span || element.rowSpan || 1),
+        })
+      );
+      if (!blocked) return { col, row };
+    }
+  }
+  return { col: 0, row: existingElements.length };
+}
+
+function replaceTrailingNumber(text = "", nextNumber) {
+  const source = asText(text, "");
+  if (!source) return source;
+  if (/\d+\s*$/.test(source)) {
+    return source.replace(/\d+\s*$/, String(nextNumber));
+  }
+  return source;
+}
+
+function getTableSortNumber(element = {}) {
+  return getNormalizedTableLinkNumber(element) ?? (asPositiveInt(element.table_number ?? element.tableNumber, 0) || null);
+}
+
+function resolveTableNumberingOptions(layout = null, overrides = {}) {
+  const config =
+    layout?.metadata?.table_numbering && typeof layout.metadata.table_numbering === "object"
+      ? layout.metadata.table_numbering
+      : layout?.metadata?.tableNumbering && typeof layout.metadata.tableNumbering === "object"
+        ? layout.metadata.tableNumbering
+        : {};
+  const mode = String(overrides.mode ?? config.mode ?? "row-based").trim().toLowerCase();
+  const direction = String(overrides.direction ?? config.direction ?? "ltr").trim().toLowerCase();
+  return {
+    mode: mode === "column-based" ? "column-based" : "row-based",
+    direction: ["ltr", "rtl", "ttb", "btt"].includes(direction) ? direction : "ltr",
+    startNumber: Math.max(1, asPositiveInt(overrides.startNumber ?? config.startNumber, 1) || 1),
+    keepPrefix: Boolean(overrides.keepPrefix ?? config.keepPrefix),
+    alternateColumns: Boolean(overrides.alternateColumns ?? config.alternateColumns),
+    rowTolerance:
+      isFiniteNumber(overrides.rowTolerance) || isFiniteNumber(config.rowTolerance)
+        ? Number(overrides.rowTolerance ?? config.rowTolerance)
+        : null,
+    colTolerance:
+      isFiniteNumber(overrides.colTolerance) || isFiniteNumber(config.colTolerance)
+        ? Number(overrides.colTolerance ?? config.colTolerance)
+        : null,
+  };
 }
 
 export function createFloorPlanId(prefix = "element", suffix = "") {
@@ -131,8 +316,8 @@ export function resolveFloorPlanCanvas(canvas = {}) {
     rowHeight,
     columns,
     rows,
-    tableGapX: Math.min(48, Math.max(0, asNumber(canvas.table_gap_x ?? canvas.tableGapX, 0))),
-    tableGapY: Math.min(48, Math.max(0, asNumber(canvas.table_gap_y ?? canvas.tableGapY, 0))),
+    tableGapX: clampTableGap(canvas.table_gap_x ?? canvas.tableGapX),
+    tableGapY: clampTableGap(canvas.table_gap_y ?? canvas.tableGapY),
   };
 }
 
@@ -184,10 +369,41 @@ function trimFloorPlanLayout(layout = null) {
     };
   });
 
-  const maxCol = Math.max(...shifted.map((element) => Number(element.col || 0) + Number(element.col_span || 1)));
-  const maxRow = Math.max(...shifted.map((element) => Number(element.row || 0) + Number(element.row_span || 1)));
-  const columns = Math.max(4, asPositiveInt(layout?.canvas?.columns, 0), maxCol);
-  const rows = Math.max(4, asPositiveInt(layout?.canvas?.rows, 0), maxRow);
+  const occupiedCols = new Set();
+  const occupiedRows = new Set();
+  shifted.forEach((element) => {
+    const col = Number(element.col || 0);
+    const row = Number(element.row || 0);
+    const colSpan = Math.max(1, Number(element.col_span || element.colSpan || 1));
+    const rowSpan = Math.max(1, Number(element.row_span || element.rowSpan || 1));
+    for (let colIndex = col; colIndex < col + colSpan; colIndex += 1) {
+      occupiedCols.add(colIndex);
+    }
+    for (let rowIndex = row; rowIndex < row + rowSpan; rowIndex += 1) {
+      occupiedRows.add(rowIndex);
+    }
+  });
+
+  const compactedCols = [...occupiedCols].sort((a, b) => a - b);
+  const compactedRows = [...occupiedRows].sort((a, b) => a - b);
+  const colIndexMap = new Map(compactedCols.map((value, index) => [value, index]));
+  const rowIndexMap = new Map(compactedRows.map((value, index) => [value, index]));
+  const compacted = shifted.map((element) => {
+    const col = Number(element.col || 0);
+    const row = Number(element.row || 0);
+    return {
+      ...element,
+      col: colIndexMap.get(col) ?? 0,
+      row: rowIndexMap.get(row) ?? 0,
+      x: (colIndexMap.get(col) ?? 0) * cellSize + asNumber(element.offset_x ?? element.offsetX, 0),
+      y: (rowIndexMap.get(row) ?? 0) * rowHeight + asNumber(element.offset_y ?? element.offsetY, 0),
+    };
+  });
+
+  const maxCol = Math.max(...compacted.map((element) => Number(element.col || 0) + Number(element.col_span || 1)));
+  const maxRow = Math.max(...compacted.map((element) => Number(element.row || 0) + Number(element.row_span || 1)));
+  const columns = Math.max(4, maxCol);
+  const rows = Math.max(4, maxRow);
 
   return {
     ...layout,
@@ -200,10 +416,10 @@ function trimFloorPlanLayout(layout = null) {
       cellSize,
       rowHeight,
       gridSize: cellSize,
-      tableGapX: Math.min(48, Math.max(0, asNumber(layout?.canvas?.tableGapX ?? layout?.canvas?.table_gap_x, 0))),
-      tableGapY: Math.min(48, Math.max(0, asNumber(layout?.canvas?.tableGapY ?? layout?.canvas?.table_gap_y, 0))),
+      tableGapX: clampTableGap(layout?.canvas?.tableGapX ?? layout?.canvas?.table_gap_x),
+      tableGapY: clampTableGap(layout?.canvas?.tableGapY ?? layout?.canvas?.table_gap_y),
     },
-    elements: shifted,
+    elements: compacted,
   };
 }
 
@@ -270,9 +486,15 @@ export function normalizeFloorPlanElement(element = {}, canvas = DEFAULT_CANVAS)
     rotation: asNumber(element.rotation, 0),
     visual_scale: Math.min(1.35, Math.max(0.15, asNumber(element.visual_scale ?? element.visualScale, 1))),
     color: asText(element.color, ""),
+    text_color: asText(element.text_color ?? element.textColor, ""),
+    text_size: normalizeFloorPlanTextSize(element.text_size ?? element.textSize, kind === "label" ? 16 : 14),
     zone: asText(element.zone || element.area, ""),
     capacity: asPositiveInt(element.capacity ?? element.seats ?? element.guest_limit, 0),
     table_number: asPositiveInt(element.table_number ?? element.tableNumber, 0) || null,
+    linked_table_number:
+      getNormalizedTableLinkNumber(element) ||
+      asPositiveInt(element.table_number ?? element.tableNumber, 0) ||
+      null,
     table_type: asText(element.table_type || element.tableType, "regular").toLowerCase(),
     compatible_ticket_type_ids: normalizeArray(
       element.compatible_ticket_type_ids || element.compatibleTicketTypeIds
@@ -296,6 +518,11 @@ export function normalizeFloorPlanLayout(layout) {
   if (!layout || typeof layout !== "object") return null;
   const canvas = layout.canvas && typeof layout.canvas === "object" ? layout.canvas : {};
   const resolvedCanvas = resolveFloorPlanCanvas(canvas);
+  const metadata =
+    layout.metadata && typeof layout.metadata === "object" && !Array.isArray(layout.metadata)
+      ? { ...layout.metadata }
+      : {};
+  metadata.table_number_size = getFloorPlanTableNumberSize({ metadata }, 1);
   return trimFloorPlanLayout({
     id: asText(layout.id, "default-floor-plan"),
     name: asText(layout.name, "Floor Plan"),
@@ -312,10 +539,7 @@ export function normalizeFloorPlanLayout(layout) {
       tableGapX: resolvedCanvas.tableGapX,
       tableGapY: resolvedCanvas.tableGapY,
     },
-    metadata:
-      layout.metadata && typeof layout.metadata === "object" && !Array.isArray(layout.metadata)
-        ? layout.metadata
-        : {},
+    metadata,
     elements: normalizeArray(layout.elements).map((element) =>
       normalizeFloorPlanElement(element, {
         cellSize: resolvedCanvas.cellSize,
@@ -345,6 +569,7 @@ export function buildGeneratedFloorPlan(tables = []) {
         id: createFloorPlanId("table", tableNumber || index + 1),
         kind: "table",
         table_number: tableNumber,
+        linked_table_number: tableNumber,
         name: asText(table?.label, tableNumber ? `Table ${tableNumber}` : `Table ${index + 1}`),
         col: col * 2,
         row: row * 2,
@@ -357,6 +582,133 @@ export function buildGeneratedFloorPlan(tables = []) {
       };
     }),
   });
+}
+
+export function syncFloorPlanLayoutWithTables(layout, tables = []) {
+  const normalizedTables = normalizeArray(tables);
+  const normalizedLayout = normalizeFloorPlanLayout(layout);
+  if (!normalizedLayout) return buildGeneratedFloorPlan(normalizedTables);
+
+  const currentTableNumbers = new Set(
+    normalizedTables
+      .map((table) => asPositiveInt(table?.table_number ?? table?.number ?? table?.tableNumber, 0))
+      .filter((value) => Number.isFinite(value) && value > 0)
+  );
+
+  const tableMap = new Map(
+    normalizedTables
+      .map((table) => {
+        const tableNumber = asPositiveInt(table?.table_number ?? table?.number ?? table?.tableNumber, 0);
+        return tableNumber > 0 ? [tableNumber, table] : null;
+      })
+      .filter(Boolean)
+  );
+
+  const staticElements = normalizedLayout.elements.filter((element) => element.kind !== "table");
+  const keptTableElements = normalizedLayout.elements
+    .filter((element) => element.kind === "table")
+    .filter((element) => currentTableNumbers.has(getFloorPlanLinkedTableNumber(element)));
+
+  const usedLinkedNumbers = new Set(
+    keptTableElements
+      .map((element) => getFloorPlanLinkedTableNumber(element))
+      .filter((value) => Number.isFinite(value) && value > 0)
+  );
+
+  const tableElements = keptTableElements.map((element) => {
+    const linkedTableNumber = getFloorPlanLinkedTableNumber(element);
+    const table = tableMap.get(linkedTableNumber) || null;
+    return {
+      ...element,
+      linked_table_number: linkedTableNumber,
+      zone: asText(table?.area ?? table?.zone, element.zone || ""),
+      capacity: asPositiveInt(table?.seats ?? table?.guests, 0) || element.capacity || 4,
+      name: asText(table?.label, element.name || (linkedTableNumber ? `Table ${linkedTableNumber}` : "Table")),
+    };
+  });
+
+  const resolvedCanvas = resolveFloorPlanCanvas(normalizedLayout.canvas || {});
+  normalizedTables.forEach((table, index) => {
+    const linkedTableNumber = asPositiveInt(table?.table_number ?? table?.number ?? table?.tableNumber, 0);
+    if (!linkedTableNumber || usedLinkedNumbers.has(linkedTableNumber)) return;
+    const slot = findNextGridSlot([...tableElements, ...staticElements], {
+      columns: resolvedCanvas.columns,
+      colSpan: 1,
+      rowSpan: 1,
+    });
+    tableElements.push({
+      id: createFloorPlanId("table", linkedTableNumber || index + 1),
+      kind: "table",
+      table_number: linkedTableNumber,
+      linked_table_number: linkedTableNumber,
+      name: asText(table?.label, linkedTableNumber ? `Table ${linkedTableNumber}` : `Table ${index + 1}`),
+      shape: "circle",
+      col: slot.col,
+      row: slot.row,
+      col_span: 1,
+      row_span: 1,
+      rotation: 0,
+      visual_scale: 1,
+      zone: asText(table?.area ?? table?.zone, ""),
+      capacity: asPositiveInt(table?.seats ?? table?.guests, 0) || 4,
+      table_type: "regular",
+      color: "",
+    });
+    usedLinkedNumbers.add(linkedTableNumber);
+  });
+
+  return renumberFloorPlanTables({
+    ...normalizedLayout,
+    elements: [...tableElements, ...staticElements],
+  });
+}
+
+export function mergeFloorPlanVisualStyles(layout, sourceLayout) {
+  const normalizedLayout = normalizeFloorPlanLayout(layout);
+  const normalizedSource = normalizeFloorPlanLayout(sourceLayout);
+  if (!normalizedLayout || !normalizedSource) return normalizedLayout || normalizedSource || null;
+
+  const sourceById = new Map(
+    (normalizedSource.elements || []).map((element) => [String(element.id), element])
+  );
+  const sourceByLinkedNumber = new Map(
+    (normalizedSource.elements || [])
+      .filter((element) => element.kind === "table")
+      .map((element) => [Number(getFloorPlanLinkedTableNumber(element) || element.table_number || 0), element])
+      .filter(([tableNumber]) => Number.isFinite(tableNumber) && tableNumber > 0)
+  );
+
+  return {
+    ...normalizedLayout,
+    metadata: {
+      ...(normalizedLayout.metadata || {}),
+      table_number_size: getFloorPlanTableNumberSize(
+        normalizedSource,
+        getFloorPlanTableNumberSize(normalizedLayout, 1)
+      ),
+    },
+    elements: (normalizedLayout.elements || []).map((element) => {
+      const sourceMatch =
+        sourceById.get(String(element.id)) ||
+        (element.kind === "table"
+          ? sourceByLinkedNumber.get(Number(getFloorPlanLinkedTableNumber(element) || element.table_number || 0))
+          : null);
+      if (!sourceMatch) return element;
+      if (element.kind !== "table") {
+        return {
+          ...element,
+          ...sourceMatch,
+          id: element.id,
+        };
+      }
+      return {
+        ...element,
+        color: sourceMatch.color || element.color || "",
+        text_color: sourceMatch.text_color || sourceMatch.textColor || element.text_color || "",
+        text_size: sourceMatch.text_size || sourceMatch.textSize || element.text_size || element.textSize || undefined,
+      };
+    }),
+  };
 }
 
 export function resolveEffectiveFloorPlan({ venueLayout, eventLayout, tables = [] }) {
@@ -390,12 +742,14 @@ export function buildFloorPlanElements(layout, tables = [], tableStates = []) {
 
   return normalizedLayout.elements.map((element) => {
     const tableNumber = Number(element.table_number || 0);
-    const table = tableMap.get(tableNumber) || null;
-    const state = stateMap.get(tableNumber) || null;
+    const linkedTableNumber = Number((getNormalizedTableLinkNumber(element) ?? tableNumber) || 0);
+    const table = tableMap.get(linkedTableNumber) || null;
+    const state = stateMap.get(linkedTableNumber) || null;
     return {
       ...element,
       table,
       state,
+      linked_table_number: linkedTableNumber || null,
       status: state?.status || (element.kind === "table" ? "available" : "available"),
       capacity:
         Number(element.capacity || 0) ||
@@ -407,6 +761,104 @@ export function buildFloorPlanElements(layout, tables = [], tableStates = []) {
         (tableNumber ? `Table ${tableNumber}` : element.kind.replace(/_/g, " ")),
     };
   });
+}
+
+export function getFloorPlanLinkedTableNumber(element = {}) {
+  return getNormalizedTableLinkNumber(element) ?? (asPositiveInt(element.table_number ?? element.tableNumber, 0) || null);
+}
+
+export function renumberFloorPlanTables(layout, options = {}) {
+  const normalizedLayout = normalizeFloorPlanLayout(layout);
+  if (!normalizedLayout?.elements?.length) return normalizedLayout;
+
+  const numbering = resolveTableNumberingOptions(normalizedLayout, options);
+  const tableElements = normalizedLayout.elements.filter((element) => element.kind === "table");
+  if (!tableElements.length) return normalizedLayout;
+
+  const rowClusterMap = buildAxisClusterMap(tableElements, "row", numbering.rowTolerance);
+  const colClusterMap = buildAxisClusterMap(tableElements, "col", numbering.colTolerance);
+  const primaryDescending =
+    numbering.mode === "row-based" ? numbering.direction === "btt" : numbering.direction === "rtl";
+  const secondaryDescending =
+    numbering.mode === "row-based" ? numbering.direction === "rtl" : numbering.direction === "btt";
+  const primaryClusterValues = [...new Set(tableElements.map((element) => {
+    const primaryValue =
+      numbering.mode === "row-based"
+        ? rowClusterMap.get(String(element.id)) ?? Number(element.row || 0)
+        : colClusterMap.get(String(element.id)) ?? Number(element.col || 0);
+    return Number(primaryValue);
+  }))].sort((a, b) => a - b);
+  const primaryRankMap = new Map(
+    primaryClusterValues.map((value, index) => [
+      value,
+      primaryDescending ? primaryClusterValues.length - 1 - index : index,
+    ])
+  );
+
+  const orderedIds = [...tableElements]
+    .sort((a, b) => {
+      const aPrimary =
+        numbering.mode === "row-based"
+          ? rowClusterMap.get(String(a.id)) ?? Number(a.row || 0)
+          : colClusterMap.get(String(a.id)) ?? Number(a.col || 0);
+      const bPrimary =
+        numbering.mode === "row-based"
+          ? rowClusterMap.get(String(b.id)) ?? Number(b.row || 0)
+          : colClusterMap.get(String(b.id)) ?? Number(b.col || 0);
+      if (aPrimary !== bPrimary) {
+        return primaryDescending ? bPrimary - aPrimary : aPrimary - bPrimary;
+      }
+
+      const primaryRank = primaryRankMap.get(Number(aPrimary)) ?? 0;
+      const useAlternatingColumnDirection =
+        numbering.mode === "column-based" && numbering.alternateColumns;
+      const alternateSecondaryDescending =
+        useAlternatingColumnDirection && primaryRank % 2 === 1
+          ? !secondaryDescending
+          : secondaryDescending;
+
+      const aSecondary =
+        numbering.mode === "row-based"
+          ? colClusterMap.get(String(a.id)) ?? Number(a.col || 0)
+          : rowClusterMap.get(String(a.id)) ?? Number(a.row || 0);
+      const bSecondary =
+        numbering.mode === "row-based"
+          ? colClusterMap.get(String(b.id)) ?? Number(b.col || 0)
+          : rowClusterMap.get(String(b.id)) ?? Number(b.row || 0);
+      if (aSecondary !== bSecondary) {
+        return alternateSecondaryDescending ? bSecondary - aSecondary : aSecondary - bSecondary;
+      }
+
+      const aStable = getTableSortNumber(a);
+      const bStable = getTableSortNumber(b);
+      if (aStable && bStable && aStable !== bStable) {
+        return aStable - bStable;
+      }
+      return String(a.id).localeCompare(String(b.id));
+    })
+    .map((element) => String(element.id));
+
+  const numberingMap = new Map(
+    orderedIds.map((id, index) => [id, numbering.startNumber + index])
+  );
+
+  return {
+    ...normalizedLayout,
+    elements: normalizedLayout.elements.map((element) => {
+      if (element.kind !== "table") return element;
+      const nextNumber = numberingMap.get(String(element.id));
+      if (!nextNumber) return element;
+      const nextName = replaceTrailingNumber(element.name, nextNumber);
+      const nextLabel = numbering.keepPrefix ? replaceTrailingNumber(element.label, nextNumber) : element.label;
+      return {
+        ...element,
+        table_number: nextNumber,
+        linked_table_number: getFloorPlanLinkedTableNumber(element) ?? nextNumber,
+        name: nextName || element.name,
+        label: nextLabel,
+      };
+    }),
+  };
 }
 
 export function getFloorPlanStatusStyle(status) {
@@ -471,11 +923,68 @@ export function getFloorPlanRenderSize(layout = null, elements = [], options = {
   return {
     width: preserveCanvasSize
       ? Math.max(resolvedCanvas.width, Math.ceil(bounds.width))
-      : Math.max(resolvedCanvas.cellSize * 4, Math.ceil(bounds.width)),
+      : Math.max(resolvedCanvas.cellSize, Math.ceil(bounds.width)),
     height: preserveCanvasSize
       ? Math.max(resolvedCanvas.height, Math.ceil(bounds.height))
-      : Math.max(resolvedCanvas.rowHeight * 4, Math.ceil(bounds.height)),
+      : Math.max(resolvedCanvas.rowHeight, Math.ceil(bounds.height)),
   };
+}
+
+export function formatFloorPlanZoneLabel(zoneName) {
+  return asText(zoneName, "Main Hall");
+}
+
+export function getFloorPlanZoneCategory(zoneName) {
+  const value = getZoneMatchSource(zoneName);
+  if (!value) return "main";
+  if (/(vip|royal|diamond|gold|premium|platinum|front row)/.test(value)) return "premium";
+  if (/(balcony|upper|mezzanine|level|terrace|gallery)/.test(value)) return "upper";
+  if (/(private|lounge|box|suite|exclusive)/.test(value)) return "private";
+  if (/(garden|outdoor|patio|terrace|beach|pool|rooftop)/.test(value)) return "outdoor";
+  if (/(bar|service|staff|waiter|entrance|exit|foyer)/.test(value)) return "service";
+  if (/(main|hall|floor|seated|regular|standard|center|centre|section|row)/.test(value)) return "main";
+  return "other";
+}
+
+export function buildFloorPlanZoneGroups({ elements = [], tables = [] } = {}) {
+  const zoneMap = new Map();
+  const registerZone = (zoneName, count = 0) => {
+    const label = formatFloorPlanZoneLabel(zoneName);
+    const key = getZoneMatchSource(label) || "main hall";
+    if (!zoneMap.has(key)) {
+      const category = getFloorPlanZoneCategory(label);
+      const swatch = FLOOR_PLAN_ZONE_SWATCHES[zoneMap.size % FLOOR_PLAN_ZONE_SWATCHES.length];
+      zoneMap.set(key, {
+        key,
+        label,
+        category,
+        categoryLabel: FLOOR_PLAN_ZONE_CATEGORY_LABELS[category] || FLOOR_PLAN_ZONE_CATEGORY_LABELS.other,
+        count: 0,
+        swatch,
+      });
+    }
+    zoneMap.get(key).count += count;
+  };
+
+  normalizeArray(tables).forEach((table) => registerZone(table?.area || table?.zone, 0));
+  normalizeArray(elements)
+    .filter((element) => element?.kind === "table")
+    .forEach((element) => registerZone(element?.zone || element?.area, 1));
+
+  const zones = [...zoneMap.values()].sort((a, b) => {
+    const categoryDelta =
+      FLOOR_PLAN_ZONE_CATEGORY_ORDER.indexOf(a.category) - FLOOR_PLAN_ZONE_CATEGORY_ORDER.indexOf(b.category);
+    if (categoryDelta !== 0) return categoryDelta;
+    return a.label.localeCompare(b.label);
+  });
+
+  return FLOOR_PLAN_ZONE_CATEGORY_ORDER
+    .map((category) => ({
+      key: category,
+      label: FLOOR_PLAN_ZONE_CATEGORY_LABELS[category] || FLOOR_PLAN_ZONE_CATEGORY_LABELS.other,
+      zones: zones.filter((zone) => zone.category === category),
+    }))
+    .filter((group) => group.zones.length > 0);
 }
 
 export function getTableRestrictionPreview({

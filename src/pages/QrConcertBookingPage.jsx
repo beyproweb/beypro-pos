@@ -14,6 +14,7 @@ import BookingSummaryCard from "../features/floorPlan/components/BookingSummaryC
 import ContactInfoForm from "../features/floorPlan/components/ContactInfoForm";
 import GuestCompositionCard from "../features/floorPlan/components/GuestCompositionCard";
 import FloorPlanPickerModal from "../features/floorPlan/components/FloorPlanPickerModal";
+import { mergeFloorPlanVisualStyles } from "../features/floorPlan/utils/floorPlan";
 import {
   buildGuestComposition,
   buildGuestCountOptions,
@@ -271,7 +272,7 @@ export default function QrConcertBookingPage() {
           )}/floor-plan?${params.toString()}`
         );
         if (cancelled) return;
-        setFloorPlan(response?.layout || null);
+        setFloorPlan(mergeFloorPlanVisualStyles(response?.layout || null, branding?.qr_floor_plan_layout));
         setTableStates(Array.isArray(response?.table_states) ? response.table_states : []);
       } catch (error) {
         if (!cancelled) {
@@ -290,6 +291,7 @@ export default function QrConcertBookingPage() {
       cancelled = true;
     };
   }, [
+    branding,
     concertId,
     hasGuestCompositionInput,
     identifier,

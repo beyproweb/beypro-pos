@@ -1,5 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import FloorPlanLegendHeader from "./FloorPlanLegendHeader";
 import FloorPlanView from "./FloorPlanView";
 import { buildFloorPlanElements } from "../utils/floorPlan";
 
@@ -27,12 +28,18 @@ export default function FloorPlanPreview({
         <div className="mb-3 flex justify-center">
           <div className="h-1.5 w-20 rounded-full bg-neutral-300 dark:bg-neutral-700" />
         </div>
+        <div className="mb-3">
+          <FloorPlanLegendHeader elements={elements} showStatuses showZones />
+        </div>
         <div className="overflow-hidden rounded-[26px] border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
           <FloorPlanView
             layout={layout}
             elements={elements}
             selectedTableNumber={selectedTableNumber}
             interactive={false}
+            showCanvasOutline={false}
+            compactPadding
+            viewportPadding={18}
           />
         </div>
       </div>

@@ -1,6 +1,19 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 
+const MAX_TABLE_GAP = 72;
+
+function clampTableGap(value) {
+  return Math.max(-MAX_TABLE_GAP, Math.min(MAX_TABLE_GAP, Number(value) || 0));
+}
+
+function formatGapLabel(value, t) {
+  const rounded = Math.round(Number(value) || 0);
+  if (rounded < 0) return t("+{{value}}px space", { value: Math.abs(rounded) });
+  if (rounded > 0) return t("-{{value}}px gap", { value: rounded });
+  return t("Default spacing");
+}
+
 const TOOLBAR_ITEMS = [
   { kind: "table", label: "Add Table" },
   { kind: "stage", label: "Stage" },
@@ -17,7 +30,11 @@ const TOOLBAR_ITEMS = [
 export default function FloorPlanToolbar({
   onAddElement,
   onArrangeTables,
+  onTableNumberingChange,
+  onTableNumberSizeChange,
   onTableSpacingChange,
+  onCenterWholeMapChange,
+  onUndo,
   onSelectAllTables,
   onClearSelection,
   onResizeSelectedSmaller,
@@ -32,18 +49,38 @@ export default function FloorPlanToolbar({
   selectedTableCount = 0,
   tableCount = 0,
   allTablesSelected = false,
+  canUndo = false,
   canvas = null,
+  tableNumbering = null,
+  tableNumberSize = 1,
+  centerWholeMap = false,
 }) {
   const { t } = useTranslation();
-  const tableGapX = Math.max(0, Math.min(48, Number(canvas?.tableGapX || 0)));
-  const tableGapY = Math.max(0, Math.min(48, Number(canvas?.tableGapY || 0)));
+  const tableGapX = clampTableGap(canvas?.tableGapX || 0);
+  const tableGapY = clampTableGap(canvas?.tableGapY || 0);
   const [arrangeRows, setArrangeRows] = React.useState(Math.max(1, Number(canvas?.rows || 4)));
   const [arrangeColumns, setArrangeColumns] = React.useState(Math.max(1, Number(canvas?.columns || 4)));
+  const [arrangeMode, setArrangeMode] = React.useState(tableNumbering?.mode || "row-based");
+  const [arrangeDirection, setArrangeDirection] = React.useState(tableNumbering?.direction || "ltr");
+  const [startNumber, setStartNumber] = React.useState(Math.max(1, Number(tableNumbering?.startNumber || 1)));
+  const [alternateColumns, setAlternateColumns] = React.useState(Boolean(tableNumbering?.alternateColumns));
+  const [arrangeTableNumberSize, setArrangeTableNumberSize] = React.useState(Number(tableNumberSize) || 1);
 
   React.useEffect(() => {
     setArrangeRows(Math.max(1, Number(canvas?.rows || 4)));
     setArrangeColumns(Math.max(1, Number(canvas?.columns || 4)));
   }, [canvas?.rows, canvas?.columns]);
+
+  React.useEffect(() => {
+    setArrangeMode(tableNumbering?.mode || "row-based");
+    setArrangeDirection(tableNumbering?.direction || "ltr");
+    setStartNumber(Math.max(1, Number(tableNumbering?.startNumber || 1)));
+    setAlternateColumns(Boolean(tableNumbering?.alternateColumns));
+  }, [tableNumbering?.alternateColumns, tableNumbering?.direction, tableNumbering?.mode, tableNumbering?.startNumber]);
+
+  React.useEffect(() => {
+    setArrangeTableNumberSize(Number(tableNumberSize) || 1);
+  }, [tableNumberSize]);
 
   return (
     <div className="space-y-3 rounded-[28px] border border-neutral-200 bg-white/90 p-4 dark:border-neutral-800 dark:bg-neutral-950/80">
@@ -99,12 +136,101 @@ export default function FloorPlanToolbar({
             </label>
             <button
               type="button"
-              onClick={() => onArrangeTables?.({ rows: arrangeRows, columns: arrangeColumns })}
+              onClick={() =>
+                onArrangeTables?.({
+                  rows: arrangeRows,
+                  columns: arrangeColumns,
+                  mode: arrangeMode,
+                  direction: arrangeDirection,
+                  startNumber,
+                  alternateColumns,
+                })
+              }
               disabled={!tableCount}
               className="rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-xs font-semibold text-neutral-800 disabled:opacity-40 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
             >
               {t("Apply Grid")}
             </button>
+          </div>
+          <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-5">
+            <label>
+              <div className="mb-1 text-xs font-semibold text-neutral-600 dark:text-neutral-300">{t("Numbering Mode")}</div>
+              <select
+                value={arrangeMode}
+                onChange={(event) => {
+                  const nextValue = String(event.target.value || "row-based");
+                  setArrangeMode(nextValue);
+                  onTableNumberingChange?.({ mode: nextValue });
+                }}
+                className="w-full rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50"
+              >
+                <option value="row-based">{t("Row based")}</option>
+                <option value="column-based">{t("Column based")}</option>
+              </select>
+            </label>
+            <label>
+              <div className="mb-1 text-xs font-semibold text-neutral-600 dark:text-neutral-300">{t("Direction")}</div>
+              <select
+                value={arrangeDirection}
+                onChange={(event) => {
+                  const nextValue = String(event.target.value || "ltr");
+                  setArrangeDirection(nextValue);
+                  onTableNumberingChange?.({ direction: nextValue });
+                }}
+                className="w-full rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50"
+              >
+                <option value="ltr">{t("Left to right")}</option>
+                <option value="rtl">{t("Right to left")}</option>
+                <option value="ttb">{t("Top to bottom")}</option>
+                <option value="btt">{t("Bottom to top")}</option>
+              </select>
+            </label>
+            <label>
+              <div className="mb-1 text-xs font-semibold text-neutral-600 dark:text-neutral-300">{t("Start Number")}</div>
+              <input
+                type="number"
+                min="1"
+                value={startNumber}
+                onChange={(event) => {
+                  const nextValue = Math.max(1, Number(event.target.value) || 1);
+                  setStartNumber(nextValue);
+                  onTableNumberingChange?.({ startNumber: nextValue });
+                }}
+                className="w-full rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50"
+              />
+            </label>
+            <label>
+              <div className="mb-1 text-xs font-semibold text-neutral-600 dark:text-neutral-300">{t("Table Number Size")}</div>
+              <input
+                type="range"
+                min="0.6"
+                max="1.8"
+                step="0.05"
+                value={arrangeTableNumberSize}
+                onChange={(event) => {
+                  const nextValue = Number(event.target.value) || 1;
+                  setArrangeTableNumberSize(nextValue);
+                  onTableNumberSizeChange?.(nextValue);
+                }}
+                className="w-full"
+              />
+              <div className="mt-1 text-xs font-semibold text-neutral-600 dark:text-neutral-300">
+                {Math.round((Number(arrangeTableNumberSize) || 1) * 100)}%
+              </div>
+            </label>
+            <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 bg-white px-3 py-2.5 text-sm font-semibold text-neutral-700 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-100">
+              <input
+                type="checkbox"
+                checked={alternateColumns}
+                onChange={(event) => {
+                  const nextValue = Boolean(event.target.checked);
+                  setAlternateColumns(nextValue);
+                  onTableNumberingChange?.({ alternateColumns: nextValue });
+                }}
+                className="h-4 w-4 rounded border-neutral-300"
+              />
+              <span>{t("Alternate Columns")}</span>
+            </label>
           </div>
           <div className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
             {t("Example: `5 x 8` arranges tables into 5 rows and 8 columns.")}
@@ -116,15 +242,15 @@ export default function FloorPlanToolbar({
           </div>
           <input
             type="range"
-            min="0"
-            max="48"
+            min={-MAX_TABLE_GAP}
+            max={MAX_TABLE_GAP}
             step="1"
             value={tableGapX}
-            onChange={(event) => onTableSpacingChange?.({ tableGapX: Number(event.target.value) || 0 })}
+            onChange={(event) => onTableSpacingChange?.({ tableGapX: clampTableGap(event.target.value) })}
             className="w-full"
           />
           <div className="mt-1 text-xs font-semibold text-neutral-600 dark:text-neutral-300">
-            {t("-{{value}}px gap", { value: Math.round(tableGapX) })}
+            {formatGapLabel(tableGapX, t)}
           </div>
         </label>
         <label className="block">
@@ -133,19 +259,36 @@ export default function FloorPlanToolbar({
           </div>
           <input
             type="range"
-            min="0"
-            max="48"
+            min={-MAX_TABLE_GAP}
+            max={MAX_TABLE_GAP}
             step="1"
             value={tableGapY}
-            onChange={(event) => onTableSpacingChange?.({ tableGapY: Number(event.target.value) || 0 })}
+            onChange={(event) => onTableSpacingChange?.({ tableGapY: clampTableGap(event.target.value) })}
             className="w-full"
           />
           <div className="mt-1 text-xs font-semibold text-neutral-600 dark:text-neutral-300">
-            {t("-{{value}}px gap", { value: Math.round(tableGapY) })}
+            {formatGapLabel(tableGapY, t)}
           </div>
+        </label>
+        <label className="flex items-center gap-2 rounded-[20px] border border-neutral-200 bg-white/80 px-3 py-3 text-sm font-semibold text-neutral-700 dark:border-neutral-800 dark:bg-neutral-950/70 dark:text-neutral-100 md:col-span-2">
+          <input
+            type="checkbox"
+            checked={Boolean(centerWholeMap)}
+            onChange={(event) => onCenterWholeMapChange?.(Boolean(event.target.checked))}
+            className="h-4 w-4 rounded border-neutral-300"
+          />
+          <span>{t("Center whole floor map")}</span>
         </label>
       </div>
       <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={onUndo}
+          disabled={!canUndo}
+          className="rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-800 disabled:opacity-40 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
+        >
+          {t("Undo")}
+        </button>
         <button
           type="button"
           onClick={onSelectAllTables}

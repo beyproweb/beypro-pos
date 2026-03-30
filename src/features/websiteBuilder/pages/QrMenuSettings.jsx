@@ -13,6 +13,8 @@ import FloorPlanDesigner from "../../floorPlan/components/FloorPlanDesigner";
 import {
   buildGeneratedFloorPlan,
   normalizeFloorPlanLayout,
+  renumberFloorPlanTables,
+  syncFloorPlanLayoutWithTables,
 } from "../../floorPlan/utils/floorPlan";
 
 const extractIdentifierFromQrUrl = (value) => {
@@ -223,7 +225,6 @@ const makeEmptyConcertForm = () => ({
   guest_composition_restriction_rule: "no_restriction",
   guest_composition_validation_message: "",
   guest_composition_disabled_tables: [],
-  floor_plan_layout: null,
   area_allocations: [makeEmptyConcertAreaAllocation()],
   ticket_types: [makeEmptyConcertTicketType()],
 });
@@ -509,14 +510,21 @@ export default function QrMenuSettings() {
 
   const generatedVenueFloorPlan = useMemo(() => buildGeneratedFloorPlan(tables), [tables]);
   const effectiveVenueFloorPlan =
-    normalizeFloorPlanLayout(settings.qr_floor_plan_layout) || generatedVenueFloorPlan;
+    syncFloorPlanLayoutWithTables(settings.qr_floor_plan_layout, tables) || generatedVenueFloorPlan;
 
   const saveFloorPlanLayout = async () => {
     setSavingFloorPlanLayout(true);
     try {
+      const nextFloorPlanLayout = renumberFloorPlanTables(
+        syncFloorPlanLayoutWithTables(settings.qr_floor_plan_layout, tables)
+      );
       const payload = {
-        qr_floor_plan_layout: normalizeFloorPlanLayout(settings.qr_floor_plan_layout),
+        qr_floor_plan_layout: nextFloorPlanLayout,
       };
+      setSettings((prev) => ({
+        ...prev,
+        qr_floor_plan_layout: nextFloorPlanLayout,
+      }));
       await secureFetch("/settings/qr-menu-customization", {
         method: "POST",
         body: JSON.stringify(payload),
@@ -1340,7 +1348,6 @@ async function saveAllCustomization() {
     guest_composition_disabled_tables: normalizeTableNumberList(
       source?.guest_composition_disabled_tables
     ),
-    floor_plan_layout: normalizeFloorPlanLayout(source?.floor_plan_layout),
     area_allocations: (Array.isArray(source?.area_allocations) ? source.area_allocations : [])
       .map((row) => ({
         area_name: String(row?.area_name || "").trim(),
@@ -1465,7 +1472,6 @@ async function saveAllCustomization() {
       guest_composition_disabled_tables: normalizeTableNumberList(
         event.guest_composition_disabled_tables
       ),
-      floor_plan_layout: normalizeFloorPlanLayout(event.floor_plan_layout),
       area_allocations:
         Array.isArray(event.area_allocations) && event.area_allocations.length > 0
           ? event.area_allocations.map((row) => ({
