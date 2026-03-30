@@ -3,6 +3,23 @@ import secureFetch from "../../utils/secureFetch";
 import { useTranslation } from "react-i18next";
 import { saveSetting, useSetting } from "../hooks/useSetting";
 
+const DEFAULT_AREAS = ["Main Hall", "Terrace", "Garden", "Bar", "VIP"];
+
+const normalizeAreaName = (value) => String(value || "").trim();
+
+const dedupeAreas = (values = []) => {
+  const seen = new Set();
+  return values
+    .map(normalizeAreaName)
+    .filter((value) => {
+      if (!value) return false;
+      const key = value.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+};
+
 export default function TablesSettingsTab() {
   const { t } = useTranslation();
 
@@ -16,7 +33,9 @@ export default function TablesSettingsTab() {
   const [tableSettings, setTableSettings] = useState({
     tableLabelText: "",
     showAreas: true,
+    areaNames: DEFAULT_AREAS,
   });
+  const [newAreaName, setNewAreaName] = useState("");
 
   // --- Helpers / Derived data ---
   const activeTables = useMemo(
@@ -33,15 +52,13 @@ export default function TablesSettingsTab() {
     [tables]
   );
 
-  const defaultAreas = ["Main Hall", "Terrace", "Garden", "Bar", "VIP"];
-
   const allAreas = useMemo(() => {
-    const set = new Set(defaultAreas);
+    const set = new Set(dedupeAreas(tableSettings.areaNames?.length ? tableSettings.areaNames : DEFAULT_AREAS));
     (tables || []).forEach((t) => {
       if (t.area) set.add(t.area);
     });
     return Array.from(set);
-  }, [tables]);
+  }, [tableSettings.areaNames, tables]);
 
   const filteredTables = useMemo(() => {
     if (areaFilter === "ALL") return sortedTables;
@@ -91,6 +108,7 @@ export default function TablesSettingsTab() {
   useSetting("tables", setTableSettings, {
     tableLabelText: "",
     showAreas: true,
+    areaNames: DEFAULT_AREAS,
   });
 
   const handleSaveTotal = async () => {
@@ -145,6 +163,7 @@ export default function TablesSettingsTab() {
       const payload = {
         tableLabelText: String(tableSettings.tableLabelText || "").trim(),
         showAreas: !!tableSettings.showAreas,
+        areaNames: dedupeAreas(tableSettings.areaNames?.length ? tableSettings.areaNames : DEFAULT_AREAS),
       };
       await saveSetting("tables", payload);
       setTableSettings((prev) => ({ ...prev, ...payload }));
@@ -160,6 +179,29 @@ export default function TablesSettingsTab() {
 
   // --- UI helpers ---
   const getAreaValue = (tbl) => tbl.area || "Main Hall";
+
+  const addAreaName = () => {
+    const normalized = normalizeAreaName(newAreaName);
+    if (!normalized) return;
+    setTableSettings((prev) => ({
+      ...prev,
+      areaNames: dedupeAreas([...(prev.areaNames || DEFAULT_AREAS), normalized]),
+    }));
+    setNewAreaName("");
+  };
+
+  const removeAreaName = (areaToRemove) => {
+    setTableSettings((prev) => ({
+      ...prev,
+      areaNames: dedupeAreas((prev.areaNames || DEFAULT_AREAS).filter((area) => area !== areaToRemove)),
+    }));
+    if (areaFilter === areaToRemove) {
+      setAreaFilter("ALL");
+    }
+  };
+
+  const isAreaInUse = (areaName) =>
+    tables.some((table) => normalizeAreaName(table.area || "Main Hall") === normalizeAreaName(areaName));
 
   const handleQuickSeats = (tbl, seats) => {
     updateOne(tbl.number, { seats });
@@ -309,6 +351,68 @@ export default function TablesSettingsTab() {
             </button>
           </div>
         </div>
+        <div className="mb-3 rounded-2xl border border-gray-200 bg-gray-50/80 p-3">
+          <label className="block text-xs font-semibold mb-1 text-gray-600">
+            {t("Custom area names")}
+          </label>
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+            <div className="flex flex-1 flex-col gap-2 sm:flex-row">
+                <input
+                  type="text"
+                  value={newAreaName}
+                  onChange={(e) => setNewAreaName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addAreaName();
+                    }
+                  }}
+                  placeholder={t("e.g. Window, Garden, Pool, VIP Corner")}
+                  className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                />
+                <button
+                  type="button"
+                  onClick={addAreaName}
+                  className="shrink-0 rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-900"
+                >
+                  {t("Add Area")}
+                </button>
+            </div>
+            <button
+              type="button"
+              onClick={handleSaveTableSettings}
+              disabled={saving}
+              className="shrink-0 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {saving ? t("Saving...") : t("Save Areas")}
+            </button>
+          </div>
+          <p className="mt-2 text-[11px] text-gray-400">
+            {t("Add the area names you want to use in venue layout and table assignment.")}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {allAreas.map((area) => {
+              const inUse = isAreaInUse(area);
+              return (
+                <span
+                  key={area}
+                  className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm"
+                >
+                  <span>{area}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeAreaName(area)}
+                    disabled={inUse}
+                    className="text-gray-400 hover:text-red-600 disabled:cursor-not-allowed disabled:text-gray-300"
+                    title={inUse ? t("Area is assigned to a table") : t("Remove area")}
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        </div>
         <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => setAreaFilter("ALL")}
@@ -331,7 +435,7 @@ export default function TablesSettingsTab() {
               }`}
             >
               {area === "Main Hall" ? "🏠" : area === "Terrace" ? "🌤️" : area === "Garden" ? "🌿" : area === "Bar" ? "🍸" : area === "VIP" ? "⭐" : "📍"}{" "}
-              {t(area)}
+              {area}
             </button>
           ))}
         </div>
@@ -476,7 +580,7 @@ export default function TablesSettingsTab() {
                     >
                       {allAreas.map((a) => (
                         <option key={a} value={a}>
-                          {t(a)}
+                          {a}
                         </option>
                       ))}
                     </select>

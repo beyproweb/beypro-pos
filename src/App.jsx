@@ -70,6 +70,8 @@ const SETTINGS_TAB_PERMISSIONS = {
   localization: "settings-localization",
   subscription: "settings-subscription",
   payments: "settings-payments",
+  tables: "settings-tables",
+  transactions: "settings-transactions",
   register: "settings-register",
   integrations: "settings-integrations",
   inventory: "settings-inventory",
