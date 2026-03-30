@@ -7,13 +7,20 @@ export default function TableDetailsSheet({
   onClose,
   onConfirm,
   confirmDisabled = false,
-  confirmLabel = "Select table",
+  confirmLabel,
   embedded = false,
 }) {
   const { t } = useTranslation();
   if (!tableNode) return null;
   const state = tableNode.state || {};
   const areaLabel = state.zone || tableNode.zone || t("Main floor");
+  const resolvedConfirmLabel = confirmLabel || t("Select table");
+  const tableNumber = Number(tableNode.linked_table_number || tableNode.table_number || 0);
+  const rawName = String(tableNode.displayName || "").trim();
+  const resolvedTableTitle =
+    tableNumber > 0 && (!rawName || rawName === `Table ${tableNumber}`)
+      ? t("Table {{count}}", { count: tableNumber })
+      : rawName || t("Table");
   return (
     <div
       className={[
@@ -26,7 +33,7 @@ export default function TableDetailsSheet({
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <div className="flex flex-wrap items-center gap-2 text-base font-semibold text-neutral-900 sm:text-lg dark:text-neutral-50">
-              <span>{tableNode.displayName}</span>
+              <span>{resolvedTableTitle}</span>
               <span className="rounded-full border border-neutral-200 bg-neutral-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
                 {areaLabel}
               </span>
@@ -63,7 +70,7 @@ export default function TableDetailsSheet({
           disabled={confirmDisabled}
           className="mt-4 w-full rounded-2xl bg-neutral-900 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-neutral-950"
         >
-          {confirmLabel}
+          {resolvedConfirmLabel}
         </button>
       </div>
     </div>

@@ -11,6 +11,9 @@ const DEFAULT_CANVAS = {
 const MAX_TABLE_GAP = 72;
 const MIN_TABLE_NUMBER_SIZE = 0.6;
 const MAX_TABLE_NUMBER_SIZE = 1.8;
+const MAX_MAP_OFFSET = 2400;
+const MIN_MAP_SCALE = 0.6;
+const MAX_MAP_SCALE = 2.4;
 
 function clampTableGap(value) {
   return Math.max(-MAX_TABLE_GAP, Math.min(MAX_TABLE_GAP, asNumber(value, 0)));
@@ -24,6 +27,41 @@ export function normalizeFloorPlanTableNumberSize(value, fallback = 1) {
 export function getFloorPlanTableNumberSize(layout = null, fallback = 1) {
   return normalizeFloorPlanTableNumberSize(
     layout?.metadata?.table_number_size ?? layout?.metadata?.tableNumberSize,
+    fallback
+  );
+}
+
+export function normalizeFloorPlanMapOffset(value, fallback = 0) {
+  const parsed = Math.round(asNumber(value, fallback));
+  return Math.max(-MAX_MAP_OFFSET, Math.min(MAX_MAP_OFFSET, parsed));
+}
+
+export function getFloorPlanMapOffset(layout = null, axis = "x", fallback = 0) {
+  if (String(axis).toLowerCase() === "y") {
+    return normalizeFloorPlanMapOffset(
+      layout?.metadata?.map_offset_y ?? layout?.metadata?.mapOffsetY,
+      fallback
+    );
+  }
+
+  return normalizeFloorPlanMapOffset(
+    layout?.metadata?.map_offset_x ?? layout?.metadata?.mapOffsetX,
+    fallback
+  );
+}
+
+export function isFloorPlanLayoutLocked(layout = null) {
+  return Boolean(layout?.metadata?.layout_locked ?? layout?.metadata?.layoutLocked);
+}
+
+export function normalizeFloorPlanMapScale(value, fallback = 1) {
+  const parsed = asNumber(value, fallback);
+  return Math.min(MAX_MAP_SCALE, Math.max(MIN_MAP_SCALE, parsed));
+}
+
+export function getFloorPlanMapScale(layout = null, fallback = 1) {
+  return normalizeFloorPlanMapScale(
+    layout?.metadata?.map_scale ?? layout?.metadata?.mapScale,
     fallback
   );
 }
@@ -523,6 +561,10 @@ export function normalizeFloorPlanLayout(layout) {
       ? { ...layout.metadata }
       : {};
   metadata.table_number_size = getFloorPlanTableNumberSize({ metadata }, 1);
+  metadata.layout_locked = isFloorPlanLayoutLocked({ metadata });
+  metadata.map_offset_x = getFloorPlanMapOffset({ metadata }, "x", 0);
+  metadata.map_offset_y = getFloorPlanMapOffset({ metadata }, "y", 0);
+  metadata.map_scale = getFloorPlanMapScale({ metadata }, 1);
   return trimFloorPlanLayout({
     id: asText(layout.id, "default-floor-plan"),
     name: asText(layout.name, "Floor Plan"),

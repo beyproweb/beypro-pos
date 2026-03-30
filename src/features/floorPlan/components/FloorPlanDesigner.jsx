@@ -9,8 +9,13 @@ import {
   buildGeneratedFloorPlan,
   buildFloorPlanZoneGroups,
   createFloorPlanId,
+  getFloorPlanMapOffset,
+  getFloorPlanMapScale,
   getFloorPlanTableNumberSize,
   getFloorPlanLinkedTableNumber,
+  isFloorPlanLayoutLocked,
+  normalizeFloorPlanMapOffset,
+  normalizeFloorPlanMapScale,
   normalizeFloorPlanLayout,
   renumberFloorPlanTables,
   resolveFloorPlanCanvas,
@@ -228,6 +233,30 @@ export default function FloorPlanDesigner({
     () => getFloorPlanTableNumberSize(normalizedValue, 1),
     [normalizedValue]
   );
+  const layoutLocked = React.useMemo(
+    () => isFloorPlanLayoutLocked(normalizedValue),
+    [normalizedValue]
+  );
+  const mapOffsetX = React.useMemo(
+    () => getFloorPlanMapOffset(normalizedValue, "x", 0),
+    [normalizedValue]
+  );
+  const mapOffsetY = React.useMemo(
+    () => getFloorPlanMapOffset(normalizedValue, "y", 0),
+    [normalizedValue]
+  );
+  const mapScale = React.useMemo(
+    () => getFloorPlanMapScale(normalizedValue, 1),
+    [normalizedValue]
+  );
+  const canvasMetrics = React.useMemo(
+    () => resolveFloorPlanCanvas(normalizedValue?.canvas),
+    [normalizedValue?.canvas]
+  );
+  const mapNudgeStep = React.useMemo(
+    () => Math.max(12, Math.round(Math.min(canvasMetrics.cellSize, canvasMetrics.rowHeight) / 4)),
+    [canvasMetrics.cellSize, canvasMetrics.rowHeight]
+  );
 
   const applyLayout = React.useCallback(
     (nextLayout, { recordHistory = true } = {}) => {
@@ -343,6 +372,90 @@ export default function FloorPlanDesigner({
       );
     },
     [applyLayout, normalizedValue]
+  );
+
+  const updateLayoutLock = React.useCallback(
+    (enabled) => {
+      applyLayout(
+        {
+          ...normalizedValue,
+          metadata: {
+            ...(normalizedValue.metadata || {}),
+            layout_locked: Boolean(enabled),
+          },
+        },
+        { recordHistory: false }
+      );
+    },
+    [applyLayout, normalizedValue]
+  );
+
+  const updateWholeLayoutScale = React.useCallback(
+    (value) => {
+      applyLayout(
+        {
+          ...normalizedValue,
+          metadata: {
+            ...(normalizedValue.metadata || {}),
+            map_scale: normalizeFloorPlanMapScale(value, mapScale),
+          },
+        },
+        { recordHistory: false }
+      );
+    },
+    [applyLayout, mapScale, normalizedValue]
+  );
+
+  const moveWholeLayout = React.useCallback(
+    (direction) => {
+      const delta = {
+        left: { x: -mapNudgeStep, y: 0 },
+        right: { x: mapNudgeStep, y: 0 },
+        up: { x: 0, y: -mapNudgeStep },
+        down: { x: 0, y: mapNudgeStep },
+      }[direction];
+      if (!delta) return;
+
+      commit({
+        ...normalizedValue,
+        metadata: {
+          ...(normalizedValue.metadata || {}),
+          map_offset_x: normalizeFloorPlanMapOffset(mapOffsetX + delta.x, mapOffsetX),
+          map_offset_y: normalizeFloorPlanMapOffset(mapOffsetY + delta.y, mapOffsetY),
+        },
+      });
+    },
+    [commit, mapNudgeStep, mapOffsetX, mapOffsetY, normalizedValue]
+  );
+
+  const resetWholeLayoutPosition = React.useCallback(() => {
+    if (!mapOffsetX && !mapOffsetY) return;
+    commit({
+      ...normalizedValue,
+      metadata: {
+        ...(normalizedValue.metadata || {}),
+        map_offset_x: 0,
+        map_offset_y: 0,
+      },
+    });
+  }, [commit, mapOffsetX, mapOffsetY, normalizedValue]);
+
+  const updateWholeLayoutPosition = React.useCallback(
+    (nextOffsetX, nextOffsetY) => {
+      const resolvedOffsetX = normalizeFloorPlanMapOffset(nextOffsetX, mapOffsetX);
+      const resolvedOffsetY = normalizeFloorPlanMapOffset(nextOffsetY, mapOffsetY);
+      if (resolvedOffsetX === mapOffsetX && resolvedOffsetY === mapOffsetY) return;
+
+      commit({
+        ...normalizedValue,
+        metadata: {
+          ...(normalizedValue.metadata || {}),
+          map_offset_x: resolvedOffsetX,
+          map_offset_y: resolvedOffsetY,
+        },
+      });
+    },
+    [commit, mapOffsetX, mapOffsetY, normalizedValue]
   );
 
   const updateTableNumberSize = React.useCallback(
@@ -596,6 +709,10 @@ export default function FloorPlanDesigner({
         onTableNumberSizeChange={updateTableNumberSize}
         onTableSpacingChange={updateCanvas}
         onCenterWholeMapChange={updateCenterWholeMap}
+        onLayoutLockChange={updateLayoutLock}
+        onWholeLayoutScaleChange={updateWholeLayoutScale}
+        onMoveWholeLayout={moveWholeLayout}
+        onResetWholeLayoutPosition={resetWholeLayoutPosition}
         onUndo={undoLayoutChange}
         onSelectAllTables={selectAllTables}
         onClearSelection={clearSelection}
@@ -616,6 +733,11 @@ export default function FloorPlanDesigner({
         tableNumbering={tableNumbering}
         tableNumberSize={tableNumberSize}
         centerWholeMap={centerWholeMap}
+        layoutLocked={layoutLocked}
+        mapOffsetX={mapOffsetX}
+        mapOffsetY={mapOffsetY}
+        mapScale={mapScale}
+        mapNudgeStep={mapNudgeStep}
       />
 
       {previewMode ? (
@@ -641,6 +763,7 @@ export default function FloorPlanDesigner({
                   onSelect={handleCanvasSelect}
                   onElementChange={updateElement}
                   onElementsMove={moveSelectedElements}
+                  onLayoutOffsetChange={updateWholeLayoutPosition}
                 />
               </div>
               <div className="xl:sticky xl:top-4">

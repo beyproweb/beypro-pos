@@ -34,6 +34,10 @@ export default function FloorPlanToolbar({
   onTableNumberSizeChange,
   onTableSpacingChange,
   onCenterWholeMapChange,
+  onLayoutLockChange,
+  onWholeLayoutScaleChange,
+  onMoveWholeLayout,
+  onResetWholeLayoutPosition,
   onUndo,
   onSelectAllTables,
   onClearSelection,
@@ -54,6 +58,11 @@ export default function FloorPlanToolbar({
   tableNumbering = null,
   tableNumberSize = 1,
   centerWholeMap = false,
+  layoutLocked = false,
+  mapOffsetX = 0,
+  mapOffsetY = 0,
+  mapScale = 1,
+  mapNudgeStep = 24,
 }) {
   const { t } = useTranslation();
   const tableGapX = clampTableGap(canvas?.tableGapX || 0);
@@ -65,6 +74,7 @@ export default function FloorPlanToolbar({
   const [startNumber, setStartNumber] = React.useState(Math.max(1, Number(tableNumbering?.startNumber || 1)));
   const [alternateColumns, setAlternateColumns] = React.useState(Boolean(tableNumbering?.alternateColumns));
   const [arrangeTableNumberSize, setArrangeTableNumberSize] = React.useState(Number(tableNumberSize) || 1);
+  const [wholeLayoutScale, setWholeLayoutScale] = React.useState(Number(mapScale) || 1);
 
   React.useEffect(() => {
     setArrangeRows(Math.max(1, Number(canvas?.rows || 4)));
@@ -81,6 +91,10 @@ export default function FloorPlanToolbar({
   React.useEffect(() => {
     setArrangeTableNumberSize(Number(tableNumberSize) || 1);
   }, [tableNumberSize]);
+
+  React.useEffect(() => {
+    setWholeLayoutScale(Number(mapScale) || 1);
+  }, [mapScale]);
 
   return (
     <div className="space-y-3 rounded-[28px] border border-neutral-200 bg-white/90 p-4 dark:border-neutral-800 dark:bg-neutral-950/80">
@@ -279,6 +293,95 @@ export default function FloorPlanToolbar({
           />
           <span>{t("Center whole floor map")}</span>
         </label>
+        <div className="rounded-[20px] border border-neutral-200 bg-white/80 p-3 dark:border-neutral-800 dark:bg-neutral-950/70 md:col-span-2">
+          <label className="flex items-center gap-2 text-sm font-semibold text-neutral-700 dark:text-neutral-100">
+            <input
+              type="checkbox"
+              checked={Boolean(layoutLocked)}
+              onChange={(event) => onLayoutLockChange?.(Boolean(event.target.checked))}
+              className="h-4 w-4 rounded border-neutral-300"
+            />
+            <span>{t("Lock floor plan")}</span>
+          </label>
+          <div className="mt-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500 dark:text-neutral-400">
+            {t("Move Whole Layout")}
+          </div>
+          <label className="mt-3 block">
+            <div className="mb-1 text-xs font-semibold text-neutral-600 dark:text-neutral-300">
+              {t("Full Plan Size")}
+            </div>
+            <input
+              type="range"
+              min="0.6"
+              max="2.4"
+              step="0.05"
+              value={wholeLayoutScale}
+              onChange={(event) => {
+                const nextValue = Number(event.target.value) || 1;
+                setWholeLayoutScale(nextValue);
+                onWholeLayoutScaleChange?.(nextValue);
+              }}
+              disabled={!layoutLocked}
+              className="w-full disabled:opacity-40"
+            />
+            <div className="mt-1 text-xs font-semibold text-neutral-600 dark:text-neutral-300">
+              {Math.round((Number(wholeLayoutScale) || 1) * 100)}%
+            </div>
+          </label>
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            <div />
+            <button
+              type="button"
+              onClick={() => onMoveWholeLayout?.("up")}
+              disabled={!layoutLocked}
+              className="rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-800 disabled:opacity-40 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
+            >
+              {t("Up")}
+            </button>
+            <div />
+            <button
+              type="button"
+              onClick={() => onMoveWholeLayout?.("left")}
+              disabled={!layoutLocked}
+              className="rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-800 disabled:opacity-40 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
+            >
+              {t("Left")}
+            </button>
+            <button
+              type="button"
+              onClick={onResetWholeLayoutPosition}
+              disabled={!layoutLocked || (!mapOffsetX && !mapOffsetY)}
+              className="rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-800 disabled:opacity-40 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
+            >
+              {t("Reset")}
+            </button>
+            <button
+              type="button"
+              onClick={() => onMoveWholeLayout?.("right")}
+              disabled={!layoutLocked}
+              className="rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-800 disabled:opacity-40 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
+            >
+              {t("Right")}
+            </button>
+            <div />
+            <button
+              type="button"
+              onClick={() => onMoveWholeLayout?.("down")}
+              disabled={!layoutLocked}
+              className="rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-800 disabled:opacity-40 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
+            >
+              {t("Down")}
+            </button>
+            <div />
+          </div>
+          <div className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+            {t("Current offset: X {{x}}px, Y {{y}}px. Step {{step}}px.", {
+              x: Math.round(Number(mapOffsetX) || 0),
+              y: Math.round(Number(mapOffsetY) || 0),
+              step: Math.round(Number(mapNudgeStep) || 0),
+            })}
+          </div>
+        </div>
       </div>
       <div className="flex flex-wrap gap-2">
         <button

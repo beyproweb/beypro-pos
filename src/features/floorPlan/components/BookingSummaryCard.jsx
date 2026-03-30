@@ -1,6 +1,8 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 
 export default function BookingSummaryCard({ items = [], accentColor = "#111827" }) {
+  const { t } = useTranslation();
   const visibleItems = (Array.isArray(items) ? items : []).filter((item) => item?.value);
   if (!visibleItems.length) return null;
 
@@ -8,7 +10,7 @@ export default function BookingSummaryCard({ items = [], accentColor = "#111827"
     <div className="rounded-[28px] border border-neutral-200 bg-white/90 p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950/80">
       <div className="flex items-center gap-2">
         <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: accentColor }} />
-        <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">Booking Summary</div>
+        <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">{t("Booking Summary")}</div>
       </div>
       <div className="mt-4 space-y-3">
         {visibleItems.map((item) => (

@@ -74,9 +74,21 @@ function FilterPill({
   );
 }
 
+function translateFloorPlanReason(reason, t) {
+  const normalizedReason = String(reason || "").trim();
+  if (!normalizedReason) return "";
+
+  const capacityMatch = normalizedReason.match(/^Capacity\s+(\d+)$/i);
+  if (capacityMatch) {
+    return t("Capacity {{count}}", { count: Number(capacityMatch[1]) || 0 });
+  }
+
+  return t(normalizedReason);
+}
+
 export default function FloorPlanPickerModal({
   open = false,
-  title = "Select Table",
+  title,
   subtitle = "",
   layout,
   tables = [],
@@ -87,6 +99,7 @@ export default function FloorPlanPickerModal({
   onConfirm,
 }) {
   const { t } = useTranslation();
+  const resolvedTitle = title || t("Select Table");
   const elements = React.useMemo(
     () => buildFloorPlanElements(layout, tables, tableStates),
     [layout, tableStates, tables]
@@ -137,19 +150,6 @@ export default function FloorPlanPickerModal({
       }),
     [elements, filteredTables]
   );
-  const summaryCounts = React.useMemo(
-    () =>
-      STATUS_FILTER_KEYS.reduce((acc, key) => {
-        acc[key] = tableElements.filter((element) => {
-          const sameZone = selectedZone === ALL_ZONES_KEY
-            ? true
-            : String(element.zone || "Main Hall").trim() === selectedZone;
-          return sameZone && String(element.status || "available").toLowerCase() === key;
-        }).length;
-        return acc;
-      }, {}),
-    [selectedZone, tableElements]
-  );
 
   React.useEffect(() => {
     if (!open) {
@@ -194,7 +194,7 @@ export default function FloorPlanPickerModal({
               <X className="h-5 w-5" />
             </button>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[15px] font-semibold text-neutral-950 dark:text-white">{title}</div>
+              <div className="truncate text-[15px] font-semibold text-neutral-950 dark:text-white">{resolvedTitle}</div>
               {subtitle ? (
                 <div className="truncate text-xs text-neutral-500 dark:text-neutral-400">{subtitle}</div>
               ) : null}
@@ -236,20 +236,14 @@ export default function FloorPlanPickerModal({
                 })}
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div className="text-xs font-medium leading-relaxed text-neutral-500 dark:text-neutral-400">
-                  {t("{{available}} Available", { available: summaryCounts.available || 0 })} • {t("{{reserved}} Reserved", { reserved: summaryCounts.reserved || 0 })} • {t("{{occupied}} Occupied", { occupied: summaryCounts.occupied || 0 })}
-                </div>
                 <div className="w-full sm:max-w-[260px]">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500 dark:text-neutral-400">
-                    {t("Section")}
-                  </div>
                   <select
                     value={selectedZone}
                     onChange={(event) => setSelectedZone(event.target.value)}
                     className="w-full rounded-2xl border border-neutral-200 bg-white px-3 py-2.5 text-sm font-semibold text-neutral-900 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-50"
                   >
                     <option value={ALL_ZONES_KEY}>
-                      {`${t("All")} (${statusFilteredTables.length})`}
+                      {t("Select Areas ({{count}})", { count: statusFilteredTables.length })}
                     </option>
                     {zoneOptions.map((zone) => (
                       <option key={zone.key} value={zone.key}>
@@ -298,7 +292,11 @@ export default function FloorPlanPickerModal({
               setActiveTable(null);
             }}
             confirmDisabled={!canConfirm}
-            confirmLabel={canConfirm ? t("Confirm table") : activeTable?.state?.reason || t("Unavailable")}
+            confirmLabel={
+              canConfirm
+                ? t("Confirm table")
+                : translateFloorPlanReason(activeTable?.state?.reason, t) || t("Unavailable")
+            }
           />
         </div>
       </div>

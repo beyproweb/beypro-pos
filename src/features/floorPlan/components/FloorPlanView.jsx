@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   getFloorPlanElementFrame,
   getFloorPlanLinkedTableNumber,
+  getFloorPlanMapOffset,
   getFloorPlanRenderSize,
   getFloorPlanStatusStyle,
   getFloorPlanTableNumberSize,
@@ -41,6 +42,8 @@ export default function FloorPlanView({
   if (!layout) return null;
   const { t } = useTranslation();
   const centerWholeMap = Boolean(layout?.metadata?.center_whole_map ?? layout?.metadata?.centerWholeMap);
+  const mapOffsetX = getFloorPlanMapOffset(layout, "x", 0);
+  const mapOffsetY = getFloorPlanMapOffset(layout, "y", 0);
   const tableNumberSize = getFloorPlanTableNumberSize(layout, 1);
   const resolvedViewportPadding = React.useMemo(() => {
     if (viewportPadding && typeof viewportPadding === "object") {
@@ -252,8 +255,8 @@ export default function FloorPlanView({
                 ? String(Number(element.table_number))
                 : t(element.displayName || "");
             const wrapperStyle = {
-              left: `${((isTable ? frame.left : nonTableLeft) - viewBounds.minLeft + contentOffsetX) * scale}px`,
-              top: `${((isTable ? frame.top : nonTableTop) - viewBounds.minTop + contentOffsetY) * scale}px`,
+              left: `${((isTable ? frame.left : nonTableLeft) - viewBounds.minLeft + contentOffsetX + mapOffsetX) * scale}px`,
+              top: `${((isTable ? frame.top : nonTableTop) - viewBounds.minTop + contentOffsetY + mapOffsetY) * scale}px`,
               width: `${frame.width * scale}px`,
               height: `${frame.height * scale}px`,
               transform: isTable
