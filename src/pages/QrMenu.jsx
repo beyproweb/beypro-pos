@@ -8549,35 +8549,31 @@ export default function QrMenu() {
       )
     : null;
   const handleHeaderStatusShortcutToggle = useCallback(() => {
-    if (showStatus) {
+    onOpenCartFromNav();
+  }, [onOpenCartFromNav]);
+
+  const openOrderStatus = useCallback(
+    (requestedOrderId = null) => {
+      const resolvedOrderId = Number(
+        requestedOrderId || orderId || activeOrder?.id || storage.getItem("qr_active_order_id") || 0
+      );
+
+      if (!Number.isFinite(resolvedOrderId) || resolvedOrderId <= 0) {
+        return false;
+      }
+
+      window.dispatchEvent(new Event("qr:cart-close"));
       setShowStatus(false);
       storage.setItem("qr_show_status", "0");
-      return;
-    }
-
-    const activeId = Number(orderId || activeOrder?.id || storage.getItem("qr_active_order_id") || 0);
-    if (!Number.isFinite(activeId) || activeId <= 0) {
-      onOpenCartFromNav();
-      return;
-    }
-    if (!orderId) {
-      setOrderId(activeId);
-    }
-    setConcertBookingConfirmLabel(false);
-    setOrderStatus("success");
-    setShowStatus(true);
-    storage.setItem("qr_show_status", "1");
-  }, [
-    activeOrder?.id,
-    orderId,
-    setConcertBookingConfirmLabel,
-    setOrderId,
-    setOrderStatus,
-    setShowStatus,
-    showStatus,
-    onOpenCartFromNav,
-    storage,
-  ]);
+      setOrderId(resolvedOrderId);
+      setConcertBookingConfirmLabel(false);
+      setOrderStatus("success");
+      setShowStatus(true);
+      storage.setItem("qr_show_status", "1");
+      return true;
+    },
+    [activeOrder?.id, orderId, setConcertBookingConfirmLabel, setOrderId, setOrderStatus, setShowStatus, storage]
+  );
 
   useEffect(() => {
     if (!pendingNonTableConcertReorderLock) return;
@@ -9345,6 +9341,8 @@ export default function QrMenu() {
                   appendIdentifier={appendIdentifier}
                   isDark={isQrHeaderDark}
                   initialView={appHeaderDrawerInitialView}
+                  hasOrderStatus={hasStatusShortcutOrder}
+                  onOpenOrderStatus={() => openOrderStatus()}
                 />
               </>
             ) : null}
@@ -9365,23 +9363,14 @@ export default function QrMenu() {
                       t={t}
                       hasActiveOrder={hasActiveOrder}
                       orderScreenStatus={orderScreenStatus}
-                      onShowStatus={() => {
-                        window.dispatchEvent(new Event("qr:cart-close"));
-                        const savedId = Number(storage.getItem("qr_active_order_id")) || null;
-                        if (!orderId && savedId) {
-                          setOrderId(savedId);
-                        }
-                        setConcertBookingConfirmLabel(false);
-                        setOrderStatus("success");
-                        setShowStatus(true);
-                        storage.setItem("qr_show_status", "1");
-                      }}
+                      onShowStatus={openOrderStatus}
                       isOrderStatusOpen={showStatus}
                       onOpenCart={() => {
                         setShowStatus(false);
                         storage.setItem("qr_show_status", "0");
                       }}
                       onEditItem={handleEditCartItem}
+                      appendIdentifier={appendIdentifier}
                       layout="panel"
                       storage={storage}
                       voiceListening={qrVoiceListening}
@@ -9429,23 +9418,14 @@ export default function QrMenu() {
           t={t}
           hasActiveOrder={hasActiveOrder}
           orderScreenStatus={orderScreenStatus}
-          onShowStatus={() => {
-            window.dispatchEvent(new Event("qr:cart-close"));
-            const savedId = Number(storage.getItem("qr_active_order_id")) || null;
-            if (!orderId && savedId) {
-              setOrderId(savedId);
-            }
-            setConcertBookingConfirmLabel(false);
-            setOrderStatus("success");
-            setShowStatus(true);
-            storage.setItem("qr_show_status", "1");
-          }}
+          onShowStatus={openOrderStatus}
           isOrderStatusOpen={showStatus}
           onOpenCart={() => {
             setShowStatus(false);
             storage.setItem("qr_show_status", "0");
           }}
           onEditItem={handleEditCartItem}
+          appendIdentifier={appendIdentifier}
           storage={storage}
           voiceListening={qrVoiceListening}
           hideFloatingButton={true}

@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCurrency } from "../../../../context/CurrencyContext";
 import { usePaymentMethods } from "../../../../hooks/usePaymentMethods";
+import secureFetch from "../../../../utils/secureFetch";
+import useCustomerAuth from "../../header-drawer/hooks/useCustomerAuth";
+import { fetchCustomerOrders, splitOrdersByState } from "../../header-drawer/services/customerService";
 
 const toArray = (value) => {
   if (Array.isArray(value)) return value;
@@ -24,6 +27,7 @@ const CartModal = React.memo(function CartModal({
   isOrderStatusOpen,
   onOpenCart,
   onEditItem,
+  appendIdentifier,
   layout = "drawer",
   storage,
   voiceListening = false,
@@ -33,6 +37,10 @@ const CartModal = React.memo(function CartModal({
   const [show, setShow] = useState(isPanel);
   const { formatCurrency } = useCurrency();
   const paymentMethods = usePaymentMethods();
+  const { customer, isLoggedIn } = useCustomerAuth(storage);
+  const [customerOrders, setCustomerOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState("");
 
   const cartArray = toArray(cart);
   const cartLength = cartArray.length;
@@ -96,6 +104,42 @@ const CartModal = React.memo(function CartModal({
     [setPaymentMethod]
   );
 
+  const fetcher = useCallback(
+    async (path) => {
+      const withIdentifier = typeof appendIdentifier === "function" ? appendIdentifier(path) : path;
+      return secureFetch(withIdentifier);
+    },
+    [appendIdentifier]
+  );
+
+  const loadCustomerOrders = useCallback(async () => {
+    if (!isLoggedIn || !customer) {
+      setCustomerOrders([]);
+      setOrdersError("");
+      return;
+    }
+
+    setOrdersLoading(true);
+    setOrdersError("");
+    try {
+      const next = await fetchCustomerOrders({ customer, fetcher, storage });
+      setCustomerOrders(next);
+    } catch (err) {
+      setCustomerOrders([]);
+      setOrdersError(err?.message || "Failed to load orders");
+    } finally {
+      setOrdersLoading(false);
+    }
+  }, [customer, fetcher, isLoggedIn, storage]);
+
+  const { active: activeOrders, past: pastOrders } = useMemo(
+    () => splitOrdersByState(customerOrders),
+    [customerOrders]
+  );
+  const visiblePastOrders = pastOrders.slice(0, 3);
+  const hasTrackedOrders =
+    hasActiveOrder || activeOrders.length > 0 || visiblePastOrders.length > 0 || ordersLoading;
+
   const handleCartSubmit = useCallback(() => {
     if (!paymentMethod) {
       setPaymentPrompt(true);
@@ -152,6 +196,11 @@ const CartModal = React.memo(function CartModal({
     if (!paymentMethod) return;
     setPaymentPrompt(false);
   }, [paymentMethod]);
+
+  useEffect(() => {
+    if (!(isPanel || show)) return;
+    loadCustomerOrders();
+  }, [isPanel, loadCustomerOrders, show]);
 
   useEffect(() => {
     if (isPanel || typeof window === "undefined") return undefined;
@@ -235,10 +284,22 @@ const CartModal = React.memo(function CartModal({
       suppressStatusReleaseTimerRef.current = null;
     }
     setShow(false);
-    if (hasActiveOrder && !hasNewItems) {
-      onShowStatus?.();
-    }
-  }, [hasActiveOrder, hasNewItems, onShowStatus]);
+  }, []);
+
+  const handleOpenStatus = useCallback(
+    (selectedOrderId = null) => {
+      suppressStatusAutoCloseRef.current = false;
+      if (suppressStatusReleaseTimerRef.current) {
+        window.clearTimeout(suppressStatusReleaseTimerRef.current);
+        suppressStatusReleaseTimerRef.current = null;
+      }
+      if (!isPanel) {
+        setShow(false);
+      }
+      onShowStatus?.(selectedOrderId);
+    },
+    [isPanel, onShowStatus]
+  );
 
   const goToProductPage = useCallback(() => {
     suppressStatusAutoCloseRef.current = false;
@@ -250,6 +311,48 @@ const CartModal = React.memo(function CartModal({
     onOpenCart?.();
     if (!isPanel) setShow(false);
   }, [isPanel, onOpenCart, storage]);
+
+  const renderOrderCard = (order, options = {}) => {
+    const createdAtLabel = order?.createdAt ? new Date(order.createdAt).toLocaleString() : null;
+    const statusText = t(order?.status || "pending");
+    const actionLabel = options.actionLabel || t("Order Status");
+    const totalValue = Number(order?.total || 0);
+
+    return (
+      <div
+        key={`${options.section || "order"}-${order?.id || createdAtLabel || statusText}`}
+        className="rounded-xl border border-neutral-200 bg-white px-4 py-3"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-neutral-900">
+                #{order?.id || t("Current")}
+              </span>
+              <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600">
+                {statusText}
+              </span>
+            </div>
+            <div className="mt-1 text-xs text-neutral-500">
+              {createdAtLabel || t("Live order")} • {Number(order?.itemCount || 0)} {t("items")}
+            </div>
+          </div>
+          <div className="shrink-0 text-right">
+            <div className="text-sm font-semibold text-neutral-900">
+              {totalValue > 0 ? formatCurrency(totalValue) : "-"}
+            </div>
+            <button
+              type="button"
+              onClick={() => handleOpenStatus(order?.id || null)}
+              className="mt-2 rounded-full border border-neutral-200 px-3 py-1 text-[11px] font-semibold text-neutral-700 transition hover:bg-neutral-50"
+            >
+              {actionLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const cartPanel = (
     <div
@@ -272,6 +375,92 @@ const CartModal = React.memo(function CartModal({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+        {hasTrackedOrders || isLoggedIn ? (
+          <div className="mb-5 rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">
+                  {t("Order Status")}
+                </div>
+                <div className="mt-1 text-sm text-neutral-600">
+                  {t("Track pending orders and keep reordering from the same cart.")}
+                </div>
+              </div>
+              {isLoggedIn ? (
+                <button
+                  type="button"
+                  onClick={loadCustomerOrders}
+                  className="rounded-full border border-neutral-200 bg-white px-3 py-1 text-[11px] font-semibold text-neutral-700 transition hover:bg-neutral-50"
+                >
+                  {t("Refresh")}
+                </button>
+              ) : null}
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {ordersLoading ? (
+                <div className="text-sm text-neutral-500">{t("Loading orders...")}</div>
+              ) : null}
+
+              {ordersError ? (
+                <div className="text-xs font-medium text-rose-600">{t(ordersError)}</div>
+              ) : null}
+
+              {activeOrders.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
+                    {t("Active Orders")}
+                  </div>
+                  {activeOrders.map((order) => renderOrderCard(order, { section: "active" }))}
+                </div>
+              ) : null}
+
+              {hasActiveOrder && activeOrders.length === 0 ? (
+                <div className="space-y-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
+                    {t("Current Order")}
+                  </div>
+                  {renderOrderCard(
+                    {
+                      id: null,
+                      status: normalizedOrderStatus || "pending",
+                      total,
+                      createdAt: new Date().toISOString(),
+                      itemCount: prevItems.length,
+                    },
+                    { section: "current" }
+                  )}
+                </div>
+              ) : null}
+
+              {visiblePastOrders.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
+                    {t("Recent Orders")}
+                  </div>
+                  {visiblePastOrders.map((order) =>
+                    renderOrderCard(order, { section: "past", actionLabel: t("View Details") })
+                  )}
+                </div>
+              ) : null}
+
+              {!ordersLoading && !ordersError && !hasTrackedOrders && isLoggedIn ? (
+                <div className="text-sm text-neutral-500">{t("No orders yet.")}</div>
+              ) : null}
+
+              {hasActiveOrder ? (
+                <button
+                  type="button"
+                  onClick={() => handleOpenStatus()}
+                  className="w-full rounded-full bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-neutral-800"
+                >
+                  {t("Open Current Order Status")}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
         {cartLength === 0 ? (
           <div className="py-8 text-center">
             <div className="text-neutral-400 italic">{t("Cart is empty.")}</div>
@@ -567,24 +756,15 @@ const CartModal = React.memo(function CartModal({
   );
 
   const openFromTrigger = useCallback(() => {
-    if (hasNewItems) {
-      suppressStatusAutoCloseRef.current = true;
-      if (suppressStatusReleaseTimerRef.current) {
-        window.clearTimeout(suppressStatusReleaseTimerRef.current);
-        suppressStatusReleaseTimerRef.current = null;
-      }
-      onOpenCart?.();
-      storage.setItem("qr_cart_auto_open", "1");
-      setShow(true);
-      return;
-    }
-    if (hasActiveOrder && onShowStatus) {
-      onShowStatus();
-      return;
+    suppressStatusAutoCloseRef.current = true;
+    if (suppressStatusReleaseTimerRef.current) {
+      window.clearTimeout(suppressStatusReleaseTimerRef.current);
+      suppressStatusReleaseTimerRef.current = null;
     }
     onOpenCart?.();
+    storage.setItem("qr_cart_auto_open", "1");
     setShow(true);
-  }, [hasNewItems, hasActiveOrder, onOpenCart, onShowStatus, storage]);
+  }, [onOpenCart, storage]);
 
   const openFromExternalEvent = useCallback(() => {
     suppressStatusAutoCloseRef.current = true;
@@ -609,7 +789,7 @@ const CartModal = React.memo(function CartModal({
         >
           <span className="text-xl">🛒</span>
           <div className="flex flex-col items-start">
-            <span className="text-sm">{hasNewItems ? t("View Cart") : t("Your Order")}</span>
+            <span className="text-sm">{hasTrackedOrders && !hasNewItems ? t("Orders & Cart") : t("View Cart")}</span>
             {hasActiveOrder && statusLabel && (
               <span className="text-[11px] uppercase tracking-wide opacity-90">{statusLabel}</span>
             )}

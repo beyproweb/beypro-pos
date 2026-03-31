@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  Bell,
   ChevronDown,
   ChevronLeft,
   CircleUserRound,
@@ -37,6 +38,8 @@ function HeaderDrawer({
   shopHours = {},
   loadingShopHours = false,
   languageControl = null,
+  hasOrderStatus = false,
+  onOpenOrderStatus = null,
 }) {
   const storage = typeof window !== "undefined" ? window.localStorage : null;
   const { customer, isLoggedIn, login, register, logout, updateProfile } = useCustomerAuth(storage);
@@ -103,6 +106,23 @@ function HeaderDrawer({
       return;
     }
     setView(VIEW_ORDERS);
+  };
+
+  const handleOpenOrderStatus = () => {
+    if (typeof onOpenOrderStatus === "function") {
+      const opened = onOpenOrderStatus();
+      if (opened !== false) {
+        onClose?.();
+        return;
+      }
+    }
+
+    if (isLoggedIn) {
+      setView(VIEW_ORDERS);
+      return;
+    }
+
+    setView(VIEW_LOGIN);
   };
 
   const onOpenProfile = () => {
@@ -225,6 +245,12 @@ function HeaderDrawer({
       </div>
 
       <div className="p-3 space-y-2 overflow-y-auto flex-1">
+        <DrawerItem
+          icon={Bell}
+          label={t("Order Status")}
+          description={hasOrderStatus ? t("Track your current order") : t("Open your latest order details")}
+          onClick={handleOpenOrderStatus}
+        />
         <DrawerItem
           icon={ClipboardList}
           label={t("My Orders")}
