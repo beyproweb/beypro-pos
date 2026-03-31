@@ -50,6 +50,17 @@ function normalizePhone(value) {
   return normalizeText(value).replace(/\s+/g, "");
 }
 
+function buildCheckoutInfo(payload, existing = {}) {
+  return {
+    name: normalizeText(payload?.name ?? existing?.name),
+    phone: normalizePhone(payload?.phone ?? existing?.phone),
+    email: normalizeEmail(payload?.email ?? existing?.email),
+    address: normalizeText(payload?.address ?? existing?.address),
+    payment_method: normalizeText(payload?.payment_method ?? existing?.payment_method),
+    bank_reference: normalizeText(payload?.bank_reference ?? existing?.bank_reference),
+  };
+}
+
 function sanitizeCustomer(user) {
   if (!user || typeof user !== "object") return null;
   return {
@@ -101,15 +112,26 @@ function upsertCheckoutInfo(customer, storageArg) {
   if (!storage || !customer) return;
 
   const existing = parseJSON(storage.getItem(STORAGE_KEYS.checkoutInfo) || "null", null);
-  const next = {
-    name: normalizeText(customer.username) || normalizeText(existing?.name),
-    phone: normalizePhone(customer.phone) || normalizePhone(existing?.phone),
-    email: normalizeEmail(customer.email) || normalizeEmail(existing?.email),
-    address: normalizeText(customer.address) || normalizeText(existing?.address),
-    payment_method: normalizeText(existing?.payment_method),
-  };
+  const next = buildCheckoutInfo(
+    {
+      name: customer.username,
+      phone: customer.phone,
+      email: customer.email,
+      address: customer.address,
+    },
+    existing
+  );
 
   storage.setItem(STORAGE_KEYS.checkoutInfo, JSON.stringify(next));
+}
+
+export function saveCheckoutPrefill(payload, storageArg) {
+  const storage = getStorage(storageArg);
+  if (!storage) return null;
+  const existing = parseJSON(storage.getItem(STORAGE_KEYS.checkoutInfo) || "null", null);
+  const next = buildCheckoutInfo(payload, existing);
+  storage.setItem(STORAGE_KEYS.checkoutInfo, JSON.stringify(next));
+  return next;
 }
 
 function matchesCustomer(order, customer) {
@@ -326,15 +348,26 @@ export function getCheckoutPrefill(storageArg) {
   if (!storage) return null;
   const saved = parseJSON(storage.getItem(STORAGE_KEYS.checkoutInfo) || "null", null);
   const session = getSession(storageArg);
-  const merged = {
-    name: normalizeText(session?.username || saved?.name),
-    phone: normalizePhone(session?.phone || saved?.phone),
-    email: normalizeEmail(session?.email || saved?.email),
-    address: normalizeText(session?.address || saved?.address),
-    payment_method: normalizeText(saved?.payment_method),
-  };
+  const merged = buildCheckoutInfo(
+    {
+      name: session?.username,
+      phone: session?.phone,
+      email: session?.email,
+      address: session?.address,
+    },
+    saved
+  );
 
-  if (!merged.name && !merged.phone && !merged.email && !merged.address) return null;
+  if (
+    !merged.name &&
+    !merged.phone &&
+    !merged.email &&
+    !merged.address &&
+    !merged.payment_method &&
+    !merged.bank_reference
+  ) {
+    return null;
+  }
   return merged;
 }
 

@@ -30,6 +30,7 @@ export default function FloorPlanView({
   elements = [],
   boundsElements = null,
   selectedTableNumber = null,
+  deemphasizedElementIds = [],
   onTableClick,
   interactive = true,
   useFullCanvas = false,
@@ -41,6 +42,10 @@ export default function FloorPlanView({
 }) {
   if (!layout) return null;
   const { t } = useTranslation();
+  const deemphasizedIdSet = React.useMemo(
+    () => new Set((Array.isArray(deemphasizedElementIds) ? deemphasizedElementIds : []).map((value) => String(value))),
+    [deemphasizedElementIds]
+  );
   const centerWholeMap = Boolean(layout?.metadata?.center_whole_map ?? layout?.metadata?.centerWholeMap);
   const mapOffsetX = getFloorPlanMapOffset(layout, "x", 0);
   const mapOffsetY = getFloorPlanMapOffset(layout, "y", 0);
@@ -224,13 +229,14 @@ export default function FloorPlanView({
         >
           {elements.map((element) => {
             const isTable = element.kind === "table";
+            const isDeemphasized = deemphasizedIdSet.has(String(element.id));
             const selectedNumber = Number(selectedTableNumber || 0);
-            const displayTableNumber = Number(element.table_number || 0);
             const linkedTableNumber = Number(getFloorPlanLinkedTableNumber(element) || 0);
+            const visibleTableNumber = Number(linkedTableNumber || element.table_number || 0);
             const isSelected =
               isTable &&
               selectedNumber > 0 &&
-              (displayTableNumber === selectedNumber || linkedTableNumber === selectedNumber);
+              (visibleTableNumber === selectedNumber || linkedTableNumber === selectedNumber);
             const resolvedStatus = String(element.status || "available").toLowerCase();
             const style = {
               ...getFloorPlanStatusStyle(resolvedStatus),
@@ -251,8 +257,8 @@ export default function FloorPlanView({
             const nonTableLeft = frame.left + (logicalWidth - frame.width) / 2;
             const nonTableTop = frame.top + (logicalHeight - frame.height) / 2;
             const tableNumberLabel =
-              isTable && Number.isFinite(Number(element.table_number)) && Number(element.table_number) > 0
-                ? String(Number(element.table_number))
+              isTable && Number.isFinite(visibleTableNumber) && visibleTableNumber > 0
+                ? String(visibleTableNumber)
                 : t(element.displayName || "");
             const wrapperStyle = {
               left: `${((isTable ? frame.left : nonTableLeft) - viewBounds.minLeft + contentOffsetX + mapOffsetX) * scale}px`,
@@ -275,6 +281,8 @@ export default function FloorPlanView({
                     backgroundColor: element.color || "rgba(255,255,255,0.75)",
                     color: element.text_color || undefined,
                     fontSize: `${Math.max(10, Number(element.text_size || (element.kind === "label" ? 16 : 12)) * scale)}px`,
+                    opacity: isDeemphasized ? 0.3 : 1,
+                    filter: isDeemphasized ? "saturate(0.45) blur(0.4px)" : undefined,
                   }}
                 >
                     <span className="max-w-full overflow-hidden break-words leading-tight">
@@ -299,7 +307,8 @@ export default function FloorPlanView({
                   borderColor: isSelected ? "#2563eb" : style.border,
                   borderWidth: isSelected ? "4px" : undefined,
                   color: style.text,
-                  opacity: element.status === "hidden" ? 0.2 : 1,
+                  opacity: element.status === "hidden" ? 0.2 : isDeemphasized ? 0.34 : 1,
+                  filter: isDeemphasized ? "saturate(0.45) blur(0.45px)" : undefined,
                   boxShadow: isSelected
                     ? compactPadding
                       ? "0 0 0 6px rgba(59,130,246,0.22), 0 22px 48px rgba(37,99,235,0.34), 0 8px 20px rgba(15,23,42,0.18)"

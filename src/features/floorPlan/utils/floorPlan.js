@@ -194,6 +194,10 @@ function getZoneMatchSource(zoneName = "") {
   return String(zoneName || "").trim().toLowerCase();
 }
 
+function isGenericTableName(value = "") {
+  return /^table\s+\d+$/i.test(String(value || "").trim());
+}
+
 function isFiniteNumber(value) {
   return Number.isFinite(Number(value));
 }
@@ -787,6 +791,14 @@ export function buildFloorPlanElements(layout, tables = [], tableStates = []) {
     const linkedTableNumber = Number((getNormalizedTableLinkNumber(element) ?? tableNumber) || 0);
     const table = tableMap.get(linkedTableNumber) || null;
     const state = stateMap.get(linkedTableNumber) || null;
+    const rawElementName = asText(element.name, "");
+    const fallbackTableNumber =
+      Number(linkedTableNumber || table?.table_number || table?.number || tableNumber || 0) || 0;
+    const resolvedTableName =
+      asText(state?.label || table?.label, "") ||
+      (fallbackTableNumber > 0 && (!rawElementName || isGenericTableName(rawElementName))
+        ? `Table ${fallbackTableNumber}`
+        : rawElementName);
     return {
       ...element,
       table,
@@ -794,13 +806,13 @@ export function buildFloorPlanElements(layout, tables = [], tableStates = []) {
       linked_table_number: linkedTableNumber || null,
       status: state?.status || (element.kind === "table" ? "available" : "available"),
       capacity:
-        Number(element.capacity || 0) ||
         Number(table?.seats || table?.guests || state?.capacity || 0) ||
+        Number(element.capacity || 0) ||
         0,
-      zone: asText(element.zone || state?.zone || table?.area, ""),
+      zone: asText(table?.area ?? state?.zone ?? element.zone, ""),
       displayName:
-        asText(element.name || state?.label || table?.label) ||
-        (tableNumber ? `Table ${tableNumber}` : element.kind.replace(/_/g, " ")),
+        resolvedTableName ||
+        (fallbackTableNumber ? `Table ${fallbackTableNumber}` : element.kind.replace(/_/g, " ")),
     };
   });
 }

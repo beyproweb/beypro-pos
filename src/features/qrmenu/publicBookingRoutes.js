@@ -58,3 +58,19 @@ export function buildConcertBookingPath({ concertId, ...rest } = {}) {
     normalizedConcertId
   )}/booking`;
 }
+
+export function appendPublicBookingSubPath(path, subPath = "") {
+  const [pathname, rawSearch = ""] = String(path || "").split("?");
+  const normalizedPath = String(pathname || "").replace(/\/+$/, "");
+  const normalizedSubPath = String(subPath || "").replace(/^\/+|\/+$/g, "");
+  const nextPath = normalizedSubPath ? `${normalizedPath}/${normalizedSubPath}` : normalizedPath;
+  return rawSearch ? `${nextPath}?${rawSearch}` : nextPath;
+}
+
+export function buildReservationContactPath(args = {}) {
+  return appendPublicBookingSubPath(buildReservationBookingPath(args), "contact");
+}
+
+export function buildConcertContactPath({ concertId, ...rest } = {}) {
+  return appendPublicBookingSubPath(buildConcertBookingPath({ concertId, ...rest }), "contact");
+}

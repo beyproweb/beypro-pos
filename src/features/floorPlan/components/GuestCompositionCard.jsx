@@ -34,6 +34,12 @@ function GuestCounter({ label, value, onDecrease, onIncrease, disabled = false }
 export default function GuestCompositionCard({
   title = "Guest Composition",
   description = "",
+  // Total guest count picker (optional)
+  guestOptions = [],
+  selectedGuests = 0,
+  onGuestCountChange,
+  guestsLabel = "Guests",
+  // Men / women split (optional)
   menLabel = "Men",
   womenLabel = "Women",
   menCount = 0,
@@ -44,30 +50,68 @@ export default function GuestCompositionCard({
   error = "",
   policyMessage = "",
 }) {
+  const hasTotalPicker = Array.isArray(guestOptions) && guestOptions.length > 0;
+  const hasSplit = Boolean(onMenChange || onWomenChange);
   return (
     <div className="space-y-3">
+      {/* Title + description */}
       <div>
         <div className="text-base font-semibold text-neutral-950 dark:text-white">{title}</div>
         {description ? (
           <div className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{description}</div>
         ) : null}
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <GuestCounter
-          label={menLabel}
-          value={menCount}
-          onDecrease={() => onMenChange?.(-1)}
-          onIncrease={() => onMenChange?.(1)}
-          disabled={locked}
-        />
-        <GuestCounter
-          label={womenLabel}
-          value={womenCount}
-          onDecrease={() => onWomenChange?.(-1)}
-          onIncrease={() => onWomenChange?.(1)}
-          disabled={locked}
-        />
-      </div>
+
+      {/* Total guest count picker */}
+      {hasTotalPicker ? (
+        <div>
+          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500 dark:text-neutral-400">
+            {guestsLabel}
+          </div>
+          <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+            {guestOptions.map((option) => {
+              const selected = Number(selectedGuests || 0) === option;
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => onGuestCountChange?.(option)}
+                  className={[
+                    "rounded-[22px] border px-3 py-3 text-sm font-semibold transition",
+                    selected
+                      ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-950"
+                      : "border-neutral-200 bg-white text-neutral-900 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50",
+                  ].join(" ")}
+                >
+                  {option}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Men / women split */}
+      {hasSplit ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <GuestCounter
+            label={menLabel}
+            value={menCount}
+            onDecrease={() => onMenChange?.(-1)}
+            onIncrease={() => onMenChange?.(1)}
+            disabled={locked}
+          />
+          <GuestCounter
+            label={womenLabel}
+            value={womenCount}
+            onDecrease={() => onWomenChange?.(-1)}
+            onIncrease={() => onWomenChange?.(1)}
+            disabled={locked}
+          />
+        </div>
+      ) : null}
+
+      {/* Policy + error messages */}
       {policyMessage && !error ? (
         <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-900/30 dark:bg-sky-950/20 dark:text-sky-100">
           {policyMessage}

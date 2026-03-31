@@ -3,17 +3,18 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import secureFetch from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
-import { getCheckoutPrefill } from "../features/qrmenu/header-drawer";
+import { getCheckoutPrefill, useCustomerAuth } from "../features/qrmenu/header-drawer";
 import {
+  buildConcertContactPath,
   buildPublicMenuPath,
   resolvePublicBookingIdentifier,
 } from "../features/qrmenu/publicBookingRoutes";
 import BookingPageLayout from "../features/floorPlan/components/BookingPageLayout";
 import BookingSection from "../features/floorPlan/components/BookingSection";
 import BookingSummaryCard from "../features/floorPlan/components/BookingSummaryCard";
-import ContactInfoForm from "../features/floorPlan/components/ContactInfoForm";
-import GuestCompositionCard from "../features/floorPlan/components/GuestCompositionCard";
 import FloorPlanPickerModal from "../features/floorPlan/components/FloorPlanPickerModal";
+import QuantityStepperCard from "../features/floorPlan/components/QuantityStepperCard";
+import RegisteredCustomerBadge from "../features/floorPlan/components/RegisteredCustomerBadge";
 import { mergeFloorPlanVisualStyles } from "../features/floorPlan/utils/floorPlan";
 import {
   buildGuestComposition,
@@ -51,6 +52,10 @@ function formatTableLabel(tableLike, fallbackPrefix = "Table") {
   return label || `${fallbackPrefix} ${String(number).padStart(2, "0")}`;
 }
 
+function getActiveTables(rows) {
+  return (Array.isArray(rows) ? rows : []).filter((row) => row?.active !== false);
+}
+
 export default function QrConcertBookingPage() {
   const { t } = useTranslation();
   const { formatCurrency } = useCurrency();
@@ -65,8 +70,36 @@ export default function QrConcertBookingPage() {
     () => buildPublicMenuPath({ pathname: location.pathname, slug, id, search: location.search }),
     [id, location.pathname, location.search, slug]
   );
+  const contactPath = React.useMemo(
+    () =>
+      buildConcertContactPath({
+        pathname: location.pathname,
+        slug,
+        id,
+        search: location.search,
+        concertId,
+      }),
+    [concertId, id, location.pathname, location.search, slug]
+  );
+  const routeBookingDefaults = React.useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    const requestedTicketTypeId = Number(params.get("ticket_type_id") || 0);
+    const requestedBookingType = String(params.get("booking_type") || "").trim().toLowerCase();
+    return {
+      requestedTicketTypeId:
+        Number.isFinite(requestedTicketTypeId) && requestedTicketTypeId > 0
+          ? requestedTicketTypeId
+          : null,
+      requestedBookingType,
+    };
+  }, [location.search]);
   const storage = React.useMemo(() => getStorage(), []);
+  const { customer, isLoggedIn } = useCustomerAuth(storage);
   const customerPrefill = React.useMemo(() => getCheckoutPrefill(storage), [storage]);
+  const customerEmailPrefill = React.useMemo(() => {
+    const value = String(customerPrefill?.email || "").trim().toLowerCase();
+    return !value || EMAIL_REGEX.test(value) ? value : "";
+  }, [customerPrefill?.email]);
 
   const [branding, setBranding] = React.useState(null);
   const [event, setEvent] = React.useState(null);
@@ -79,6 +112,8 @@ export default function QrConcertBookingPage() {
   const [submitting, setSubmitting] = React.useState(false);
   const [invalidField, setInvalidField] = React.useState("");
   const fieldRefs = React.useRef({});
+  const confirmationSectionRef = React.useRef(null);
+  const previousConfirmedTableRef = React.useRef("");
   const [form, setForm] = React.useState({
     ticket_type_id: "",
     quantity: "1",
@@ -88,9 +123,9 @@ export default function QrConcertBookingPage() {
     table_number: "",
     customer_name: customerPrefill?.name || "",
     customer_phone: formatQrPhoneForInput(customerPrefill?.phone || ""),
-    customer_email: customerPrefill?.email || "",
+    customer_email: customerEmailPrefill,
     customer_note: "",
-    bank_reference: "",
+    bank_reference: customerPrefill?.bank_reference || "",
   });
 
   React.useEffect(() => {
@@ -98,9 +133,10 @@ export default function QrConcertBookingPage() {
       ...prev,
       customer_name: prev.customer_name || customerPrefill?.name || "",
       customer_phone: prev.customer_phone || formatQrPhoneForInput(customerPrefill?.phone || ""),
-      customer_email: prev.customer_email || customerPrefill?.email || "",
+      customer_email: prev.customer_email || customerEmailPrefill,
+      bank_reference: prev.bank_reference || customerPrefill?.bank_reference || "",
     }));
-  }, [customerPrefill]);
+  }, [customerEmailPrefill, customerPrefill]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -121,11 +157,26 @@ export default function QrConcertBookingPage() {
         if (cancelled) return;
         const nextEvent = eventRes?.event || null;
         const ticketTypes = Array.isArray(nextEvent?.ticket_types) ? nextEvent.ticket_types : [];
-        const defaultTicketType =
-          ticketTypes.find((row) => Number(row?.available_count || 0) > 0) || ticketTypes[0] || null;
+        const availableTicketTypes = ticketTypes.filter((row) => Number(row?.available_count || 0) > 0);
+        const defaultTicketType = routeBookingDefaults.requestedTicketTypeId
+          ? availableTicketTypes.find(
+              (row) => Number(row?.id) === routeBookingDefaults.requestedTicketTypeId
+            ) ||
+            ticketTypes.find((row) => Number(row?.id) === routeBookingDefaults.requestedTicketTypeId) ||
+            null
+          : routeBookingDefaults.requestedBookingType === "table"
+            ? availableTicketTypes.find((row) => row?.is_table_package) ||
+              availableTicketTypes.find((row) => !row?.is_table_package) ||
+              ticketTypes.find((row) => row?.is_table_package) ||
+              ticketTypes[0] ||
+              null
+            : availableTicketTypes.find((row) => !row?.is_table_package) ||
+              availableTicketTypes.find((row) => row?.is_table_package) ||
+              ticketTypes[0] ||
+              null;
         setBranding(brandingRes?.customization || {});
         setEvent(nextEvent);
-        setTables(Array.isArray(tablesRes) ? tablesRes : []);
+        setTables(getActiveTables(tablesRes));
         setForm((prev) => ({
           ...prev,
           ticket_type_id: prev.ticket_type_id || (defaultTicketType ? String(defaultTicketType.id) : ""),
@@ -144,7 +195,7 @@ export default function QrConcertBookingPage() {
     return () => {
       cancelled = true;
     };
-  }, [concertId, identifier]);
+  }, [concertId, identifier, routeBookingDefaults.requestedBookingType, routeBookingDefaults.requestedTicketTypeId]);
 
   const ticketTypes = Array.isArray(event?.ticket_types) ? event.ticket_types : [];
   const selectedTicketType = React.useMemo(() => {
@@ -152,6 +203,14 @@ export default function QrConcertBookingPage() {
     return ticketTypes.find((row) => Number(row?.id) === selectedId) || null;
   }, [form.ticket_type_id, ticketTypes]);
   const isTableBooking = Boolean(selectedTicketType?.is_table_package);
+  const showGuestStep = !isTableBooking;
+  const isFreeConcert = Boolean(event?.free_concert);
+  const bypassTicketTypeStep =
+    isFreeConcert ||
+    (routeBookingDefaults.requestedBookingType === "table" && Boolean(selectedTicketType?.is_table_package));
+  const guestStepNumber = bypassTicketTypeStep ? 2 : 3;
+  const tableStepNumber = isTableBooking ? (bypassTicketTypeStep ? 2 : 3) : null;
+  const confirmationStepNumber = isTableBooking ? tableStepNumber + 1 : guestStepNumber + 1;
   const accentColor = String(branding?.concert_reservation_button_color || branding?.primary_color || "#111827");
   const baseUnitPrice = Number(selectedTicketType?.price ?? event?.ticket_price ?? 0) || 0;
   const maxGuestsForTable = React.useMemo(() => {
@@ -339,6 +398,9 @@ export default function QrConcertBookingPage() {
   const emailValid =
     !String(form.customer_email || "").trim() ||
     EMAIL_REGEX.test(String(form.customer_email).trim().toLowerCase());
+  const hasRegisteredProfile = Boolean(
+    isLoggedIn && form.customer_name.trim() && phoneValid && emailValid
+  );
   const quantity = isTableBooking ? selectedGuests : Math.max(1, Number(form.quantity) || 1);
   const availableTicketsRaw = Number(
     selectedTicketType?.available_count ?? event?.available_ticket_count ?? NaN
@@ -346,6 +408,12 @@ export default function QrConcertBookingPage() {
   const availableTickets =
     Number.isFinite(availableTicketsRaw) && availableTicketsRaw >= 0 ? availableTicketsRaw : null;
   const total = baseUnitPrice * quantity;
+  const hasConfirmedTable = !isTableBooking || Number(form.table_number || 0) > 0;
+  const ticketQuantityMax =
+    Number.isFinite(availableTickets) && availableTickets > 0
+      ? Math.min(20, availableTickets)
+      : 20;
+  const selectedTicketQuantity = Math.max(1, Number(form.quantity) || 1);
   const formErrors = {
     name: form.customer_name.trim() ? "" : t("Please enter your name."),
     phone: phoneValid ? "" : t("Please enter a valid phone number."),
@@ -365,6 +433,11 @@ export default function QrConcertBookingPage() {
   const handleBack = React.useCallback(() => {
     navigate(menuPath);
   }, [menuPath, navigate]);
+  const handleEditCustomer = React.useCallback(() => {
+    const params = new URLSearchParams(location.search);
+    params.set("edit", "1");
+    navigate(params.toString() ? `${contactPath}?${params.toString()}` : contactPath);
+  }, [contactPath, location.search, navigate]);
 
   const handleGuestCompositionDelta = React.useCallback((field, delta) => {
     setForm((prev) => {
@@ -432,7 +505,7 @@ export default function QrConcertBookingPage() {
                 : isTableBooking && !Number(form.table_number || 0)
                   ? "table_number"
                   : guestCompositionError
-                    ? "guest_composition"
+                    ? "table_number"
                     : "";
       if (firstInvalidKey) focusInvalidField(firstInvalidKey);
       return;
@@ -573,6 +646,53 @@ export default function QrConcertBookingPage() {
     },
   ];
 
+  React.useEffect(() => {
+    if (!hasRegisteredProfile) {
+      navigate(contactPath, { replace: true });
+    }
+  }, [contactPath, hasRegisteredProfile, navigate]);
+
+  React.useEffect(() => {
+    const nextConfirmedTable = String(form.table_number || "");
+    if (
+      isTableBooking &&
+      nextConfirmedTable &&
+      nextConfirmedTable !== previousConfirmedTableRef.current &&
+      confirmationSectionRef.current
+    ) {
+      window.requestAnimationFrame(() => {
+        confirmationSectionRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    }
+    previousConfirmedTableRef.current = nextConfirmedTable;
+  }, [form.table_number, isTableBooking]);
+
+  if (!hasRegisteredProfile) {
+    return null;
+  }
+
+  const primaryActionLabel = isTableBooking && !hasConfirmedTable
+    ? t("Choose Table")
+    : submitting
+      ? t("Saving...")
+      : isTableBooking
+        ? t("Reserve Now")
+        : t("Buy Ticket");
+  const primaryActionHelper = isTableBooking && !hasConfirmedTable
+    ? t("Pick your table from the live floor plan.")
+    : quantity > 0
+      ? `${t("Total")}: ${formatCurrency(total)}`
+      : "";
+  const primaryActionHandler = isTableBooking && !hasConfirmedTable
+    ? () => setPickerOpen(true)
+    : handleSubmit;
+  const primaryActionDisabled = isTableBooking && !hasConfirmedTable
+    ? !selectedTicketType || pickerOpen
+    : !canSubmit;
+
   return (
     <BookingPageLayout
       title={t("Concert Booking")}
@@ -580,10 +700,10 @@ export default function QrConcertBookingPage() {
       onBack={handleBack}
       accentColor={accentColor}
       showHeaderIndicator={false}
-      actionLabel={submitting ? t("Saving...") : isTableBooking ? t("Reserve Now") : t("Buy Ticket")}
-      actionHelper={quantity > 0 ? `${t("Total")}: ${formatCurrency(total)}` : ""}
-      onAction={handleSubmit}
-      actionDisabled={!canSubmit}
+      actionLabel={primaryActionLabel}
+      actionHelper={primaryActionHelper}
+      onAction={primaryActionHandler}
+      actionDisabled={primaryActionDisabled}
     >
       <BookingSection
         step={1}
@@ -612,264 +732,167 @@ export default function QrConcertBookingPage() {
         </div>
       </BookingSection>
 
-      <BookingSection
-        step={2}
-        title={t("Ticket Type")}
-        description={t("Choose the package or ticket you want to book.")}
-      >
-        <div
-          ref={setFieldRef("ticket_type")}
-          className={[
-            "space-y-2 rounded-[24px] transition",
-            invalidField === "ticket_type" ? "border border-rose-300 bg-rose-50/70 p-2 dark:border-rose-900/40 dark:bg-rose-950/20" : "",
-          ].join(" ")}
+      {bypassTicketTypeStep ? null : (
+        <BookingSection
+          step={2}
+          title={t("Ticket Type")}
+          description={t("Choose the package or ticket you want to book.")}
         >
-          {ticketTypes.map((ticketType) => {
-            const selected = Number(form.ticket_type_id || 0) === Number(ticketType.id);
-            const soldOut = Number(ticketType.available_count || 0) <= 0;
-            return (
-              <button
-                key={ticketType.id}
-                type="button"
-                disabled={soldOut}
-                onClick={() =>
-                  setForm((prev) => ({
-                    ...prev,
-                    ticket_type_id: String(ticketType.id),
-                    table_number: "",
-                  }))
-                }
-                className={[
-                  "w-full rounded-[24px] border px-4 py-4 text-left transition",
-                  selected
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-neutral-200 bg-white text-neutral-900 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50",
-                  soldOut ? "opacity-50" : "",
-                ].join(" ")}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold">{ticketType.name}</div>
-                    <div className="mt-1 text-xs opacity-80">
-                      {[ticketType.area_name, ticketType.is_table_package ? t("Table package") : t("Ticket")]
-                        .filter(Boolean)
-                        .join(" • ")}
+          <div
+            ref={setFieldRef("ticket_type")}
+            className={[
+              "space-y-2 rounded-[24px] transition",
+              invalidField === "ticket_type" ? "border border-rose-300 bg-rose-50/70 p-2 dark:border-rose-900/40 dark:bg-rose-950/20" : "",
+            ].join(" ")}
+          >
+            {ticketTypes.map((ticketType) => {
+              const selected = Number(form.ticket_type_id || 0) === Number(ticketType.id);
+              const soldOut = Number(ticketType.available_count || 0) <= 0;
+              return (
+                <button
+                  key={ticketType.id}
+                  type="button"
+                  disabled={soldOut}
+                  onClick={() =>
+                    setForm((prev) => ({
+                      ...prev,
+                      ticket_type_id: String(ticketType.id),
+                      table_number: "",
+                    }))
+                  }
+                  className={[
+                    "w-full rounded-[24px] border px-4 py-4 text-left transition",
+                    selected
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-neutral-200 bg-white text-neutral-900 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50",
+                    soldOut ? "opacity-50" : "",
+                  ].join(" ")}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold">{ticketType.name}</div>
+                      <div className="mt-1 text-xs opacity-80">
+                        {[ticketType.area_name, ticketType.is_table_package ? t("Table package") : t("Ticket")]
+                          .filter(Boolean)
+                          .join(" • ")}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-semibold">{formatCurrency(ticketType.price || 0)}</div>
+                      <div className="mt-1 text-xs opacity-80">
+                        {soldOut
+                          ? t("Sold out")
+                          : t("{{count}} left", { count: Number(ticketType.available_count || 0) })}
+                      </div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-sm font-semibold">{formatCurrency(ticketType.price || 0)}</div>
-                    <div className="mt-1 text-xs opacity-80">
-                      {soldOut
-                        ? t("Sold out")
-                        : t("{{count}} left", { count: Number(ticketType.available_count || 0) })}
-                    </div>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </BookingSection>
-
-      <BookingSection
-        step={3}
-        title={isTableBooking ? t("Guest Composition") : t("Quantity")}
-        description={
-          isTableBooking
-            ? t("Match the package to the group arriving at the venue.")
-            : t("Choose how many tickets you want to buy.")
-        }
-      >
-        {isTableBooking ? (
-          <>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {guestOptions.map((option) => {
-                const selected = Number(form.guests_count || 0) === option;
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() =>
-                      setForm((prev) => ({
-                        ...prev,
-                        guests_count: String(option),
-                        table_number: "",
-                      }))
-                    }
-                    className={[
-                      "rounded-[22px] border px-3 py-3 text-sm font-semibold transition",
-                      selected
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-neutral-200 bg-white text-neutral-900 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50",
-                    ].join(" ")}
-                  >
-                    {option}
-                  </button>
-                );
-              })}
-            </div>
-            {guestCompositionVisible ? (
-              <div
-                ref={setFieldRef("guest_composition")}
-                className={invalidField === "guest_composition" ? "rounded-[24px] border border-rose-300 bg-rose-50/70 p-2 dark:border-rose-900/40 dark:bg-rose-950/20" : "mt-4"}
-              >
-                <GuestCompositionCard
-                  title={t("Guest Split")}
-                  description={t("Some concert tables apply guest restrictions.")}
-                  menLabel={t("Men")}
-                  womenLabel={t("Women")}
-                  menCount={menCount}
-                  womenCount={womenCount}
-                  onMenChange={(delta) => handleGuestCompositionDelta("male_guests_count", delta)}
-                  onWomenChange={(delta) => handleGuestCompositionDelta("female_guests_count", delta)}
-                  locked={guestCompositionRule === "couple_only"}
-                  error={guestCompositionError}
-                  policyMessage={guestCompositionMessage}
-                />
-              </div>
-            ) : null}
-          </>
-        ) : (
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-            {Array.from({ length: Math.max(5, Math.min(10, availableTickets || 5)) }, (_, index) => index + 1).map(
-              (option) => {
-                const selected = Number(form.quantity || 0) === option;
-                const disabled = Number.isFinite(availableTickets) && availableTickets > 0 && option > availableTickets;
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => setForm((prev) => ({ ...prev, quantity: String(option) }))}
-                    className={[
-                      "rounded-[22px] border px-3 py-3 text-sm font-semibold transition",
-                      selected
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-neutral-200 bg-white text-neutral-900 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50",
-                      disabled ? "opacity-40" : "",
-                    ].join(" ")}
-                  >
-                    {option}
-                  </button>
-                );
-              }
-            )}
+                </button>
+              );
+            })}
           </div>
-        )}
-      </BookingSection>
+        </BookingSection>
+      )}
 
-      <BookingSection
-        step={4}
-        title={t("Choose Table")}
-        description={
-          isTableBooking
-            ? ""
-            : t("This package does not require a table selection.")
-        }
-        rightSlot={
-          isTableBooking && floorPlanLoading ? (
-            <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-              {t("Syncing")}
-            </span>
-          ) : null
-        }
-      >
-        {isTableBooking ? (
+      {showGuestStep ? (
+        <BookingSection
+          step={guestStepNumber}
+          title={t("Quantity")}
+          description={t("Choose how many tickets you want to buy.")}
+        >
+          <QuantityStepperCard
+            label={t("Quantity")}
+            value={selectedTicketQuantity}
+            onDecrease={() =>
+              setForm((prev) => ({
+                ...prev,
+                quantity: String(Math.max(1, (Number(prev.quantity) || 1) - 1)),
+              }))
+            }
+            onIncrease={() =>
+              setForm((prev) => ({
+                ...prev,
+                quantity: String(Math.min(ticketQuantityMax, Math.max(1, Number(prev.quantity) || 1) + 1)),
+              }))
+            }
+            decreaseDisabled={selectedTicketQuantity <= 1}
+            increaseDisabled={selectedTicketQuantity >= ticketQuantityMax}
+            helperText={t("Up to {{count}} tickets", { count: ticketQuantityMax })}
+          />
+        </BookingSection>
+      ) : null}
+
+      {isTableBooking ? (
+        <BookingSection
+          step={tableStepNumber}
+          title=""
+          description=""
+          rightSlot={
+            floorPlanLoading ? (
+              <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                {t("Syncing")}
+              </span>
+            ) : null
+          }
+        >
           <div
             ref={setFieldRef("table_number")}
             className={invalidField === "table_number" ? "rounded-[28px] border border-rose-400 bg-rose-50/70 p-2 ring-4 ring-rose-100 dark:border-rose-500 dark:bg-rose-950/20 dark:ring-rose-950/40" : ""}
           >
-            <button
-              type="button"
-              onClick={() => setPickerOpen(true)}
-              className="flex w-full items-center justify-center rounded-[24px] bg-slate-900 px-4 py-4 text-base font-semibold text-white shadow-[0_18px_45px_-24px_rgba(15,23,42,0.8)] transition hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-neutral-100"
-            >
-              {t("Choose Table")}
-            </button>
-            {selectedTableRecord || selectedTableState ? (
-              <div className="mt-3 rounded-[20px] border border-neutral-200 bg-white px-4 py-3 text-sm dark:border-neutral-800 dark:bg-neutral-950">
-                <div className="font-semibold text-neutral-950 dark:text-white">
-                  {formatTableLabel(selectedTableRecord || selectedTableState, t("Table"))}
-                </div>
-                {selectedTableState?.reason || selectedTableState?.capacity ? (
-                  <div className="mt-1 text-neutral-500 dark:text-neutral-400">
-                    {selectedTableState?.reason
-                      ? selectedTableState.reason
-                      : t("Capacity {{count}} guests", { count: selectedTableState.capacity })}
-                  </div>
-                ) : null}
+            <div className="rounded-[20px] border border-neutral-200 bg-white px-4 py-3 text-sm dark:border-neutral-800 dark:bg-neutral-950">
+              <div className="font-semibold text-neutral-950 dark:text-white">
+                {selectedTableRecord || selectedTableState
+                  ? formatTableLabel(selectedTableRecord || selectedTableState, t("Table"))
+                  : t("No table selected yet")}
+              </div>
+              <div className="mt-1 text-neutral-500 dark:text-neutral-400">
+                {selectedTableState?.reason
+                  ? selectedTableState.reason
+                  : selectedTableState?.capacity
+                    ? t("Capacity {{count}} guests", { count: selectedTableState.capacity })
+                    : t("Use the footer button to open the floor plan.")}
+              </div>
+            </div>
+          </div>
+        </BookingSection>
+      ) : null}
+
+      {hasConfirmedTable ? (
+        <div ref={confirmationSectionRef}>
+          <BookingSection
+            step={confirmationStepNumber}
+            title={t("Confirmation")}
+            description={t("Review the final summary before placing the booking.")}
+          >
+            <RegisteredCustomerBadge
+              customer={{
+                username: customer?.username || form.customer_name,
+                phone: customer?.phone || normalizedPhone,
+                email: customer?.email || form.customer_email,
+              }}
+              accentColor={accentColor}
+              onEdit={handleEditCustomer}
+            />
+            <label className="block">
+              <div className="mb-1.5 text-sm font-medium text-neutral-800 dark:text-neutral-100">
+                {t("Booking Note")}
+              </div>
+              <textarea
+                rows={4}
+                value={form.customer_note}
+                onChange={(event) => setForm((prev) => ({ ...prev, customer_note: event.target.value }))}
+                className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50"
+              />
+            </label>
+            <BookingSummaryCard items={summaryItems} accentColor={accentColor} />
+            {event?.bank_transfer_instructions ? (
+              <div className="mt-4 rounded-[24px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900 dark:border-amber-900/30 dark:bg-amber-950/20 dark:text-amber-100">
+                <div className="font-semibold">{t("Payment Instructions")}</div>
+                <div className="mt-1 whitespace-pre-wrap">{event.bank_transfer_instructions}</div>
               </div>
             ) : null}
-          </div>
-        ) : (
-          <div className="rounded-[24px] border border-dashed border-neutral-300 px-4 py-5 text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
-            {t("General admission tickets use the selected package only. No table selection is required.")}
-          </div>
-        )}
-      </BookingSection>
-
-      <BookingSection
-        step={5}
-        title={t("Contact & Payment")}
-        description={t("Enter the guest details for this booking.")}
-      >
-        <ContactInfoForm
-          values={{
-            name: form.customer_name,
-            phone: form.customer_phone,
-            email: form.customer_email,
-            notes: form.customer_note,
-          }}
-          fieldRefs={{
-            name: setFieldRef("name"),
-            phone: setFieldRef("phone"),
-            email: setFieldRef("email"),
-            notes: setFieldRef("notes"),
-          }}
-          onChange={(key, value) =>
-            setForm((prev) => ({
-              ...prev,
-              [key === "name"
-                ? "customer_name"
-                : key === "phone"
-                  ? "customer_phone"
-                  : key === "email"
-                    ? "customer_email"
-                    : "customer_note"]: value,
-            }))
-          }
-          errors={formErrors}
-          notesLabel={t("Booking Note")}
-          showNotes={true}
-        />
-        <div className="mt-4">
-          <label className="block">
-            <div className="mb-1.5 text-sm font-medium text-neutral-800 dark:text-neutral-100">
-              {t("Bank Reference")}
-            </div>
-            <input
-              type="text"
-              value={form.bank_reference}
-              onChange={(event) => setForm((prev) => ({ ...prev, bank_reference: event.target.value }))}
-              className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50"
-            />
-          </label>
+          </BookingSection>
         </div>
-      </BookingSection>
-
-      <BookingSection
-        step={6}
-        title={t("Confirmation")}
-        description={t("Review the final summary before placing the booking.")}
-      >
-        <BookingSummaryCard items={summaryItems} accentColor={accentColor} />
-        {event?.bank_transfer_instructions ? (
-          <div className="mt-4 rounded-[24px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900 dark:border-amber-900/30 dark:bg-amber-950/20 dark:text-amber-100">
-            <div className="font-semibold">{t("Payment Instructions")}</div>
-            <div className="mt-1 whitespace-pre-wrap">{event.bank_transfer_instructions}</div>
-          </div>
-        ) : null}
-      </BookingSection>
+      ) : null}
 
       <FloorPlanPickerModal
         open={pickerOpen}
@@ -880,9 +903,36 @@ export default function QrConcertBookingPage() {
         tableStates={tableStates}
         selectedTableNumber={form.table_number}
         accentColor={accentColor}
+        guestCompositionProps={{
+          title: t("Guest Split"),
+          description: t("Match the package to the group arriving at the venue."),
+          guestOptions,
+          selectedGuests,
+          onGuestCountChange: (option) =>
+            setForm((prev) => ({
+              ...prev,
+              guests_count: String(option),
+              table_number: "",
+            })),
+          guestsLabel: t("Guests"),
+          menLabel: t("Men"),
+          womenLabel: t("Women"),
+          menCount: guestCompositionVisible ? menCount : undefined,
+          womenCount: guestCompositionVisible ? womenCount : undefined,
+          onMenChange: guestCompositionVisible
+            ? (delta) => handleGuestCompositionDelta("male_guests_count", delta)
+            : undefined,
+          onWomenChange: guestCompositionVisible
+            ? (delta) => handleGuestCompositionDelta("female_guests_count", delta)
+            : undefined,
+          locked: guestCompositionRule === "couple_only",
+          error: guestCompositionError,
+          policyMessage: guestCompositionMessage,
+        }}
         onClose={() => setPickerOpen(false)}
         onConfirm={(node) => {
           setForm((prev) => ({ ...prev, table_number: String(node.table_number || "") }));
+          setInvalidField("");
           setPickerOpen(false);
         }}
       />

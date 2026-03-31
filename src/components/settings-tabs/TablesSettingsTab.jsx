@@ -165,7 +165,38 @@ export default function TablesSettingsTab() {
         showAreas: !!tableSettings.showAreas,
         areaNames: dedupeAreas(tableSettings.areaNames?.length ? tableSettings.areaNames : DEFAULT_AREAS),
       };
+      const validAreaKeys = new Set(payload.areaNames.map((area) => normalizeAreaName(area).toLowerCase()));
+      const fallbackArea =
+        payload.areaNames.find((area) => normalizeAreaName(area).toLowerCase() === "main hall") ||
+        payload.areaNames[0] ||
+        "Main Hall";
+      const orphanedTables = tables.filter((table) => {
+        const currentArea = normalizeAreaName(table.area || "");
+        return currentArea && !validAreaKeys.has(currentArea.toLowerCase());
+      });
+
       await saveSetting("tables", payload);
+
+      if (orphanedTables.length > 0) {
+        await Promise.all(
+          orphanedTables.map((table) =>
+            secureFetch(`/tables/${table.number}`, {
+              method: "PATCH",
+              body: JSON.stringify({ area: fallbackArea }),
+            })
+          )
+        );
+
+        setTables((prev) =>
+          prev.map((table) => {
+            const currentArea = normalizeAreaName(table.area || "");
+            return currentArea && !validAreaKeys.has(currentArea.toLowerCase())
+              ? { ...table, area: fallbackArea }
+              : table;
+          })
+        );
+      }
+
       setTableSettings((prev) => ({ ...prev, ...payload }));
       setToast(t("Saved"));
     } catch (err) {

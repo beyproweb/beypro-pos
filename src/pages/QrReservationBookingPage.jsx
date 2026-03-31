@@ -3,9 +3,10 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import secureFetch from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
-import { getCheckoutPrefill } from "../features/qrmenu/header-drawer";
+import { getCheckoutPrefill, useCustomerAuth } from "../features/qrmenu/header-drawer";
 import { normalizeQrBookingSettings, normalizeReservationTimeSlotOptions } from "../utils/qrBooking";
 import {
+  buildReservationContactPath,
   buildPublicMenuPath,
   resolvePublicBookingIdentifier,
 } from "../features/qrmenu/publicBookingRoutes";
@@ -13,9 +14,8 @@ import { mergeFloorPlanVisualStyles } from "../features/floorPlan/utils/floorPla
 import BookingPageLayout from "../features/floorPlan/components/BookingPageLayout";
 import BookingSection from "../features/floorPlan/components/BookingSection";
 import BookingSummaryCard from "../features/floorPlan/components/BookingSummaryCard";
-import ContactInfoForm from "../features/floorPlan/components/ContactInfoForm";
-import GuestCompositionCard from "../features/floorPlan/components/GuestCompositionCard";
 import FloorPlanPickerModal from "../features/floorPlan/components/FloorPlanPickerModal";
+import RegisteredCustomerBadge from "../features/floorPlan/components/RegisteredCustomerBadge";
 import {
   buildGuestComposition,
   buildGuestCountOptions,
@@ -53,6 +53,10 @@ function formatTableLabel(tableLike, fallbackPrefix = "Table") {
   return label || `${fallbackPrefix} ${String(number).padStart(2, "0")}`;
 }
 
+function getActiveTables(rows) {
+  return (Array.isArray(rows) ? rows : []).filter((row) => row?.active !== false);
+}
+
 function buildReservationApiPath(identifier, pathname = "/orders/reservations") {
   const params = new URLSearchParams();
   if (identifier) {
@@ -75,8 +79,17 @@ export default function QrReservationBookingPage() {
     () => buildPublicMenuPath({ pathname: location.pathname, slug, id, search: location.search }),
     [id, location.pathname, location.search, slug]
   );
+  const contactPath = React.useMemo(
+    () => buildReservationContactPath({ pathname: location.pathname, slug, id, search: location.search }),
+    [id, location.pathname, location.search, slug]
+  );
   const storage = React.useMemo(() => getStorage(), []);
+  const { customer, isLoggedIn } = useCustomerAuth(storage);
   const customerPrefill = React.useMemo(() => getCheckoutPrefill(storage), [storage]);
+  const customerEmailPrefill = React.useMemo(() => {
+    const value = String(customerPrefill?.email || "").trim().toLowerCase();
+    return !value || EMAIL_REGEX.test(value) ? value : "";
+  }, [customerPrefill?.email]);
 
   const [settings, setSettings] = React.useState(null);
   const [tables, setTables] = React.useState([]);
@@ -89,6 +102,8 @@ export default function QrReservationBookingPage() {
   const [tableStates, setTableStates] = React.useState([]);
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
+  const confirmationSectionRef = React.useRef(null);
+  const previousConfirmedTableRef = React.useRef("");
   const [form, setForm] = React.useState({
     reservation_date: "",
     reservation_time: "",
@@ -98,7 +113,7 @@ export default function QrReservationBookingPage() {
     table_number: "",
     name: customerPrefill?.name || "",
     phone: formatQrPhoneForInput(customerPrefill?.phone || ""),
-    email: customerPrefill?.email || "",
+    email: customerEmailPrefill,
     notes: "",
   });
 
@@ -107,9 +122,9 @@ export default function QrReservationBookingPage() {
       ...prev,
       name: prev.name || customerPrefill?.name || "",
       phone: prev.phone || formatQrPhoneForInput(customerPrefill?.phone || ""),
-      email: prev.email || customerPrefill?.email || "",
+      email: prev.email || customerEmailPrefill,
     }));
-  }, [customerPrefill]);
+  }, [customerEmailPrefill, customerPrefill]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -133,7 +148,7 @@ export default function QrReservationBookingPage() {
               }
             : normalizeQrBookingSettings({})
         );
-        setTables(Array.isArray(tablesRes) ? tablesRes : []);
+        setTables(getActiveTables(tablesRes));
       } catch (error) {
         if (!cancelled) {
           console.error("Failed to load reservation booking page:", error);
@@ -367,6 +382,8 @@ export default function QrReservationBookingPage() {
   const phoneValue = normalizeQrPhone(form.phone);
   const phoneValid = QR_PHONE_REGEX.test(phoneValue);
   const emailValid = !String(form.email || "").trim() || EMAIL_REGEX.test(String(form.email).trim());
+  const hasRegisteredProfile = Boolean(isLoggedIn && form.name.trim() && phoneValid && emailValid);
+  const hasConfirmedTable = Number(form.table_number || 0) > 0;
   const selectedTimeSlot = slots.find(
     (slot) => slot.time === String(form.reservation_time || "").slice(0, 5)
   );
@@ -414,9 +431,37 @@ export default function QrReservationBookingPage() {
     },
   ];
 
+  React.useEffect(() => {
+    if (!hasRegisteredProfile) {
+      navigate(contactPath, { replace: true });
+    }
+  }, [contactPath, hasRegisteredProfile, navigate]);
+
+  React.useEffect(() => {
+    const nextConfirmedTable = String(form.table_number || "");
+    if (
+      nextConfirmedTable &&
+      nextConfirmedTable !== previousConfirmedTableRef.current &&
+      confirmationSectionRef.current
+    ) {
+      window.requestAnimationFrame(() => {
+        confirmationSectionRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    }
+    previousConfirmedTableRef.current = nextConfirmedTable;
+  }, [form.table_number]);
+
   const handleBack = React.useCallback(() => {
     navigate(menuPath);
   }, [menuPath, navigate]);
+  const handleEditCustomer = React.useCallback(() => {
+    const params = new URLSearchParams(location.search);
+    params.set("edit", "1");
+    navigate(params.toString() ? `${contactPath}?${params.toString()}` : contactPath);
+  }, [contactPath, location.search, navigate]);
 
   const handleGuestCompositionDelta = React.useCallback((field, delta) => {
     setForm((prev) => {
@@ -524,20 +569,31 @@ export default function QrReservationBookingPage() {
     womenCount,
   ]);
 
+  if (!hasRegisteredProfile) {
+    return null;
+  }
+
+  const primaryActionLabel = hasConfirmedTable ? t("Reserve Now") : t("Choose Table");
+  const primaryActionHelper = hasConfirmedTable
+    ? selectedTableState?.capacity
+      ? t("Selected table for {{count}} guests", { count: selectedTableState.capacity })
+      : t("Secure your reservation in a few taps")
+    : t("Pick your table from the live floor plan.");
+  const primaryActionHandler = hasConfirmedTable ? handleSubmit : () => setPickerOpen(true);
+  const primaryActionDisabled = hasConfirmedTable
+    ? !canSubmit
+    : !form.reservation_date || !form.reservation_time || pickerOpen;
+
   return (
     <BookingPageLayout
       title={t("Reserve Table")}
       subtitle={loading ? t("Loading booking page") : t("Step-by-step reservation flow")}
       onBack={handleBack}
       accentColor={accentColor}
-      actionLabel={submitting ? t("Saving...") : t("Reserve Now")}
-      actionHelper={
-        selectedTableState?.capacity
-          ? t("Selected table for {{count}} guests", { count: selectedTableState.capacity })
-          : t("Secure your reservation in a few taps")
-      }
-      onAction={handleSubmit}
-      actionDisabled={!canSubmit}
+      actionLabel={submitting && hasConfirmedTable ? t("Saving...") : primaryActionLabel}
+      actionHelper={primaryActionHelper}
+      onAction={primaryActionHandler}
+      actionDisabled={primaryActionDisabled}
     >
       <BookingSection
         step={1}
@@ -605,58 +661,7 @@ export default function QrReservationBookingPage() {
 
       <BookingSection
         step={3}
-        title={t("Guests")}
-        description={t("Tell us how many guests are coming.")}
-      >
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {guestOptions.map((option) => {
-            const selected = Number(form.reservation_clients || 0) === option;
-            return (
-              <button
-                key={option}
-                type="button"
-                onClick={() =>
-                  setForm((prev) => ({
-                    ...prev,
-                    reservation_clients: String(option),
-                    table_number: "",
-                  }))
-                }
-                className={[
-                  "rounded-[22px] border px-3 py-3 text-sm font-semibold transition",
-                  selected
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-neutral-200 bg-white text-neutral-900 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50",
-                ].join(" ")}
-              >
-                {option}
-              </button>
-            );
-          })}
-        </div>
-
-        {guestCompositionVisible ? (
-          <div className="mt-4">
-            <GuestCompositionCard
-              title={t("Guest Composition")}
-              description={t("Some tables have guest restrictions.")}
-              menLabel={t("Men")}
-              womenLabel={t("Women")}
-              menCount={menCount}
-              womenCount={womenCount}
-              onMenChange={(delta) => handleGuestCompositionDelta("reservation_men", delta)}
-              onWomenChange={(delta) => handleGuestCompositionDelta("reservation_women", delta)}
-              locked={guestCompositionRule === "couple_only"}
-              error={guestCompositionError}
-              policyMessage={guestCompositionMessage}
-            />
-          </div>
-        ) : null}
-      </BookingSection>
-
-      <BookingSection
-        step={4}
-        title={t("Choose Table")}
+        title=""
         description={t("Pick your table from the live floor plan.")}
         rightSlot={
           floorPlanLoading ? (
@@ -666,55 +671,55 @@ export default function QrReservationBookingPage() {
           ) : null
         }
       >
-        <button
-          type="button"
-          onClick={() => setPickerOpen(true)}
-          className="w-full rounded-[24px] border border-neutral-200 bg-white px-4 py-4 text-left transition hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-950"
-        >
+        <div className="rounded-[24px] border border-neutral-200 bg-white px-4 py-4 dark:border-neutral-800 dark:bg-neutral-950">
           <div className="text-sm font-semibold text-neutral-950 dark:text-white">
             {selectedTableRecord || selectedTableState
               ? formatTableLabel(selectedTableRecord || selectedTableState, t("Table"))
-              : t("Open floor plan")}
+              : t("No table selected yet")}
           </div>
           <div className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
             {selectedTableState?.reason
               ? selectedTableState.reason
               : selectedTableState?.capacity
                 ? t("Capacity {{count}} guests", { count: selectedTableState.capacity })
-                : t("Tap to choose an available table from the venue layout.")}
+                : t("Use the footer button to open the floor plan.")}
           </div>
-        </button>
-      </BookingSection>
-
-      <BookingSection
-        step={5}
-        title={t("Contact Info")}
-        description={t("We use this to confirm your reservation if needed.")}
-      >
-        <ContactInfoForm
-          values={form}
-          onChange={(key, value) => setForm((prev) => ({ ...prev, [key]: value }))}
-          errors={formErrors}
-          showNotes={false}
-        />
-      </BookingSection>
-
-      <BookingSection
-        step={6}
-        title={t("Notes & Confirmation")}
-        description={t("Add a short note, then review the booking summary.")}
-      >
-        <ContactInfoForm
-          values={form}
-          onChange={(key, value) => setForm((prev) => ({ ...prev, [key]: value }))}
-          errors={{}}
-          notesLabel={t("Reservation Notes")}
-          showNotes={true}
-        />
-        <div className="mt-4">
-          <BookingSummaryCard items={summaryItems} accentColor={accentColor} />
         </div>
       </BookingSection>
+
+      {hasConfirmedTable ? (
+        <div ref={confirmationSectionRef}>
+          <BookingSection
+            step={4}
+            title={t("Notes & Confirmation")}
+            description={t("Add a short note, then review the booking summary.")}
+          >
+            <RegisteredCustomerBadge
+              customer={{
+                username: customer?.username || form.name,
+                phone: customer?.phone || phoneValue,
+                email: customer?.email || form.email,
+              }}
+              accentColor={accentColor}
+              onEdit={handleEditCustomer}
+            />
+            <label className="block">
+              <div className="mb-1.5 text-sm font-medium text-neutral-800 dark:text-neutral-100">
+                {t("Reservation Notes")}
+              </div>
+              <textarea
+                rows={4}
+                value={form.notes}
+                onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))}
+                className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50"
+              />
+            </label>
+            <div className="mt-4">
+              <BookingSummaryCard items={summaryItems} accentColor={accentColor} />
+            </div>
+          </BookingSection>
+        </div>
+      ) : null}
 
       <FloorPlanPickerModal
         open={pickerOpen}
@@ -728,6 +733,32 @@ export default function QrReservationBookingPage() {
         tableStates={tableStates}
         selectedTableNumber={form.table_number}
         accentColor={accentColor}
+        guestCompositionProps={{
+          title: t("Guest Composition"),
+          description: t("Some tables have guest restrictions."),
+          guestOptions,
+          selectedGuests: selectedGuestCount,
+          onGuestCountChange: (option) =>
+            setForm((prev) => ({
+              ...prev,
+              reservation_clients: String(option),
+              table_number: "",
+            })),
+          guestsLabel: t("Guests"),
+          menLabel: t("Men"),
+          womenLabel: t("Women"),
+          menCount: guestCompositionVisible ? menCount : undefined,
+          womenCount: guestCompositionVisible ? womenCount : undefined,
+          onMenChange: guestCompositionVisible
+            ? (delta) => handleGuestCompositionDelta("reservation_men", delta)
+            : undefined,
+          onWomenChange: guestCompositionVisible
+            ? (delta) => handleGuestCompositionDelta("reservation_women", delta)
+            : undefined,
+          locked: guestCompositionRule === "couple_only",
+          error: guestCompositionError,
+          policyMessage: guestCompositionMessage,
+        }}
         onClose={() => setPickerOpen(false)}
         onConfirm={(node) => {
           setForm((prev) => ({ ...prev, table_number: String(node.table_number || "") }));

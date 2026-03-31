@@ -59,9 +59,11 @@ import {
   normalizeReservationTimeSlotOptions,
 } from "../utils/qrBooking";
 import {
+  appendPublicBookingSubPath,
   buildConcertBookingPath,
   buildReservationBookingPath,
 } from "../features/qrmenu/publicBookingRoutes";
+import QuantityStepperCard from "../features/floorPlan/components/QuantityStepperCard";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const QR_PHONE_REGEX = /^(5\d{9}|[578]\d{7})$/;
@@ -5412,7 +5414,7 @@ async function load() {
               </div>
             ) : null}
 
-            {(concertModalEvent.ticket_types || []).length > 0 ? (
+            {(concertModalEvent.ticket_types || []).length > 0 && !boolish(concertModalEvent?.free_concert, false) ? (
               <div>
                 <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
                   {t("Ticket Types / Packages")}
@@ -5555,29 +5557,37 @@ async function load() {
                 </div>
               ) : (
                 <div>
-                  <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{t("Quantity")}</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max={
-                      Number.isFinite(selectedConcertTicketAvailable) && selectedConcertTicketAvailable > 0
-                        ? Math.min(20, selectedConcertTicketAvailable)
-                        : 20
+                  <QuantityStepperCard
+                    label={t("Quantity")}
+                    value={selectedConcertQuantity}
+                    onDecrease={() =>
+                      setConcertForm((prev) => ({
+                        ...prev,
+                        quantity: String(Math.max(1, (Number(prev.quantity) || 1) - 1)),
+                      }))
                     }
-                    value={concertForm.quantity}
-                    onChange={(e) => {
-                      const raw = Number(e.target.value);
+                    onIncrease={() => {
                       const safeMax =
                         Number.isFinite(selectedConcertTicketAvailable) && selectedConcertTicketAvailable > 0
                           ? Math.min(20, selectedConcertTicketAvailable)
                           : 20;
-                      const next =
-                        Number.isFinite(raw) && raw > 0
-                          ? Math.min(safeMax, Math.max(1, Math.floor(raw)))
-                          : 1;
-                      setConcertForm((prev) => ({ ...prev, quantity: String(next) }));
+                      setConcertForm((prev) => ({
+                        ...prev,
+                        quantity: String(Math.min(safeMax, Math.max(1, Number(prev.quantity) || 1) + 1)),
+                      }));
                     }}
-                    className="mt-1 w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
+                    decreaseDisabled={selectedConcertQuantity <= 1}
+                    increaseDisabled={
+                      Number.isFinite(selectedConcertTicketAvailable) && selectedConcertTicketAvailable > 0
+                        ? selectedConcertQuantity >= Math.min(20, selectedConcertTicketAvailable)
+                        : selectedConcertQuantity >= 20
+                    }
+                    helperText={t("Up to {{count}} tickets", {
+                      count:
+                        Number.isFinite(selectedConcertTicketAvailable) && selectedConcertTicketAvailable > 0
+                          ? Math.min(20, selectedConcertTicketAvailable)
+                          : 20,
+                    })}
                   />
                 </div>
               )}
@@ -8028,19 +8038,20 @@ export default function QrMenu() {
     (nextType) => {
       if (!nextType) return;
       if (nextType === "takeaway") {
+        const bookingPath = buildReservationBookingPath({
+          pathname: location.pathname,
+          slug,
+          id,
+          search: location.search,
+        });
         navigate(
-          buildReservationBookingPath({
-            pathname: location.pathname,
-            slug,
-            id,
-            search: location.search,
-          })
+          isCustomerLoggedIn ? bookingPath : appendPublicBookingSubPath(bookingPath, "contact")
         );
         return;
       }
       triggerOrderType(nextType);
     },
-    [id, location.pathname, location.search, navigate, slug, triggerOrderType]
+    [id, isCustomerLoggedIn, location.pathname, location.search, navigate, slug, triggerOrderType]
   );
   const handleSharedHeaderOrderTypeSelect = useCallback(
     (nextType) => {
@@ -8707,45 +8718,59 @@ export default function QrMenu() {
   );
 
   const handleConcertBookingRequest = useCallback(
-    (event) => {
+    (event, defaults = {}) => {
       if (!event?.id) return;
+      const bookingPath = buildConcertBookingPath({
+        pathname: location.pathname,
+        slug,
+        id,
+        search: location.search,
+        concertId: event.id,
+      });
+      const [pathname, rawSearch = ""] = String(bookingPath).split("?");
+      const params = new URLSearchParams(rawSearch);
+      const requestedBookingType = String(defaults?.bookingType || "").trim().toLowerCase();
+      const requestedTicketTypeId = String(defaults?.ticketTypeId || "").trim();
+      if (requestedBookingType) {
+        params.set("booking_type", requestedBookingType);
+      }
+      if (requestedTicketTypeId) {
+        params.set("ticket_type_id", requestedTicketTypeId);
+      }
+      const resolvedPath = params.toString() ? `${pathname}?${params.toString()}` : pathname;
       navigate(
-        buildConcertBookingPath({
-          pathname: location.pathname,
-          slug,
-          id,
-          search: location.search,
-          concertId: event.id,
-        })
+        isCustomerLoggedIn ? resolvedPath : appendPublicBookingSubPath(resolvedPath, "contact")
       );
     },
-    [id, location.pathname, location.search, navigate, slug]
+    [id, isCustomerLoggedIn, location.pathname, location.search, navigate, slug]
   );
 
   const handleFreeConcertReservationStart = useCallback(
     (event) => {
       if (event?.id) {
-        navigate(
-          buildConcertBookingPath({
-            pathname: location.pathname,
-            slug,
-            id,
-            search: location.search,
-            concertId: event.id,
-          })
-        );
-        return;
-      }
-      navigate(
-        buildReservationBookingPath({
+        const bookingPath = buildConcertBookingPath({
           pathname: location.pathname,
           slug,
           id,
           search: location.search,
-        })
+          concertId: event.id,
+        });
+        navigate(
+          isCustomerLoggedIn ? bookingPath : appendPublicBookingSubPath(bookingPath, "contact")
+        );
+        return;
+      }
+      const bookingPath = buildReservationBookingPath({
+        pathname: location.pathname,
+        slug,
+        id,
+        search: location.search,
+      });
+      navigate(
+        isCustomerLoggedIn ? bookingPath : appendPublicBookingSubPath(bookingPath, "contact")
       );
     },
-    [id, location.pathname, location.search, navigate, slug]
+    [id, isCustomerLoggedIn, location.pathname, location.search, navigate, slug]
   );
 
   const handleVoiceDraftAddToCart = useCallback(

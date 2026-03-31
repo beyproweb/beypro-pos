@@ -38,6 +38,7 @@ import { attachGlobalSoundHandlers } from "./utils/soundManager";
 import QrMenu from "./pages/QrMenu";
 import QrReservationBookingPage from "./pages/QrReservationBookingPage";
 import QrConcertBookingPage from "./pages/QrConcertBookingPage";
+import QrBookingContactPage from "./pages/QrBookingContactPage";
 import CustomerInsights from "./pages/CustomerInsights";
 import MarketingCampaigns from "./pages/MarketingCampaigns";
 import MaintenanceTracker from "./pages/MaintenanceTracker";
@@ -249,6 +250,11 @@ function AppShell() {
             />
 
             {/* PUBLIC: QR Menu (legacy slug-based link) */}
+            <Route path="/qr-menu/:slug/:id/reserve/contact" element={<QrBookingContactPage />} />
+            <Route
+              path="/qr-menu/:slug/:id/concerts/:concertId/booking/contact"
+              element={<QrBookingContactPage />}
+            />
             <Route path="/qr-menu/:slug/:id/reserve" element={<QrReservationBookingPage />} />
             <Route
               path="/qr-menu/:slug/:id/concerts/:concertId/booking"
@@ -256,13 +262,19 @@ function AppShell() {
             />
             <Route path="/qr-menu/:slug/:id" element={<QrMenu />} />
             {/* PUBLIC: Dual QR entry points */}
+            <Route path="/qr/reserve/contact" element={<QrBookingContactPage />} />
+            <Route path="/qr/concerts/:concertId/booking/contact" element={<QrBookingContactPage />} />
             <Route path="/qr/reserve" element={<QrReservationBookingPage />} />
             <Route path="/qr/concerts/:concertId/booking" element={<QrConcertBookingPage />} />
             <Route path="/qr" element={<QrMenu />} />
+            <Route path="/menu/reserve/contact" element={<QrBookingContactPage />} />
+            <Route path="/menu/concerts/:concertId/booking/contact" element={<QrBookingContactPage />} />
             <Route path="/menu/reserve" element={<QrReservationBookingPage />} />
             <Route path="/menu/concerts/:concertId/booking" element={<QrConcertBookingPage />} />
             <Route path="/menu" element={<QrMenu />} />
             {/* PUBLIC: Short restaurant link (e.g. /my-restaurant) */}
+            <Route path="/:slug/reserve/contact" element={<QrBookingContactPage />} />
+            <Route path="/:slug/concerts/:concertId/booking/contact" element={<QrBookingContactPage />} />
             <Route path="/:slug/reserve" element={<QrReservationBookingPage />} />
             <Route path="/:slug/concerts/:concertId/booking" element={<QrConcertBookingPage />} />
             <Route path="/:slug" element={<QrMenu />} />

@@ -11,6 +11,18 @@ import {
   getFloorPlanLinkedTableNumber,
 } from "../utils/floorPlan";
 
+function normalizePickerGuestSelection(selectedGuests, options = []) {
+  const parsed = Number(selectedGuests || 0);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return options.length > 0 ? options[0] : 0;
+  }
+  if (options.includes(parsed)) return parsed;
+  for (let index = options.length - 1; index >= 0; index -= 1) {
+    if (options[index] <= parsed) return options[index];
+  }
+  return options.length > 0 ? options[0] : 0;
+}
+
 const STATUS_FILTER_KEYS = ["available", "reserved", "occupied", "blocked"];
 const ALL_ZONES_KEY = "__all__";
 const PICKER_STATUS_TONES = {
@@ -86,6 +98,10 @@ function translateFloorPlanReason(reason, t) {
   return t(normalizedReason);
 }
 
+function normalizeZoneFilterKey(zoneName) {
+  return String(formatFloorPlanZoneLabel(zoneName) || "Main Hall").trim().toLowerCase();
+}
+
 export default function FloorPlanPickerModal({
   open = false,
   title,
@@ -95,6 +111,7 @@ export default function FloorPlanPickerModal({
   tableStates = [],
   selectedTableNumber = null,
   accentColor = "#111827",
+  guestCompositionProps = null,
   onClose,
   onConfirm,
 }) {
@@ -107,48 +124,62 @@ export default function FloorPlanPickerModal({
   const [activeTable, setActiveTable] = React.useState(null);
   const [selectedStatuses, setSelectedStatuses] = React.useState(STATUS_FILTER_KEYS);
   const [selectedZone, setSelectedZone] = React.useState(ALL_ZONES_KEY);
+  const hasLiveTables = Array.isArray(tables) && tables.length > 0;
 
   const tableElements = React.useMemo(
-    () => elements.filter((element) => element.kind === "table"),
-    [elements]
+    () =>
+      elements.filter(
+        (element) => element.kind === "table" && (!hasLiveTables || element.table)
+      ),
+    [elements, hasLiveTables]
   );
   const statusFilteredTables = React.useMemo(
     () => tableElements.filter((element) => selectedStatuses.includes(String(element.status || "available").toLowerCase())),
     [selectedStatuses, tableElements]
   );
   const zoneGroups = React.useMemo(
-    () => buildFloorPlanZoneGroups({ elements: tableElements }),
-    [tableElements]
+    () => buildFloorPlanZoneGroups({ elements: tableElements, tables }),
+    [tableElements, tables]
   );
   const zoneOptions = React.useMemo(() => {
     const counts = new Map();
     statusFilteredTables.forEach((element) => {
-      const key = String(element.zone || "Main Hall").trim() || "Main Hall";
+      const key = normalizeZoneFilterKey(element.zone);
       counts.set(key, (counts.get(key) || 0) + 1);
     });
 
     const allZones = zoneGroups.flatMap((group) => group.zones || []);
     return allZones.map((zone) => ({
-      key: zone.label,
+      key: zone.key,
       label: zone.label,
-      count: counts.get(zone.label) || 0,
+      count: counts.get(zone.key) || 0,
       swatch: zone.swatch,
     }));
   }, [statusFilteredTables, zoneGroups]);
-  const filteredTables = React.useMemo(
+  const zoneMatchedTables = React.useMemo(
     () =>
       statusFilteredTables.filter((element) =>
-        selectedZone === ALL_ZONES_KEY ? true : String(element.zone || "Main Hall").trim() === selectedZone
+        selectedZone === ALL_ZONES_KEY ? true : normalizeZoneFilterKey(element.zone) === selectedZone
       ),
     [selectedZone, statusFilteredTables]
+  );
+  const visibleTables = React.useMemo(() => statusFilteredTables, [statusFilteredTables]);
+  const deemphasizedElementIds = React.useMemo(
+    () =>
+      selectedZone === ALL_ZONES_KEY
+        ? []
+        : visibleTables
+            .filter((element) => normalizeZoneFilterKey(element.zone) !== selectedZone)
+            .map((element) => String(element.id)),
+    [selectedZone, visibleTables]
   );
   const filteredElements = React.useMemo(
     () =>
       elements.filter((element) => {
         if (element.kind !== "table") return true;
-        return filteredTables.some((table) => String(table.id) === String(element.id));
+        return visibleTables.some((table) => String(table.id) === String(element.id));
       }),
-    [elements, filteredTables]
+    [elements, visibleTables]
   );
 
   React.useEffect(() => {
@@ -161,13 +192,23 @@ export default function FloorPlanPickerModal({
 
   React.useEffect(() => {
     if (!activeTable) return;
-    const stillVisible = filteredTables.some(
+    const stillVisible = visibleTables.some(
       (table) => String(table.id) === String(activeTable.id)
     );
     if (!stillVisible) {
       setActiveTable(null);
     }
-  }, [activeTable, filteredTables]);
+  }, [activeTable, visibleTables]);
+
+  React.useEffect(() => {
+    if (!activeTable) return;
+    const nextActiveTable = tableElements.find(
+      (table) => String(table.id) === String(activeTable.id)
+    );
+    if (nextActiveTable && nextActiveTable !== activeTable) {
+      setActiveTable(nextActiveTable);
+    }
+  }, [activeTable, tableElements]);
 
   if (!open) return null;
 
@@ -179,6 +220,30 @@ export default function FloorPlanPickerModal({
       : activeTable?.table_number != null
         ? activeTable.table_number
         : selectedTableNumber;
+  const activeTableCapacity = Number(
+    activeTable?.table?.seats ||
+      activeTable?.table?.guests ||
+      activeTable?.capacity ||
+      activeTable?.state?.capacity ||
+      0
+  );
+  const baseGuestOptions = Array.isArray(guestCompositionProps?.guestOptions)
+    ? guestCompositionProps.guestOptions
+    : [];
+  const filteredGuestOptions =
+    Number.isFinite(activeTableCapacity) && activeTableCapacity > 0 && baseGuestOptions.length > 0
+      ? baseGuestOptions.filter((option) => Number(option) <= activeTableCapacity)
+      : baseGuestOptions;
+  const effectiveGuestCompositionProps = guestCompositionProps
+    ? {
+        ...guestCompositionProps,
+        guestOptions: filteredGuestOptions,
+        selectedGuests: normalizePickerGuestSelection(
+          guestCompositionProps.selectedGuests,
+          filteredGuestOptions
+        ),
+      }
+    : null;
 
   return (
     <div className="fixed inset-0 z-[90] bg-black/55 backdrop-blur-sm">
@@ -254,7 +319,7 @@ export default function FloorPlanPickerModal({
                 </div>
               </div>
             </div>
-            {filteredTables.length === 0 ? (
+            {zoneMatchedTables.length === 0 ? (
               <div className="mb-4 rounded-[24px] border border-dashed border-neutral-300 bg-white/80 px-4 py-5 text-center text-sm font-medium text-neutral-500 sm:px-5 sm:py-6 dark:border-neutral-700 dark:bg-neutral-950/60 dark:text-neutral-400">
                 {selectedZone === ALL_ZONES_KEY
                   ? t("No tables match the selected availability filters")
@@ -268,6 +333,7 @@ export default function FloorPlanPickerModal({
                   elements={filteredElements}
                   boundsElements={elements}
                   selectedTableNumber={highlightedTableNumber}
+                  deemphasizedElementIds={deemphasizedElementIds}
                   onTableClick={(node) =>
                     setActiveTable({
                       ...node,
@@ -292,6 +358,7 @@ export default function FloorPlanPickerModal({
               setActiveTable(null);
             }}
             confirmDisabled={!canConfirm}
+            guestCompositionProps={effectiveGuestCompositionProps}
             confirmLabel={
               canConfirm
                 ? t("Confirm table")

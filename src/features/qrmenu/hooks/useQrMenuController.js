@@ -35,6 +35,46 @@ const DEFAULT_QR_MENU_BRANDING = {
   concert_reservation_button_color: "#111827",
 };
 
+function normalizeConfiguredAreaName(value) {
+  return String(value || "").trim();
+}
+
+function readCachedTableAreaNames(restaurantIdentifier) {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const native = window.localStorage;
+    if (!native) return [];
+
+    const candidates = [
+      String(native.getItem("restaurant_id") || "").trim(),
+      String(native.getItem("restaurant_slug") || "").trim(),
+      String(restaurantIdentifier || "").trim(),
+    ].filter((value) => value && value !== "undefined" && value !== "null");
+
+    const visited = new Set();
+    for (const tenant of candidates) {
+      if (visited.has(tenant)) continue;
+      visited.add(tenant);
+
+      const raw = native.getItem(`beypro:settings:${tenant}:tables`);
+      if (!raw) continue;
+
+      const parsed = JSON.parse(raw);
+      const areaNames = Array.isArray(parsed?.areaNames)
+        ? parsed.areaNames.map(normalizeConfiguredAreaName).filter(Boolean)
+        : [];
+      if (areaNames.length > 0) {
+        return areaNames;
+      }
+    }
+  } catch {
+    // ignore local cache read errors
+  }
+
+  return [];
+}
+
 function getQrMenuBrandingCacheKey(identifier) {
   const value = String(identifier || "").trim();
   return value ? `${QR_MENU_BRANDING_CACHE_PREFIX}${value}` : "";
@@ -1232,12 +1272,22 @@ const loadTables = async () => {
 
   try {
     let rows = [];
+    let configuredAreaNames = [];
     try {
       // Keep QR table settings aligned with TableOverview/Settings source of truth.
       const scoped = await secureFetch(
         appendIdentifier(`/tables?active=true&identifier=${encodeURIComponent(restaurantIdentifier)}`)
       );
       rows = Array.isArray(scoped) ? scoped : scoped?.data || [];
+
+      try {
+        const tableSettings = await secureFetch(appendIdentifier("/settings/tables"));
+        configuredAreaNames = Array.isArray(tableSettings?.areaNames)
+          ? tableSettings.areaNames.map(normalizeConfiguredAreaName).filter(Boolean)
+          : [];
+      } catch {
+        configuredAreaNames = readCachedTableAreaNames(restaurantIdentifier);
+      }
     } catch {
       const res = await fetch(
         `${API_URL}/public/tables/${encodeURIComponent(restaurantIdentifier)}`
@@ -1247,23 +1297,37 @@ const loadTables = async () => {
       }
       const payload = await res.json();
       rows = Array.isArray(payload) ? payload : payload.data || [];
+      configuredAreaNames = readCachedTableAreaNames(restaurantIdentifier);
     }
 
-    const normalized = rows.map((r) => ({
-      tableNumber: r.number ?? r.tableNumber ?? r.table_number,
-      area: r.area || "Main Hall",
-      seats: r.seats || r.chairs || 0,
-      guests:
-        r.guests === null || r.guests === undefined || r.guests === ""
-          ? null
-          : Number(r.guests),
-      label: r.label || "",
-      color: r.color || "",
-      isLocked: Boolean(
-        r.locked ?? r.is_locked ?? r.isLocked ?? r.occupied ?? r.unavailable
-      ),
-      active: r.active ?? true,
-    }));
+    const validAreaNames = configuredAreaNames.map(normalizeConfiguredAreaName).filter(Boolean);
+    const validAreaKeys = new Set(validAreaNames.map((value) => value.toLowerCase()));
+    const fallbackAreaName =
+      validAreaNames.find((value) => value.toLowerCase() === "main hall") || validAreaNames[0] || "Main Hall";
+
+    const normalized = rows.map((r) => {
+      const rawArea = normalizeConfiguredAreaName(r.area || "");
+      const resolvedArea =
+        validAreaKeys.size > 0 && rawArea && !validAreaKeys.has(rawArea.toLowerCase())
+          ? fallbackAreaName
+          : rawArea || fallbackAreaName;
+
+      return {
+        tableNumber: r.number ?? r.tableNumber ?? r.table_number,
+        area: resolvedArea,
+        seats: r.seats || r.chairs || 0,
+        guests:
+          r.guests === null || r.guests === undefined || r.guests === ""
+            ? null
+            : Number(r.guests),
+        label: r.label || "",
+        color: r.color || "",
+        isLocked: Boolean(
+          r.locked ?? r.is_locked ?? r.isLocked ?? r.occupied ?? r.unavailable
+        ),
+        active: r.active ?? true,
+      };
+    });
 
     setTables(normalized.filter((t) => t.active !== false));
   } catch (err) {
