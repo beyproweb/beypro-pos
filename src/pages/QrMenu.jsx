@@ -52,6 +52,7 @@ import QRCode from "qrcode";
 import { Toaster, toast } from "react-hot-toast";
 import { API_BASE as API_URL, API_ORIGIN as API_BASE, SOCKET_BASE } from "../utils/api";
 import {
+  getEffectiveBookingMaxDaysInAdvance,
   normalizeQrBookingSettings,
   computeReservationSlot,
   computeConcertSlot,
@@ -5905,9 +5906,9 @@ function TakeawayOrderForm({
   const [dateScopedAvailability, setDateScopedAvailability] = useState(null);
   const maxBookingDate = useMemo(() => {
     const next = new Date();
-    next.setDate(next.getDate() + Number(normalizedBookingSettings.booking_max_days_in_advance || 30));
+    next.setDate(next.getDate() + getEffectiveBookingMaxDaysInAdvance(normalizedBookingSettings));
     return next.toISOString().slice(0, 10);
-  }, [normalizedBookingSettings.booking_max_days_in_advance]);
+  }, [normalizedBookingSettings]);
 
   useEffect(() => {
     setForm(normalizedInitialValues);
@@ -7389,6 +7390,7 @@ export default function QrMenu() {
   const { slug, id } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const handledNavigationOrderStatusRef = useRef(null);
   const {
     restaurantIdentifier,
     lang,
@@ -8574,6 +8576,31 @@ export default function QrMenu() {
     },
     [activeOrder?.id, orderId, setConcertBookingConfirmLabel, setOrderId, setOrderStatus, setShowStatus, storage]
   );
+
+  useEffect(() => {
+    const requestedOrderId = Number(location.state?.openOrderStatusOrderId || 0);
+    if (!Number.isFinite(requestedOrderId) || requestedOrderId <= 0) return;
+    if (handledNavigationOrderStatusRef.current === requestedOrderId) return;
+
+    handledNavigationOrderStatusRef.current = requestedOrderId;
+
+    const requestedOrderType = String(location.state?.openOrderStatusOrderType || "")
+      .trim()
+      .toLowerCase();
+    const requestedTableNumber = Number(location.state?.openOrderStatusTableNumber || 0);
+
+    if (requestedOrderType) {
+      setOrderType(requestedOrderType);
+      storage.setItem("qr_orderType", requestedOrderType);
+    }
+
+    if (requestedOrderType === "table" && Number.isFinite(requestedTableNumber) && requestedTableNumber > 0) {
+      setTable(requestedTableNumber);
+      storage.setItem("qr_table", String(requestedTableNumber));
+    }
+
+    openOrderStatus(requestedOrderId);
+  }, [location.state, openOrderStatus, setOrderType, setTable, storage]);
 
   useEffect(() => {
     if (!pendingNonTableConcertReorderLock) return;

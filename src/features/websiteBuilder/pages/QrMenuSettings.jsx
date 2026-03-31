@@ -264,6 +264,8 @@ export default function QrMenuSettings() {
   const [savingBookingSettings, setSavingBookingSettings] = useState(false);
   const [savingFloorPlanLayout, setSavingFloorPlanLayout] = useState(false);
   const [activeSettingsTab, setActiveSettingsTab] = useState("qr");
+  const concertSectionRef = useRef(null);
+  const shouldScrollToConcertEditorRef = useRef(false);
   const [tables, setTables] = useState([]);
   const [tableQr, setTableQr] = useState({}); // { [tableNumber]: { url, loading } }
   const [tableCount, setTableCount] = useState("");
@@ -411,6 +413,22 @@ export default function QrMenuSettings() {
       setActiveSettingsTab(settingsTabs[0].id);
     }
   }, [activeSettingsTab, settingsTabs]);
+
+  useEffect(() => {
+    if (activeSettingsTab !== "concert") return;
+    if (!shouldScrollToConcertEditorRef.current) return;
+
+    shouldScrollToConcertEditorRef.current = false;
+
+    const rafId = window.requestAnimationFrame(() => {
+      concertSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+
+    return () => window.cancelAnimationFrame(rafId);
+  }, [activeSettingsTab, editingConcertId]);
 
   const uploadsBaseUrl = API_ORIGIN || "";
 
@@ -1448,6 +1466,8 @@ async function saveAllCustomization() {
   };
 
   const startEditConcert = (event) => {
+    shouldScrollToConcertEditorRef.current = true;
+    setActiveSettingsTab("concert");
     setEditingConcertId(event.id);
     setConcertForm({
       artist_name: event.artist_name || "",
@@ -2959,14 +2979,48 @@ async function saveAllCustomization() {
                   {t("Configure slot duration, time intervals, event entry rules, and reservation timing behavior for QR bookings.")}
                 </p>
 
-                <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div>
+                <div className="mt-5 space-y-5">
+                  <div className="rounded-2xl border border-slate-200 p-4 dark:border-zinc-800">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h5 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                          {t("Reservation Timing Rules")}
+                        </h5>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                          {t("Control reservation duration, buffers, and arrival windows.")}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateField(
+                            "reservation_booking_settings_enabled",
+                            !settings.reservation_booking_settings_enabled
+                          )
+                        }
+                        className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                          settings.reservation_booking_settings_enabled
+                            ? "border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                            : "border-rose-200 bg-rose-100 text-rose-700 hover:bg-rose-200"
+                        }`}
+                      >
+                        {settings.reservation_booking_settings_enabled ? t("On") : t("Off")}
+                      </button>
+                    </div>
+
+                    <div
+                      className={`mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 ${
+                        settings.reservation_booking_settings_enabled ? "" : "pointer-events-none opacity-50"
+                      }`}
+                    >
+                      <div>
                     <label className="font-semibold">{t("Default reservation duration (minutes)")}</label>
                     <input
                       type="number"
                       min="15"
                       step="15"
                       value={settings.reservation_default_duration_minutes ?? 120}
+                      disabled={!settings.reservation_booking_settings_enabled}
                       onChange={(e) =>
                         updateField("reservation_default_duration_minutes", Number(e.target.value) || 0)
                       }
@@ -2980,6 +3034,7 @@ async function saveAllCustomization() {
                       min="0"
                       step="5"
                       value={settings.reservation_buffer_minutes ?? 0}
+                      disabled={!settings.reservation_booking_settings_enabled}
                       onChange={(e) =>
                         updateField("reservation_buffer_minutes", Number(e.target.value) || 0)
                       }
@@ -2993,6 +3048,7 @@ async function saveAllCustomization() {
                       min="0"
                       step="1"
                       value={settings.reservation_max_per_table_per_day ?? ""}
+                      disabled={!settings.reservation_booking_settings_enabled}
                       onChange={(e) =>
                         updateField(
                           "reservation_max_per_table_per_day",
@@ -3006,6 +3062,7 @@ async function saveAllCustomization() {
                   <div>
                     <label className="font-semibold">{t("Allow booking while table is occupied now")}</label>
                     <select
+                      disabled={!settings.reservation_booking_settings_enabled}
                       value={settings.reservation_allow_while_occupied_now ? "on" : "off"}
                       onChange={(e) =>
                         updateField("reservation_allow_while_occupied_now", e.target.value === "on")
@@ -3023,6 +3080,7 @@ async function saveAllCustomization() {
                       min="0"
                       step="5"
                       value={settings.reservation_early_checkin_window_minutes ?? 15}
+                      disabled={!settings.reservation_booking_settings_enabled}
                       onChange={(e) =>
                         updateField(
                           "reservation_early_checkin_window_minutes",
@@ -3039,6 +3097,7 @@ async function saveAllCustomization() {
                       min="0"
                       step="5"
                       value={settings.reservation_late_arrival_grace_minutes ?? 15}
+                      disabled={!settings.reservation_booking_settings_enabled}
                       onChange={(e) =>
                         updateField(
                           "reservation_late_arrival_grace_minutes",
@@ -3055,6 +3114,7 @@ async function saveAllCustomization() {
                       min="0"
                       step="5"
                       value={settings.reservation_auto_cancel_no_show_after_minutes ?? 0}
+                      disabled={!settings.reservation_booking_settings_enabled}
                       onChange={(e) =>
                         updateField(
                           "reservation_auto_cancel_no_show_after_minutes",
@@ -3064,9 +3124,46 @@ async function saveAllCustomization() {
                       className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
                     />
                   </div>
-                  <div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 p-4 dark:border-zinc-800">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h5 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                          {t("Booking Slot Rules")}
+                        </h5>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                          {t("Control booking intervals and how far ahead guests can book.")}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateField(
+                            "booking_slot_settings_enabled",
+                            !settings.booking_slot_settings_enabled
+                          )
+                        }
+                        className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                          settings.booking_slot_settings_enabled
+                            ? "border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                            : "border-rose-200 bg-rose-100 text-rose-700 hover:bg-rose-200"
+                        }`}
+                      >
+                        {settings.booking_slot_settings_enabled ? t("On") : t("Off")}
+                      </button>
+                    </div>
+
+                    <div
+                      className={`mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 ${
+                        settings.booking_slot_settings_enabled ? "" : "pointer-events-none opacity-50"
+                      }`}
+                    >
+                      <div>
                     <label className="font-semibold">{t("Time interval step (minutes)")}</label>
                     <select
+                      disabled={!settings.booking_slot_settings_enabled}
                       value={String(settings.booking_time_interval_minutes ?? 30)}
                       onChange={(e) =>
                         updateField("booking_time_interval_minutes", Number(e.target.value) || 30)
@@ -3087,22 +3184,57 @@ async function saveAllCustomization() {
                       min="1"
                       step="1"
                       value={settings.booking_max_days_in_advance ?? 30}
+                      disabled={!settings.booking_slot_settings_enabled}
                       onChange={(e) =>
                         updateField("booking_max_days_in_advance", Number(e.target.value) || 1)
                       }
                       className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
                     />
                   </div>
-                </div>
+                    </div>
+                  </div>
 
-                <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div>
+                  <div className="rounded-2xl border border-slate-200 p-4 dark:border-zinc-800">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h5 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                          {t("Concert Entry Rules")}
+                        </h5>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                          {t("Control concert duration, entry windows, and re-entry behavior.")}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateField(
+                            "concert_booking_settings_enabled",
+                            !settings.concert_booking_settings_enabled
+                          )
+                        }
+                        className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                          settings.concert_booking_settings_enabled
+                            ? "border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                            : "border-rose-200 bg-rose-100 text-rose-700 hover:bg-rose-200"
+                        }`}
+                      >
+                        {settings.concert_booking_settings_enabled ? t("On") : t("Off")}
+                      </button>
+                    </div>
+
+                    <div
+                      className={`mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 ${
+                        settings.concert_booking_settings_enabled ? "" : "pointer-events-none opacity-50"
+                      }`}
+                    >
+                      <div>
                     <label className="font-semibold">{t("Event duration (minutes)")}</label>
                     <input
                       type="number"
                       min="15"
                       step="15"
                       value={settings.concert_event_duration_minutes ?? 150}
+                      disabled={!settings.concert_booking_settings_enabled}
                       onChange={(e) =>
                         updateField("concert_event_duration_minutes", Number(e.target.value) || 0)
                       }
@@ -3114,6 +3246,7 @@ async function saveAllCustomization() {
                     <input
                       type="time"
                       value={settings.concert_event_end_time || ""}
+                      disabled={!settings.concert_booking_settings_enabled}
                       onChange={(e) => updateField("concert_event_end_time", e.target.value)}
                       className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
                     />
@@ -3125,6 +3258,7 @@ async function saveAllCustomization() {
                       min="0"
                       step="5"
                       value={settings.concert_early_entry_window_minutes ?? 30}
+                      disabled={!settings.concert_booking_settings_enabled}
                       onChange={(e) =>
                         updateField("concert_early_entry_window_minutes", Number(e.target.value) || 0)
                       }
@@ -3138,6 +3272,7 @@ async function saveAllCustomization() {
                       min="0"
                       step="5"
                       value={settings.concert_late_entry_cutoff_minutes ?? 30}
+                      disabled={!settings.concert_booking_settings_enabled}
                       onChange={(e) =>
                         updateField("concert_late_entry_cutoff_minutes", Number(e.target.value) || 0)
                       }
@@ -3147,6 +3282,7 @@ async function saveAllCustomization() {
                   <div>
                     <label className="font-semibold">{t("Allow re-entry")}</label>
                     <select
+                      disabled={!settings.concert_booking_settings_enabled}
                       value={settings.concert_allow_reentry ? "on" : "off"}
                       onChange={(e) =>
                         updateField("concert_allow_reentry", e.target.value === "on")
@@ -3159,6 +3295,8 @@ async function saveAllCustomization() {
                   </div>
                   <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-sm text-slate-500 dark:border-zinc-700 dark:text-zinc-400">
                     {t("Opening hours are taken from the existing Shop Hours settings and used to build QR booking time slots.")}
+                  </div>
+                    </div>
                   </div>
                 </div>
 
@@ -3684,7 +3822,7 @@ async function saveAllCustomization() {
         )}
 
         {activeSettingsTab === "concert" && (
-        <div className="mt-2 bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
+        <div ref={concertSectionRef} className="mt-2 bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-xl font-bold text-indigo-600">{t("Concert Tickets")}</h3>
             <span className="text-xs px-3 py-1 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700">

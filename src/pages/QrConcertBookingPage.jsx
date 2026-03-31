@@ -585,7 +585,16 @@ export default function QrConcertBookingPage() {
           );
         }
       }
-      navigate(menuPath);
+      navigate(menuPath, {
+        state:
+          linkedOrderId > 0
+            ? {
+                openOrderStatusOrderId: linkedOrderId,
+                openOrderStatusOrderType: isTableBooking ? "table" : "takeaway",
+                openOrderStatusTableNumber: isTableBooking ? Number(form.table_number || 0) || null : null,
+              }
+            : null,
+      });
     } catch (error) {
       window.alert(error?.message || t("Failed to save booking"));
     } finally {

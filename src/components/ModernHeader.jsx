@@ -18,6 +18,65 @@ import { useHasPermission } from "./hooks/useHasPermission";
 import { checkRegisterOpen } from "../utils/checkRegisterOpen";
 import { useAuth } from "../context/AuthContext";
 import { isPublicShellPath } from "../utils/routeScope";
+import secureFetch from "../utils/secureFetch";
+
+const ORDERS_BADGE_POLL_MS = 45000;
+
+const formatLocalYmd = (value = new Date()) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const normalizeHeaderOrderStatus = (value) => String(value || "").trim().toLowerCase();
+
+const isCancelledHeaderOrderStatus = (status) => {
+  const normalized = normalizeHeaderOrderStatus(status);
+  return ["cancelled", "canceled", "deleted", "void"].includes(normalized);
+};
+
+const isClosedHeaderOrderStatus = (status) => {
+  const normalized = normalizeHeaderOrderStatus(status);
+  return ["closed", "completed", "checked_out"].includes(normalized);
+};
+
+const countActiveReservations = (rows) => {
+  const list = Array.isArray(rows) ? rows : [];
+  return list.filter((reservation) => {
+    const status = normalizeHeaderOrderStatus(
+      reservation?.status ?? reservation?.reservation_status ?? reservation?.reservationStatus
+    );
+    if (!status) return true;
+    if (isCancelledHeaderOrderStatus(status)) return false;
+    if (isClosedHeaderOrderStatus(status)) return false;
+    return true;
+  }).length;
+};
+
+const countActiveConcertBookings = (rows) => {
+  const list = Array.isArray(rows) ? rows : [];
+  return list.filter((booking) => {
+    const paymentStatus = normalizeHeaderOrderStatus(
+      booking?.payment_status ?? booking?.paymentStatus
+    );
+    const reservationOrderStatus = normalizeHeaderOrderStatus(
+      booking?.reservation_order_status ?? booking?.reservationOrderStatus
+    );
+    const bookingStatus = normalizeHeaderOrderStatus(
+      booking?.booking_status ?? booking?.bookingStatus ?? booking?.status
+    );
+
+    if (isCancelledHeaderOrderStatus(paymentStatus)) return false;
+    if (isCancelledHeaderOrderStatus(reservationOrderStatus)) return false;
+    if (isCancelledHeaderOrderStatus(bookingStatus)) return false;
+    if (isClosedHeaderOrderStatus(reservationOrderStatus)) return false;
+    if (isClosedHeaderOrderStatus(bookingStatus)) return false;
+    return true;
+  }).length;
+};
 
 /**
  * Prevents flicker of customer name / address (subtitle)
@@ -257,6 +316,139 @@ export default function ModernHeader({
     Number.isFinite(tableStats?.freeTables) && tableStats.freeTables >= 0
       ? tableStats.freeTables
       : null;
+  const ordersBadgeStorageKey = React.useMemo(() => {
+    const restaurantId =
+      currentUser?.restaurant_id ||
+      currentUser?.tenant_id ||
+      (typeof window !== "undefined" ? window.localStorage.getItem("restaurant_id") : "") ||
+      "global";
+    const userId =
+      currentUser?.id || currentUser?.user_id || currentUser?.email || currentUser?.username || "anonymous";
+    return `modern-header-orders-badge-reset:${restaurantId}:${userId}`;
+  }, [
+    currentUser?.email,
+    currentUser?.id,
+    currentUser?.restaurant_id,
+    currentUser?.tenant_id,
+    currentUser?.user_id,
+    currentUser?.username,
+  ]);
+  const [aggregatedOrdersCount, setAggregatedOrdersCount] = React.useState(0);
+  const [ordersBadgeResetAtCount, setOrdersBadgeResetAtCount] = React.useState(() => {
+    if (typeof window === "undefined") return 0;
+    try {
+      return Number(window.localStorage.getItem(ordersBadgeStorageKey) || 0) || 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      setOrdersBadgeResetAtCount(Number(window.localStorage.getItem(ordersBadgeStorageKey) || 0) || 0);
+    } catch {
+      setOrdersBadgeResetAtCount(0);
+    }
+  }, [ordersBadgeStorageKey]);
+
+  const refreshOrdersBadgeCount = React.useCallback(async () => {
+    if (!currentUser) {
+      setAggregatedOrdersCount(0);
+      return;
+    }
+
+    const restaurantId =
+      currentUser?.restaurant_id ||
+      currentUser?.tenant_id ||
+      (typeof window !== "undefined" ? window.localStorage.getItem("restaurant_id") : "") ||
+      "";
+
+    try {
+      const orderParams = new URLSearchParams();
+      orderParams.set("mode", "kitchen");
+      if (restaurantId) orderParams.set("restaurant_id", restaurantId);
+
+      const [openOrdersPayload, reservationsPayload, eventsPayload] = await Promise.all([
+        secureFetch(`/orders/open/with-items?${orderParams.toString()}`),
+        secureFetch(`/orders/reservations?start_date=${formatLocalYmd(new Date())}`),
+        secureFetch("/concerts/events?include_hidden=true"),
+      ]);
+
+      const openOrders = Array.isArray(openOrdersPayload)
+        ? openOrdersPayload
+        : Array.isArray(openOrdersPayload?.orders)
+        ? openOrdersPayload.orders
+        : [];
+      const activeOpenOrdersCount = openOrders.filter((order) => {
+        const status = normalizeHeaderOrderStatus(order?.status);
+        if (isCancelledHeaderOrderStatus(status)) return false;
+        if (status === "closed") return false;
+        return true;
+      }).length;
+
+      const activeReservationsCount = countActiveReservations(reservationsPayload);
+
+      const events = Array.isArray(eventsPayload?.events) ? eventsPayload.events : [];
+      const bookingLists = await Promise.all(
+        events.map(async (event) => {
+          try {
+            const response = await secureFetch(`/concerts/events/${event.id}/bookings`);
+            return Array.isArray(response?.bookings) ? response.bookings : [];
+          } catch {
+            return [];
+          }
+        })
+      );
+      const activeConcertBookingsCount = countActiveConcertBookings(bookingLists.flat());
+
+      setAggregatedOrdersCount(
+        activeOpenOrdersCount + activeReservationsCount + activeConcertBookingsCount
+      );
+    } catch {
+      setAggregatedOrdersCount((previous) => previous || 0);
+    }
+  }, [currentUser]);
+
+  React.useEffect(() => {
+    void refreshOrdersBadgeCount();
+
+    const intervalId = window.setInterval(() => {
+      void refreshOrdersBadgeCount();
+    }, ORDERS_BADGE_POLL_MS);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshOrdersBadgeCount();
+      }
+    };
+
+    window.addEventListener("focus", refreshOrdersBadgeCount);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshOrdersBadgeCount);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refreshOrdersBadgeCount]);
+
+  const visibleOrdersBadgeCount =
+    aggregatedOrdersCount > 0 && aggregatedOrdersCount !== ordersBadgeResetAtCount
+      ? aggregatedOrdersCount
+      : 0;
+
+  const handleOrdersIconClick = React.useCallback(() => {
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(ordersBadgeStorageKey, String(aggregatedOrdersCount));
+      } catch {
+        // ignore storage errors
+      }
+    }
+    setOrdersBadgeResetAtCount(aggregatedOrdersCount);
+    navigate("/tableoverview?tab=tables");
+  }, [aggregatedOrdersCount, navigate, ordersBadgeStorageKey]);
 
   const supplierTabs = React.useMemo(() => {
     const tabs = [
@@ -319,7 +511,7 @@ export default function ModernHeader({
   const headerTabs = React.useMemo(() => {
     const all = [
       { id: "dashboard", label: t("Dashboard") },
-      { id: "takeaway", label: t("Pre Order") },
+      { id: "takeaway", label: t("Tickets/Orders") },
       { id: "tables", label: tableLabelText },
       { id: "kitchen", label: t("All Orders") },
       { id: "history", label: t("History") },
@@ -1138,7 +1330,7 @@ export default function ModernHeader({
   const headerIconButtonClass = React.useCallback(
     (isActive = false) =>
       [
-        "inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-2xl border shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500/30",
+        "relative inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-2xl border shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500/30",
         isActive
           ? "border-indigo-300 bg-indigo-50 text-indigo-600 shadow-indigo-500/10 dark:border-indigo-500/50 dark:bg-indigo-500/15 dark:text-indigo-300"
           : "border-slate-200/80 bg-white/95 text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-indigo-500/50 dark:hover:text-indigo-300",
@@ -1147,7 +1339,18 @@ export default function ModernHeader({
   );
 
   return (
-    <header className="sticky top-0 z-40 w-full px-3 md:px-6 h-auto md:h-16 py-2 md:py-0 flex items-center bg-white/80 dark:bg-zinc-900/70 backdrop-blur-xl shadow-2xl border-b border-blue-100 dark:border-zinc-800">
+    <>
+      <style>
+        {`@keyframes modernHeaderOrdersNudge {
+          0%, 100% { transform: rotate(0deg) scale(1); }
+          8% { transform: rotate(-10deg) scale(1.02); }
+          16% { transform: rotate(10deg) scale(1.02); }
+          24% { transform: rotate(-7deg) scale(1.01); }
+          32% { transform: rotate(7deg) scale(1.01); }
+          40% { transform: rotate(0deg) scale(1); }
+        }`}
+      </style>
+      <header className="sticky top-0 z-40 w-full px-3 md:px-6 h-auto md:h-16 py-2 md:py-0 flex items-center bg-white/80 dark:bg-zinc-900/70 backdrop-blur-xl shadow-2xl border-b border-blue-100 dark:border-zinc-800">
       {/* Left: Drawer toggle */}
       <div className="flex items-center min-w-0 flex-shrink-0 gap-3">
         {onSidebarToggle && (
@@ -1239,12 +1442,27 @@ export default function ModernHeader({
             </button>
             <button
               type="button"
-              onClick={() => navigate("/tableoverview?tab=tables")}
+              onClick={handleOrdersIconClick}
               className={headerIconButtonClass(isTableOverviewRoute || isTransactionRoute)}
               aria-label={t("Orders")}
               title={t("Orders")}
             >
-              <ClipboardList className="h-4.5 w-4.5" />
+              <ClipboardList
+                className="h-4.5 w-4.5"
+                style={
+                  visibleOrdersBadgeCount > 0
+                    ? { animation: "modernHeaderOrdersNudge 2.8s ease-in-out infinite" }
+                    : undefined
+                }
+              />
+              {visibleOrdersBadgeCount > 0 ? (
+                <span
+                  className="absolute -right-1.5 -top-1.5 inline-flex min-w-[20px] items-center justify-center rounded-full border border-white/80 bg-gradient-to-r from-fuchsia-500 to-indigo-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-lg shadow-indigo-500/25 dark:border-slate-900"
+                  aria-label={t("Orders count label", { count: visibleOrdersBadgeCount })}
+                >
+                  {visibleOrdersBadgeCount > 99 ? "99+" : visibleOrdersBadgeCount}
+                </span>
+              ) : null}
             </button>
             {!isPublicShellRoute && currentUser && onLockClick && (
               <button
@@ -1619,6 +1837,7 @@ export default function ModernHeader({
         {notificationBell}
         
       </div>
-    </header>
+      </header>
+    </>
   );
 }

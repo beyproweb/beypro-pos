@@ -4,7 +4,11 @@ import { useTranslation } from "react-i18next";
 import secureFetch from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
 import { getCheckoutPrefill, useCustomerAuth } from "../features/qrmenu/header-drawer";
-import { normalizeQrBookingSettings, normalizeReservationTimeSlotOptions } from "../utils/qrBooking";
+import {
+  getEffectiveBookingMaxDaysInAdvance,
+  normalizeQrBookingSettings,
+  normalizeReservationTimeSlotOptions,
+} from "../utils/qrBooking";
 import {
   buildReservationContactPath,
   buildPublicMenuPath,
@@ -606,7 +610,7 @@ export default function QrReservationBookingPage() {
           min={new Date().toISOString().slice(0, 10)}
           max={(() => {
             const next = new Date();
-            next.setDate(next.getDate() + Number(settings?.booking_max_days_in_advance || 30));
+            next.setDate(next.getDate() + getEffectiveBookingMaxDaysInAdvance(settings));
             return next.toISOString().slice(0, 10);
           })()}
           onChange={(event) => setForm((prev) => ({ ...prev, reservation_date: event.target.value }))}

@@ -59,7 +59,11 @@ import {
   mutateStressDataByAction,
 } from "../features/tables/dev/stressData";
 import socket from "../utils/socket";
-import { normalizeQrBookingSettings, QR_BOOKING_DEFAULTS } from "../utils/qrBooking";
+import {
+  hasReservationCheckinWindowRules,
+  normalizeQrBookingSettings,
+  QR_BOOKING_DEFAULTS,
+} from "../utils/qrBooking";
 
 const PERF_DEBUG_ENABLED = isTablePerfDebugEnabled();
 const DEFAULT_STRESS_CONFIG = Object.freeze({
@@ -96,6 +100,9 @@ const buildReservationCheckinWindowMessageFromError = (err) => {
 };
 
 const buildReservationCheckinWindowMessage = (settings, t) => {
+  if (!hasReservationCheckinWindowRules(settings || QR_BOOKING_DEFAULTS)) {
+    return "";
+  }
   const normalizedSettings = normalizeQrBookingSettings(settings || QR_BOOKING_DEFAULTS);
   const earlyMinutes = Math.max(
     0,
@@ -336,7 +343,7 @@ const getViewBookingKey = (booking = {}) => {
 };
 
 const TAB_LIST = [
-  { id: "takeaway", label: "Pre Order", icon: "⚡" },
+  { id: "takeaway", label: "Tickets/Orders", icon: "⚡" },
   { id: "tables", label: "Tables", icon: "🍽️" },
   { id: "kitchen", label: "All Orders", icon: "👨‍🍳" },
   { id: "history", label: "History", icon: "📘" },
@@ -4861,7 +4868,7 @@ const blockedConcertTableNumbers = React.useMemo(() => {
 
 useEffect(() => {
   const titlesByTab = {
-    takeaway: t("Pre Order"),
+    takeaway: t("Tickets/Orders"),
     tables: t("Tables"),
     kitchen: t("All Orders"),
     history: t("History"),

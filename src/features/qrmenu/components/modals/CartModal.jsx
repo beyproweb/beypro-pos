@@ -382,9 +382,7 @@ const CartModal = React.memo(function CartModal({
                 <div className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">
                   {t("Order Status")}
                 </div>
-                <div className="mt-1 text-sm text-neutral-600">
-                  {t("Track pending orders and keep reordering from the same cart.")}
-                </div>
+
               </div>
               {isLoggedIn ? (
                 <button

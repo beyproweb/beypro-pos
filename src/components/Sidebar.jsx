@@ -28,6 +28,9 @@ import {
   Megaphone,
   CreditCard,
   Globe,
+  PanelLeftClose,
+  PanelLeftOpen,
+  ShoppingCart,
   X,
 } from "lucide-react";
 import { toast } from "react-toastify";
@@ -40,14 +43,16 @@ import secureFetch from "../utils/secureFetch";
 import { CURRENCY_KEYS } from "../utils/currency";
 import { useCurrency } from "../context/CurrencyContext";
 
-export const SIDEBAR_WIDTH_OPEN = 224;
-export const SIDEBAR_WIDTH_COLLAPSED = 72;
+export const SIDEBAR_WIDTH_OPEN = 196;
+export const SIDEBAR_WIDTH_COLLAPSED = 64;
 export const DASHBOARD_ITEM_DRAG_TYPE = "application/x-dashboard-shortcut";
 const MAX_VISIBLE_SIDEBAR_TABS = 9;
 
 const MENU = [
   { labelKey: "Dashboard", defaultLabel: "Dashboard", path: "/dashboard", icon: Home, permission: "dashboard", moduleKey: "page.dashboard" },
   { labelKey: "Orders", defaultLabel: "Tables", path: "/tableoverview?tab=tables", icon: Grid2x2, permission: ["tables", "view-booking", "song-request"], moduleKey: "page.tables" },
+  { labelKey: "Tickets/Orders", defaultLabel: "Tickets/Orders", path: "/tableoverview?tab=takeaway", icon: ShoppingCart, permission: "takeaway", moduleKey: "page.takeaway_overview" },
+  { labelKey: "All Orders", defaultLabel: "All Orders", path: "/tableoverview?tab=kitchen", icon: ClipboardList, permission: "kitchen", moduleKey: "page.kitchen" },
   { labelKey: "Packet", defaultLabel: "Packet", path: "/tableoverview?tab=packet", icon: ShoppingBag, permission: "packet-orders", moduleKey: "page.packet_orders" },
   { labelKey: "History", defaultLabel: "History", path: "/tableoverview?tab=history", icon: BookOpen, permission: "history", moduleKey: "page.history" },
   { labelKey: "Phone", defaultLabel: "Phone", path: "/tableoverview?tab=phone", icon: Phone, permission: "phone-orders", moduleKey: "page.phone_orders" },
@@ -72,7 +77,7 @@ const MENU = [
 ];
 
 // Always keep these directly under Dashboard in the sidebar.
-const PINNED_KEYS = ["Dashboard", "Orders", "Packet", "Phone", "Register"];
+const PINNED_KEYS = ["Dashboard", "Orders", "Tickets/Orders", "All Orders", "Packet", "Phone", "Register"];
 const PINNED_SET = new Set(PINNED_KEYS);
 
 const HIDDEN_STORAGE_KEY = "beyproHiddenSidebarItems";
@@ -606,7 +611,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
         transition-all duration-300 ease-in-out
         shadow-2xl border-r border-white/15
         backdrop-blur-2xl
-        flex flex-col items-center md:items-stretch py-3 px-0
+        flex flex-col items-center md:items-stretch py-2 px-0
       `}
       style={{
         width: `${sidebarWidth}px`,
@@ -617,8 +622,8 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
 
       {/* Logo */}
       <div
-        className={`flex gap-2 py-2 transition-all ${
-          isOpen ? "flex-row items-center justify-center px-3" : "flex-col items-center justify-center"
+        className={`flex gap-1.5 py-1.5 transition-all ${
+          isOpen ? "flex-row items-center justify-center px-2.5" : "flex-col items-center justify-center"
         }`}
       >
         <button
@@ -630,29 +635,16 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
             relative flex flex-col items-center justify-center
             rounded-lg outline-none focus:ring-2 focus:ring-accent/60
             transition-transform duration-200
-            ${isOpen ? "w-8 h-8 md:w-14 md:h-14" : "w-10 h-10"}
+            ${isOpen ? "w-8 h-8 md:w-11 md:h-11" : "w-9 h-9"}
             bg-white/5 hover:bg-white/10 border border-white/20 shadow-lg
             hover:scale-105 active:scale-95
           `}
         >
-          <span
-            className={`
-              block w-6 h-0.5 bg-white rounded transition-transform duration-200
-              ${isOpen ? "translate-y-1.5 rotate-45" : "-translate-y-1.5"}
-            `}
-          />
-          <span
-            className={`
-              block w-6 h-0.5 bg-white rounded mb-1.5 mt-1.5 transition-opacity duration-200
-              ${isOpen ? "opacity-0" : "opacity-100"}
-            `}
-          />
-          <span
-            className={`
-              block w-6 h-0.5 bg-white rounded transition-transform duration-200
-              ${isOpen ? "-translate-y-1.5 -rotate-45" : "translate-y-1.5"}
-            `}
-          />
+          {isOpen ? (
+            <PanelLeftClose size={20} className="text-white" strokeWidth={2.2} />
+          ) : (
+            <PanelLeftOpen size={18} className="text-white" strokeWidth={2.2} />
+          )}
           <span className="sr-only">
             {t(isOpen ? "Collapse sidebar" : "Expand sidebar", {
               defaultValue: isOpen ? "Collapse sidebar" : "Expand sidebar",
@@ -665,7 +657,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
 
       {/* Menu */}
       <nav
-        className="flex-1 flex flex-col gap-0 mt-6"
+        className="mt-4 flex flex-1 flex-col gap-0"
         onDragOver={handleContainerDragOver}
         onDrop={handleContainerDrop}
       >
@@ -690,11 +682,11 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
               onLockClick();
               setIsOpen(false);
             }}
-            className="group flex items-center gap-3 px-3 py-3 rounded-xl mx-2 my-1 text-white hover:bg-orange-500/20 hover:text-orange-300 transition shadow-lg relative"
+            className="group relative mx-1.5 my-0.5 flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-white shadow-lg transition hover:bg-orange-500/20 hover:text-orange-300"
             title={t("Lock Session", { defaultValue: "Lock Session" })}
           >
-            <Lock size={24} />
-            {isOpen && <span className="font-medium truncate">{t("Lock Session", { defaultValue: "Lock Session" })}</span>}
+            <Lock size={20} />
+            {isOpen && <span className="truncate text-sm font-medium">{t("Lock Session", { defaultValue: "Lock Session" })}</span>}
             {!isOpen && (
               <span className="absolute left-[110%] bg-black/70 text-white text-xs px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition">
                 {t("Lock Session", { defaultValue: "Lock Session" })}
@@ -705,20 +697,20 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
         <button
           key={item.labelKey}
           onClick={handleLogout}
-          className={`group flex items-center gap-3 px-3 py-3 rounded-xl mx-2 my-1
+          className={`group relative mx-1.5 my-0.5 flex items-center gap-2.5 rounded-xl px-2.5 py-2
             text-white hover:bg-white/10 hover:text-white transition shadow-lg relative
             ${active ? "bg-white/20 shadow-2xl ring-2 ring-accent/60" : ""}
           `}
         >
-          <Icon size={24} />
-          {isOpen && <span className="font-medium truncate">{label}</span>}
+          <Icon size={20} />
+          {isOpen && <span className="truncate text-sm font-medium">{label}</span>}
         </button>
       </>
     ) : (
       <NavLink
         key={item.labelKey}
         to={item.path}
-        className={`group flex items-center gap-3 px-3 py-3 rounded-xl mx-2 my-1 text-white hover:bg-white/10 hover:text-white transition shadow-lg relative ${
+        className={`group relative mx-1.5 my-0.5 flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-white hover:bg-white/10 hover:text-white transition shadow-lg ${
           active
             ? "bg-accent ring-2 ring-white/60"
             : ""
@@ -732,18 +724,18 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
         onDragEnd={canDrag ? handleDragEndItem : undefined}
         onClick={handleNavClick(item.path)}
       >
-        <Icon size={24} />
+        <Icon size={20} />
         {isOpen && (
           <>
-            <span className="font-medium truncate flex-1">{label}</span>
+            <span className="flex-1 truncate text-sm font-medium">{label}</span>
             {hideable && isAdminUser && (
               <button
                 type="button"
                 onClick={handleHideItem(item.labelKey)}
-                className="ml-2 p-1 rounded-full hover:bg-white/20 transition"
+                className="ml-1 p-0.5 rounded-full hover:bg-white/20 transition"
                 title={t("Hide tab", { defaultValue: "Hide tab" })}
               >
-                <X size={14} />
+                <X size={12} />
               </button>
             )}
           </>
@@ -760,12 +752,12 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
       </nav>
 
       {canShowLanguageSelector && (
-        <div className="w-full px-2 mt-2">
-          <div className="mx-2 my-2 h-px bg-white/15" />
+        <div className="mt-1.5 w-full px-1.5">
+          <div className="mx-1.5 my-1.5 h-px bg-white/15" />
           {isOpen ? (
-            <div className="mx-2 my-2 rounded-xl border border-white/15 bg-white/5 px-2 py-2 shadow-lg">
-              <div className="flex items-center gap-2 min-w-0">
-                <Globe size={16} className="text-white/70 flex-shrink-0" />
+            <div className="mx-1.5 my-1.5 rounded-xl border border-white/15 bg-white/5 px-2 py-1.5 shadow-lg">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <Globe size={14} className="text-white/70 flex-shrink-0" />
                 <label className="sr-only" htmlFor="sidebar-language">
                   {t("Language", { defaultValue: "Language" })}
                 </label>
@@ -782,7 +774,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
                     } catch {}
                   }}
                   title={t("Language", { defaultValue: "Language" })}
-                  className="h-8 w-[68px] rounded-lg px-2 bg-white/10 text-white text-xs font-bold border border-white/15 focus:ring-2 focus:ring-accent/60 outline-none"
+                  className="h-7 w-[62px] rounded-lg px-1.5 bg-white/10 text-white text-[11px] font-bold border border-white/15 focus:ring-2 focus:ring-accent/60 outline-none"
                 >
                   {languageOptions.map((opt) => (
                     <option key={opt.code} value={opt.code} className="text-slate-900">
@@ -798,7 +790,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
                     setCurrencyKey?.(e.target.value);
                   }}
                   title={t("Currency", { defaultValue: "Currency" })}
-                  className="ml-auto h-8 w-[118px] rounded-lg px-2 bg-white/10 text-white text-[11px] font-bold border border-white/15 focus:ring-2 focus:ring-accent/60 outline-none"
+                  className="ml-auto h-7 w-[104px] rounded-lg px-1.5 bg-white/10 text-white text-[10px] font-bold border border-white/15 focus:ring-2 focus:ring-accent/60 outline-none"
                 >
                   {CURRENCY_KEYS.map((cur) => (
                     <option key={cur} value={cur} className="text-slate-900">
@@ -812,12 +804,12 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
             <button
               type="button"
               onClick={() => setIsOpen?.(true)}
-              className="group flex items-center justify-center w-full px-3 py-3 rounded-xl mx-2 my-1 text-white hover:bg-white/10 hover:text-white transition shadow-lg relative"
+              className="group relative mx-1.5 my-0.5 flex w-full items-center justify-center rounded-xl px-2.5 py-2 text-white shadow-lg transition hover:bg-white/10 hover:text-white"
               title={t("Language & Localization", {
                 defaultValue: "Language & Localization",
               })}
             >
-              <Globe size={24} />
+              <Globe size={20} />
               <span className="absolute left-[110%] bg-black/70 text-white text-xs px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition">
                 {t("Language & Localization", {
                   defaultValue: "Language & Localization",
@@ -828,22 +820,22 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
         </div>
       )}
 
-      <div className="mb-6 flex flex-col items-center gap-2 px-4 text-center">
+      <div className="mb-3 flex flex-col items-center gap-1 px-2.5 text-center">
         {displayName && (
-          <span className="w-full max-w-[180px] truncate text-center text-xs uppercase tracking-[0.3em] text-white/60">
+          <span className="w-full max-w-[140px] truncate text-center text-[10px] uppercase tracking-[0.18em] text-white/55">
             {displayName}
           </span>
         )}
         <NavLink
           to="/dashboard"
-          className="flex items-center justify-center rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/60"
+          className="flex min-h-8 items-center justify-center rounded-lg px-2 focus:outline-none focus:ring-2 focus:ring-accent/60"
           aria-label="Go to dashboard"
           onClick={() => setIsOpen?.(false)}
         >
           <img
             src="/Beylogo.svg"
             alt="Beypro"
-            className={isOpen ? "h-8 w-auto" : "h-8 w-8"}
+            className={isOpen ? "h-6 w-auto" : "h-6 w-6"}
           />
         </NavLink>
       </div>
