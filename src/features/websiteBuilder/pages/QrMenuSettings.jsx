@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import secureFetch from "../../../utils/secureFetch";
-import { Eye, EyeOff, Search, Copy, Download, Printer, Trash2, ChevronDown } from "lucide-react";
+import { Eye, EyeOff, Search, Copy, Download, Printer, Trash2, ChevronDown, Share2 } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
+import QRCode from "qrcode";
 import { useTranslation } from "react-i18next";
 import { API_ORIGIN } from "../../../utils/api";
 import { useHasPermission } from "../../../components/hooks/useHasPermission";
@@ -32,6 +33,7 @@ const extractIdentifierFromQrUrl = (value) => {
 };
 
 const QR_MENU_BRANDING_UPDATED_EVENT = "qr:branding-cache-updated";
+const QR_EXPORT_SIZE = 2048;
 
 const writeQrMenuBrandingCache = (identifier, customization) => {
   if (typeof window === "undefined") return;
@@ -104,6 +106,11 @@ const syncRestaurantSlugCache = (slug) => {
   } catch {
     // Ignore malformed cached user data.
   }
+};
+
+const dataUrlToBlob = async (dataUrl) => {
+  const response = await fetch(dataUrl);
+  return response.blob();
 };
 
 const normalizeAssetValue = (value) => {
@@ -1682,91 +1689,100 @@ async function saveAllCustomization() {
     toast.info(t("QR link copied!"));
   };
 
-  const downloadQR = () => {
-    if (!qrUrl) return;
-    const container = qrRef.current;
-    if (!container) return;
-
-    const triggerDownload = (href, filename) => {
-      const a = document.createElement("a");
-      a.href = href;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    };
-
-    const exportFromCanvas = (sourceCanvas, filename) => {
-      const size = 320;
-      const exportCanvas = document.createElement("canvas");
-      exportCanvas.width = size;
-      exportCanvas.height = size;
-      const ctx = exportCanvas.getContext("2d");
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(0, 0, size, size);
-      ctx.drawImage(sourceCanvas, 0, 0, size, size);
-      triggerDownload(exportCanvas.toDataURL("image/png"), filename);
-    };
-
-    const canvas = container.querySelector("canvas");
-    if (canvas) {
-      exportFromCanvas(canvas, "qr-menu.png");
-      return;
-    }
-
-    const svg = container.querySelector("svg");
-    if (!svg) {
-      toast.error(t("QR code not ready yet"));
-      return;
-    }
-
-    const svgData = new XMLSerializer().serializeToString(svg);
-    const img = new window.Image();
-    img.onload = () => {
-      const size = 320;
-      const exportCanvas = document.createElement("canvas");
-      exportCanvas.width = size;
-      exportCanvas.height = size;
-      const ctx = exportCanvas.getContext("2d");
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(0, 0, size, size);
-      ctx.drawImage(img, 0, 0, size, size);
-      triggerDownload(exportCanvas.toDataURL("image/png"), "qr-menu.png");
-    };
-    img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
+  const buildQrDownloadDataUrl = async (value, size = QR_EXPORT_SIZE) => {
+    const trimmedValue = String(value || "").trim();
+    if (!trimmedValue) throw new Error("QR code not ready yet");
+    return QRCode.toDataURL(trimmedValue, {
+      errorCorrectionLevel: "H",
+      margin: 2,
+      width: size,
+      color: {
+        dark: "#000000",
+        light: "#FFFFFF",
+      },
+    });
   };
 
-  const printQR = () => {
-    if (!qrUrl) return;
-    const container = qrRef.current;
-    if (!container) return;
+  const triggerDownload = (href, filename) => {
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
 
-    const canvas = container.querySelector("canvas");
-    let imgSrc = "";
-    if (canvas) {
-      imgSrc = canvas.toDataURL("image/png");
-    } else {
-      const svg = container.querySelector("svg");
-      if (svg) {
-        const svgData = new XMLSerializer().serializeToString(svg);
-        imgSrc = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
+  const downloadQR = async () => {
+    if (!qrUrl) return;
+    try {
+      const dataUrl = await buildQrDownloadDataUrl(qrUrl);
+      triggerDownload(dataUrl, "qr-menu.png");
+    } catch (err) {
+      console.error("❌ Failed to download QR:", err);
+      toast.error(t("QR code not ready yet"));
+    }
+  };
+
+  const shareQR = async () => {
+    if (!qrUrl) return;
+    try {
+      const dataUrl = await buildQrDownloadDataUrl(qrUrl, 1024);
+      const file = new File([await dataUrlToBlob(dataUrl)], "qr-menu.png", {
+        type: "image/png",
+      });
+
+      if (navigator.share) {
+        const sharePayload = {
+          title: t("QR Menu"),
+          text: qrUrl,
+          url: qrUrl,
+        };
+
+        if (navigator.canShare?.({ files: [file] })) {
+          await navigator.share({
+            ...sharePayload,
+            files: [file],
+          });
+        } else {
+          await navigator.share(sharePayload);
+        }
+        return;
+      }
+
+      await navigator.clipboard.writeText(qrUrl);
+      toast.info(t("Sharing is not supported on this device. Link copied instead."));
+    } catch (err) {
+      if (err?.name === "AbortError") return;
+      console.error("❌ Failed to share QR:", err);
+      try {
+        await navigator.clipboard.writeText(qrUrl);
+        toast.info(t("Sharing is not supported on this device. Link copied instead."));
+      } catch {
+        toast.error(t("Failed to share QR"));
       }
     }
-    if (!imgSrc) {
-      toast.error(t("QR code not ready yet"));
-      return;
-    }
+  };
 
-    const win = window.open("", "_blank");
-    win.document.write(`
-      <html><head><title>${t("Print QR Code")}</title></head>
-      <body style="text-align:center;font-family:sans-serif">
-        <img src="${imgSrc}" style="margin-top:30px;width:260px;height:260px;" />
-        <div style="margin-top:10px;font-size:16px">${qrUrl}</div>
-        <script>window.onload=()=>window.print()</script>
-      </body></html>
-    `);
-    win.document.close();
+  const printQR = async () => {
+    if (!qrUrl) return;
+
+    try {
+      const imgSrc = await buildQrDownloadDataUrl(qrUrl, 1200);
+      const win = window.open("", "_blank");
+      if (!win) return;
+      win.document.write(`
+        <html><head><title>${t("Print QR Code")}</title></head>
+        <body style="text-align:center;font-family:sans-serif">
+          <img src="${imgSrc}" style="margin-top:30px;width:260px;height:260px;image-rendering:pixelated;" />
+          <div style="margin-top:10px;font-size:16px">${qrUrl}</div>
+          <script>window.onload=()=>window.print()</script>
+        </body></html>
+      `);
+      win.document.close();
+    } catch (err) {
+      console.error("❌ Failed to print QR:", err);
+      toast.error(t("QR code not ready yet"));
+    }
   };
 
   const filteredProducts = products.filter(
@@ -2551,6 +2567,14 @@ async function saveAllCustomization() {
                     className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-500 to-pink-500 px-6 py-3 font-bold text-white shadow-lg transition hover:scale-105 disabled:opacity-50"
                   >
                     <Download className="w-4 h-4" /> {t("Download QR")}
+                  </button>
+
+                  <button
+                    onClick={shareQR}
+                    disabled={!qrUrl}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 px-6 py-3 font-bold text-white shadow-lg transition hover:scale-105 disabled:opacity-50"
+                  >
+                    <Share2 className="w-4 h-4" /> {t("Share QR")}
                   </button>
 
                   <button

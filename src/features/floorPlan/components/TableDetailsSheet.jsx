@@ -73,8 +73,10 @@ export default function TableDetailsSheet({
         {/* Header */}
         <div className={["flex items-start justify-between gap-3", useMobileFullscreen ? "sticky top-0 z-10 bg-inherit pb-2" : ""].join(" ")}>
           <div>
-            <div className="text-base font-semibold text-neutral-950 dark:text-white">{resolvedTableTitle}</div>
-            <div className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{areaLabel}</div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <div className="text-base font-semibold text-neutral-950 dark:text-white">{resolvedTableTitle}</div>
+              <div className="text-sm text-neutral-500 dark:text-neutral-400">{areaLabel}</div>
+            </div>
           </div>
           <button
             type="button"
