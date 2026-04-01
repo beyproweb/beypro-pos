@@ -23,7 +23,7 @@ export default function BookingPageLayout({
         accentColor={accentColor}
         showIndicator={showHeaderIndicator}
       />
-      <main className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-4 pb-28">
+      <main className="mx-auto flex w-full max-w-none flex-col gap-0 px-0 py-0 pb-28 sm:max-w-3xl sm:gap-4 sm:px-4 sm:py-4">
         {children}
       </main>
       <MobileStickyActionBar

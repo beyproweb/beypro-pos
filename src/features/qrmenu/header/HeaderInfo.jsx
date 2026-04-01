@@ -1,15 +1,30 @@
 import React from "react";
+import HeaderTabs from "./HeaderTabs";
 
 function HeaderInfo({
+  isDark = false,
+  isDrawerOpen = false,
+  onOpenDrawer,
+  onSelect,
+  reservationEnabled = true,
+  tableEnabled = true,
+  deliveryEnabled = true,
+  requestSongEnabled = false,
+  activeOrderType = "takeaway",
+  statusShortcutCount = 0,
+  statusShortcutEnabled = false,
+  statusShortcutOpen = false,
+  onStatusShortcutClick,
   restaurantName,
   mainTitleLogo,
   tagline,
+  accentColor = "#111827",
   t,
 }) {
   const logoSrc = String(mainTitleLogo || "").trim();
 
   return (
-    <div className="max-w-4xl mx-auto px-4 pt-[30px]">
+    <div className="max-w-4xl mx-auto px-4 pt-6 sm:pt-7">
       <div className="text-center">
         {logoSrc ? (
           <>
@@ -28,9 +43,32 @@ function HeaderInfo({
             {restaurantName}
           </h1>
         )}
-        <p className="mt-2 text-[15px] sm:text-[16px] font-light tracking-[0.02em] text-gray-600 dark:text-neutral-300/85">
+        <p className="mt-2.5 sm:mt-3 text-[15px] sm:text-[16px] font-light tracking-[0.02em] text-gray-600 dark:text-neutral-300/85">
           {tagline}
         </p>
+      </div>
+
+      <div className="mt-5 sm:mt-6">
+        <HeaderTabs
+          isDark={isDark}
+          isDrawerOpen={isDrawerOpen}
+          onOpenDrawer={onOpenDrawer}
+          onSelect={onSelect}
+          reservationEnabled={reservationEnabled}
+          tableEnabled={tableEnabled}
+          deliveryEnabled={deliveryEnabled}
+          requestSongEnabled={requestSongEnabled}
+          activeOrderType={activeOrderType}
+          statusShortcutCount={statusShortcutCount}
+          statusShortcutEnabled={statusShortcutEnabled}
+          statusShortcutOpen={statusShortcutOpen}
+          onStatusShortcutClick={onStatusShortcutClick}
+          restaurantName={restaurantName}
+          mainTitleLogo={mainTitleLogo}
+          accentColor={accentColor}
+          layout="selector"
+          t={t}
+        />
       </div>
     </div>
   );

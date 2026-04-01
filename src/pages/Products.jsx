@@ -706,6 +706,25 @@ useEffect(() => {
   const handleCategoryDelete = async () => {
     if (!selectedCategoryToDelete) return;
 
+    const productIdsToDelete = products
+      .filter((product) =>
+        selectedCategoryToDelete === "ALL"
+          ? true
+          : product.category === selectedCategoryToDelete
+      )
+      .map((product) => product.id)
+      .filter((id) => Number.isInteger(Number(id)))
+      .map(Number);
+
+    if (productIdsToDelete.length === 0) {
+      alert(
+        selectedCategoryToDelete === "ALL"
+          ? t("No products available to delete")
+          : t("No products found in the selected category")
+      );
+      return;
+    }
+
     const confirmMsg =
       selectedCategoryToDelete === "ALL"
         ? t("Are you sure you want to DELETE ALL PRODUCTS?")
@@ -716,14 +735,15 @@ useEffect(() => {
     if (!window.confirm(confirmMsg)) return;
 
     try {
-      const url =
-        selectedCategoryToDelete === "ALL"
-          ? "/products" // bulk delete all (tenant-safe backend route)
-          : `/products?category=${encodeURIComponent(selectedCategoryToDelete)}`;
-
-      await secureFetch(url, { method: "DELETE" });
+      await secureFetch("/products", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: productIdsToDelete }),
+      });
       alert(t("Deleted successfully"));
-      fetchProducts();
+      setSelectedCategoryToDelete("");
+      await fetchProducts();
+      await fetchCategories();
     } catch (err) {
       console.error("❌ Delete failed:", err);
       alert(t("Delete failed. Check console."));

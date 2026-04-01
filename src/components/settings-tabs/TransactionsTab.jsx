@@ -150,6 +150,23 @@ export default function TransactionsTab() {
         <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
           <input
             type="checkbox"
+            checked={!!settings.autoCloseDeliveredTableFromKitchen}
+            onChange={() => toggle("autoCloseDeliveredTableFromKitchen")}
+            className="mt-1 h-5 w-5 accent-indigo-500"
+          />
+          <div>
+            <div className="font-semibold text-sm">
+              {t("Auto-close delivered tables from kitchen")}
+            </div>
+            <div className="text-xs text-slate-500">
+              {t("When all kitchen items for a table are delivered, close the table and free it even if payment is still pending.")}
+            </div>
+          </div>
+        </label>
+
+        <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+          <input
+            type="checkbox"
             checked={!!settings.autoNavigateTableAfterConfirm}
             onChange={() => toggle("autoNavigateTableAfterConfirm")}
             className="mt-1 h-5 w-5 accent-indigo-500"

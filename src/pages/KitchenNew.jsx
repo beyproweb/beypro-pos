@@ -5,8 +5,46 @@ import secureFetch from "../utils/secureFetch";
 import { useHeader } from "../context/HeaderContext";
 import KitchenSettingsModal from "../modals/KitchenSettingsModal";
 import { patchTableOrdersKitchenStatusInCache } from "../features/orders/tableOrdersCache";
+import { removeTableOverviewOrderFromCache } from "../utils/tableOverviewOrdersCache";
+import { useSetting } from "../components/hooks/useSetting";
+import { DEFAULT_TRANSACTION_SETTINGS } from "../constants/transactionSettingsDefaults";
 
 const KITCHEN_ORDER_TIMERS_KEY = "kitchenOrderTimers.v2";
+
+const getRestaurantScopedCacheKey = (suffix) => {
+  const restaurantId =
+    (typeof window !== "undefined" && window?.localStorage?.getItem("restaurant_id")) ||
+    "global";
+  return `hurrypos:${restaurantId}:${suffix}`;
+};
+
+const getOpenOrdersCacheKey = (mode = "packet") =>
+  getRestaurantScopedCacheKey(`openOrders.${mode}.v1`);
+
+const pruneOpenOrdersCache = (orderId, tableNumber) => {
+  if (typeof window === "undefined") return;
+
+  ["packet", "kitchen"].forEach((mode) => {
+    const key = getOpenOrdersCacheKey(mode);
+    try {
+      const raw = window.localStorage.getItem(key);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(parsed)) return;
+      const next = parsed.filter((row) => {
+        const rowOrderId = Number(row?.id ?? row?.order_id ?? row?.orderId);
+        const rowTableNumber = Number(
+          row?.table_number ?? row?.tableNumber ?? row?.table_id ?? row?.tableId ?? row?.table
+        );
+        if (Number.isFinite(orderId) && rowOrderId === orderId) return false;
+        if (Number.isFinite(tableNumber) && rowTableNumber === tableNumber) return false;
+        return true;
+      });
+      window.localStorage.setItem(key, JSON.stringify(next));
+    } catch {
+      // ignore cache errors
+    }
+  });
+};
 
 export default function KitchenNew() {
   const [orders, setOrders] = useState([]);
@@ -29,10 +67,15 @@ export default function KitchenNew() {
   const { t } = useTranslation();
   const { setHeader } = useHeader();
   const [showSettings, setShowSettings] = useState(false);
+  const [transactionSettings, setTransactionSettings] = useState(
+    DEFAULT_TRANSACTION_SETTINGS
+  );
   const [products, setProducts] = useState([]);
   const [excludedIngredients, setExcludedIngredients] = useState([]);
   const [excludedCategories, setExcludedCategories] = useState([]);
   const [excludedItems, setExcludedItems] = useState([]);
+
+  useSetting("transactions", setTransactionSettings, DEFAULT_TRANSACTION_SETTINGS);
 
   // Calculate max card height
   useEffect(() => {
@@ -347,12 +390,118 @@ export default function KitchenNew() {
     });
   }, []);
 
+  const closeDeliveredTableOrders = useCallback(
+    async (candidateOrders, deliveredItemIds) => {
+      if (!transactionSettings.autoCloseDeliveredTableFromKitchen) return;
+
+      const itemIdSet = new Set(
+        (Array.isArray(deliveredItemIds) ? deliveredItemIds : [])
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value))
+      );
+      if (itemIdSet.size === 0) return;
+
+      const excludedItemSet = new Set(
+        (Array.isArray(excludedItems) ? excludedItems : []).map((value) => String(value))
+      );
+      const excludedCategorySet = new Set(
+        (Array.isArray(excludedCategories) ? excludedCategories : [])
+          .map((value) => String(value || "").trim().toLowerCase())
+          .filter(Boolean)
+      );
+      const uniqueOrders = new Map();
+
+      (Array.isArray(candidateOrders) ? candidateOrders : []).forEach((order) => {
+        const orderId = Number(order?.order_id);
+        if (!Number.isFinite(orderId)) return;
+        uniqueOrders.set(orderId, order);
+      });
+
+      for (const order of uniqueOrders.values()) {
+        const orderType = String(order?.order_type || "").trim().toLowerCase();
+        if (!["table", "reservation"].includes(orderType)) continue;
+
+        const orderId = Number(order?.order_id);
+        const tableNumber = Number(order?.table_number);
+        const items = Array.isArray(order?.items) ? order.items : [];
+        if (!Number.isFinite(orderId) || !Number.isFinite(tableNumber) || items.length === 0) {
+          continue;
+        }
+
+        const allDelivered = items.every((item) => {
+          const itemId = Number(item?.item_id ?? item?.id ?? item?.order_item_id);
+          const nextStatus = itemIdSet.has(itemId)
+            ? "delivered"
+            : String(item?.kitchen_status || "").trim().toLowerCase();
+          const productId = String(item?.product_id ?? item?.id ?? "");
+          const category = String(item?.category || "").trim().toLowerCase();
+          const isExcluded =
+            (productId && excludedItemSet.has(productId)) ||
+            (category && excludedCategorySet.has(category));
+
+          return (
+            isExcluded ||
+            !nextStatus ||
+            nextStatus === "delivered" ||
+            nextStatus === "packet_delivered"
+          );
+        });
+
+        if (!allDelivered) continue;
+
+        try {
+          const hasReservationContext = Boolean(
+            orderType === "reservation" ||
+              (order?.reservation && typeof order.reservation === "object")
+          );
+          const closeBody = {
+            allow_unpaid_table_close: true,
+            ...(hasReservationContext
+              ? { preserve_reservation_checkout_badge: true }
+              : null),
+          };
+
+          await secureFetch(`/orders/${orderId}/close`, {
+            method: "POST",
+            body: JSON.stringify(closeBody),
+          });
+          removeTableOverviewOrderFromCache(tableNumber);
+          pruneOpenOrdersCache(orderId, tableNumber);
+          if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+            window.dispatchEvent(
+              new CustomEvent("beypro:orders-local-refresh", {
+                detail: {
+                  kind: "tableoverview_order_status",
+                  status: "closed",
+                  order_id: orderId,
+                  table_number: tableNumber,
+                },
+              })
+            );
+          }
+          await secureFetch(`/tables/${tableNumber}`, {
+            method: "PATCH",
+            body: JSON.stringify({ guests: null }),
+          });
+        } catch (err) {
+          console.error("❌ Failed to auto-close delivered table from kitchen:", err);
+        }
+      }
+    },
+    [excludedCategories, excludedItems, transactionSettings.autoCloseDeliveredTableFromKitchen]
+  );
+
   // Update kitchen status
   const updateKitchenStatus = async (status) => {
     if (selectedItemIds.size === 0) return;
 
     try {
       const itemIds = Array.from(selectedItemIds);
+      const impactedOrders = groupedOrders.filter((order) =>
+        Array.isArray(order?.items)
+          ? order.items.some((item) => itemIds.includes(item.item_id))
+          : false
+      );
 
       // Use the backend's expected endpoint and payload
       await secureFetch("/order-items/kitchen-status", {
@@ -376,6 +525,10 @@ export default function KitchenNew() {
             },
           })
         );
+      }
+
+      if (status === "delivered") {
+        await closeDeliveredTableOrders(impactedOrders, itemIds);
       }
 
       if (status === "preparing") {

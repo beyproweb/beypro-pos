@@ -31,6 +31,7 @@ function HeaderDrawer({
   t,
   appendIdentifier,
   isDark = false,
+  accentColor = "#111827",
   initialView = VIEW_MENU,
   openStatus = null,
   days = [],
@@ -388,6 +389,7 @@ function HeaderDrawer({
               onLogin={onLogin}
               onGoRegister={() => setView(VIEW_REGISTER)}
               onBack={() => setView(VIEW_MENU)}
+              accentColor={accentColor}
             />
           ) : null}
           {view === VIEW_REGISTER ? (
@@ -396,6 +398,7 @@ function HeaderDrawer({
               onRegister={onRegister}
               onGoLogin={() => setView(VIEW_LOGIN)}
               onBack={() => setView(VIEW_MENU)}
+              accentColor={accentColor}
             />
           ) : null}
           {view === VIEW_PROFILE ? (

@@ -1097,8 +1097,25 @@ const handleCloseTable = async (orderOrId, options = {}) => {
     (!preserveReservationShadow && options?.requirePaid === true);
   const order = orderOrId && typeof orderOrId === "object" ? orderOrId : null;
   const orderId = order?.id ?? orderOrId;
+  const closeOrderIds = Array.from(
+    new Set(
+      [
+        ...(Array.isArray(order?.merged_ids) ? order.merged_ids : []),
+        orderId,
+      ]
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0)
+    )
+  );
   const explicitTableNumber = Number(options?.tableNumber);
   const explicitReservationId = Number(options?.reservationId);
+  const tableNumber = Number(
+    Number.isFinite(explicitTableNumber)
+      ? explicitTableNumber
+      : order?.table_number ?? order?.tableNumber
+  );
+  const normalizedClosedOrderIds = closeOrderIds;
+  const normalizedClosedOrderId = normalizedClosedOrderIds[0] ?? Number(order?.id ?? orderId);
   const statusCandidates = [
     String(order?.status || "").toLowerCase(),
     String(order?.reservation?.status || "").toLowerCase(),
@@ -1126,12 +1143,23 @@ const handleCloseTable = async (orderOrId, options = {}) => {
     return false;
   }
 
+  if (normalizedClosedOrderIds.length === 0) {
+    toast.error("Failed to close table");
+    return false;
+  }
+
   try {
-    const items = await secureFetch(`/orders/${orderId}/items`);
-    if (!Array.isArray(items)) {
+    const itemsByOrder = await Promise.all(
+      normalizedClosedOrderIds.map(async (id) => {
+        const result = await secureFetch(`/orders/${id}/items`);
+        return Array.isArray(result) ? result : null;
+      })
+    );
+    if (itemsByOrder.some((items) => !Array.isArray(items))) {
       toast.error("Failed to verify kitchen items");
       return;
     }
+    const items = itemsByOrder.flat();
 
     if (requirePaidForClose) {
       const isCancelledLikeItem = (item) => {
@@ -1195,13 +1223,6 @@ const handleCloseTable = async (orderOrId, options = {}) => {
       return false;
     }
 
-    // ✅ Extract tableNumber and prepare data BEFORE optimistic update
-    const tableNumber = Number(
-      Number.isFinite(explicitTableNumber)
-        ? explicitTableNumber
-        : order?.table_number ?? order?.tableNumber
-    );
-    const normalizedClosedOrderId = Number(order?.id ?? orderId);
     const reservationShadowSource =
       (order?.reservationFallback && typeof order.reservationFallback === "object"
         ? order.reservationFallback
@@ -1232,9 +1253,9 @@ const handleCloseTable = async (orderOrId, options = {}) => {
     // ✅ OPTIMISTIC UPDATE: Remove order from UI immediately
     // Track this close to prevent refetch from bringing it back
     const now = Date.now();
-    if (Number.isFinite(normalizedClosedOrderId)) {
-      recentlyClosedRef.current.set(`order_${normalizedClosedOrderId}`, now);
-    }
+    normalizedClosedOrderIds.forEach((id) => {
+      recentlyClosedRef.current.set(`order_${id}`, now);
+    });
     if (Number.isFinite(tableNumber)) {
       recentlyClosedRef.current.set(`table_${tableNumber}`, now);
     }
@@ -1242,9 +1263,9 @@ const handleCloseTable = async (orderOrId, options = {}) => {
     
     // Clean up after 10 seconds (socket should have confirmed by then)
     setTimeout(() => {
-      if (Number.isFinite(normalizedClosedOrderId)) {
-        recentlyClosedRef.current.delete(`order_${normalizedClosedOrderId}`);
-      }
+      normalizedClosedOrderIds.forEach((id) => {
+        recentlyClosedRef.current.delete(`order_${id}`);
+      });
       if (Number.isFinite(tableNumber)) {
         recentlyClosedRef.current.delete(`table_${tableNumber}`);
       }
@@ -1260,7 +1281,7 @@ const handleCloseTable = async (orderOrId, options = {}) => {
         if (Number.isFinite(tableNumber)) {
           return rowTableNumber !== tableNumber;
         }
-        return Number(row?.id) !== Number(orderId);
+        return !normalizedClosedOrderIds.includes(Number(row?.id));
       });
 
       return next.sort((a, b) => Number(a?.table_number) - Number(b?.table_number));
@@ -1275,8 +1296,7 @@ const handleCloseTable = async (orderOrId, options = {}) => {
         const rowType = String(row?.order_type || "").toLowerCase();
         const rowStatus = normalizeOrderStatus(row?.status);
 
-        const sameOrderId =
-          Number.isFinite(normalizedClosedOrderId) && rowId === normalizedClosedOrderId;
+        const sameOrderId = normalizedClosedOrderIds.includes(rowId);
         const sameTableReservationLike =
           Number.isFinite(tableNumber) &&
           rowTableNumber === tableNumber &&
@@ -1325,7 +1345,14 @@ const handleCloseTable = async (orderOrId, options = {}) => {
         preserve_reservation_checkout_badge: true,
       });
     }
-    await secureFetch(`/orders/${orderId}/close`, closeRequestOptions);
+    await Promise.all(
+      normalizedClosedOrderIds.map((id) =>
+        secureFetch(`/orders/${id}/close`, {
+          method: closeRequestOptions.method,
+          ...(closeRequestOptions.body ? { body: closeRequestOptions.body } : null),
+        })
+      )
+    );
 
     // ✅ Handle reservation shadows after successful close
     if (shadow && preserveReservationShadow) upsertReservationShadow(shadow);
@@ -1380,9 +1407,9 @@ const handleCloseTable = async (orderOrId, options = {}) => {
     toast.error("Failed to close table");
     
     // ✅ Rollback optimistic update tracking
-    if (Number.isFinite(normalizedClosedOrderId)) {
-      recentlyClosedRef.current.delete(`order_${normalizedClosedOrderId}`);
-    }
+    normalizedClosedOrderIds.forEach((id) => {
+      recentlyClosedRef.current.delete(`order_${id}`);
+    });
     if (Number.isFinite(tableNumber)) {
       recentlyClosedRef.current.delete(`table_${tableNumber}`);
     }

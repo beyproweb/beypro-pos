@@ -248,7 +248,7 @@ const QUICK_ACCESS_CONFIG = [
     id: "ingredient-prices",
     labelKey: "Ingredient Prices",
     defaultLabel: "Ingredient Prices",
-    group: "inventory",
+    group: "finance",
     path: "/ingredient-prices",
     color: "bg-gradient-to-r from-lime-500 to-green-600",
     iconColor: "text-lime-600",
@@ -317,7 +317,7 @@ const QUICK_ACCESS_CONFIG = [
     id: "scan-ticket",
     labelKey: "Scan Ticket",
     defaultLabel: "Scan Ticket",
-    group: "system",
+    group: "operations",
     path: "/scan-ticket",
     color: "bg-gradient-to-r from-cyan-500 to-blue-600",
     iconColor: "text-cyan-700",
@@ -329,7 +329,7 @@ const QUICK_ACCESS_CONFIG = [
     id: "qr-menu",
     labelKey: "Qr App",
     defaultLabel: "Qr App",
-    group: "operations",
+    group: "system",
     path: "/qr-menu-settings",
     color: "bg-gradient-to-r from-indigo-500 to-blue-700",
     iconColor: "text-indigo-600",
@@ -1041,7 +1041,7 @@ const fetchSummaryStats = useCallback(async () => {
           "border-sky-200/90 bg-white text-sky-800 shadow-sm shadow-sky-100/60 hover:-translate-y-0.5 hover:border-sky-300 hover:bg-sky-50 hover:shadow-md hover:shadow-sky-100/70 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-100 dark:hover:border-sky-700 dark:hover:bg-sky-500/20 dark:hover:shadow-none",
         inactiveMetaClass: "text-sky-600/80 dark:text-sky-300/80",
         tileClass: "bg-gradient-to-br from-slate-700 to-slate-900",
-        ids: ["orders", "packet", "history", "kitchen", "all-orders", "pre-order", "view-booking", "qr-menu"],
+        ids: ["orders", "packet", "history", "kitchen", "all-orders", "pre-order", "view-booking", "scan-ticket"],
       },
       {
         key: "team",
@@ -1065,7 +1065,7 @@ const fetchSummaryStats = useCallback(async () => {
           "border-emerald-200/90 bg-white text-emerald-800 shadow-sm shadow-emerald-100/60 hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-emerald-50 hover:shadow-md hover:shadow-emerald-100/70 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-100 dark:hover:border-emerald-700 dark:hover:bg-emerald-500/20 dark:hover:shadow-none",
         inactiveMetaClass: "text-emerald-600/80 dark:text-emerald-300/80",
         tileClass: "bg-gradient-to-br from-slate-700 to-slate-900",
-        ids: ["products", "stock", "suppliers", "supplier-cart", "ingredient-prices", "production"],
+        ids: ["products", "stock", "suppliers", "supplier-cart", "production"],
       },
       {
         key: "finance",
@@ -1077,7 +1077,7 @@ const fetchSummaryStats = useCallback(async () => {
           "border-amber-200/90 bg-white text-amber-900 shadow-sm shadow-amber-100/60 hover:-translate-y-0.5 hover:border-amber-300 hover:bg-amber-50 hover:shadow-md hover:shadow-amber-100/70 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100 dark:hover:border-amber-700 dark:hover:bg-amber-500/20 dark:hover:shadow-none",
         inactiveMetaClass: "text-amber-700/80 dark:text-amber-300/80",
         tileClass: "bg-gradient-to-br from-slate-700 to-slate-900",
-        ids: ["reports", "expenses", "cash-history"],
+        ids: ["reports", "expenses", "cash-history", "ingredient-prices"],
       },
       {
         key: "growth",
@@ -1101,7 +1101,7 @@ const fetchSummaryStats = useCallback(async () => {
           "border-slate-200/90 bg-white text-slate-800 shadow-sm shadow-slate-200/70 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-md hover:shadow-slate-200/80 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800",
         inactiveMetaClass: "text-slate-500 dark:text-slate-400",
         tileClass: "bg-gradient-to-br from-slate-700 to-slate-900",
-        ids: ["settings", "tables-settings", "transactions-settings", "scan-ticket", "integrations", "notifications", "printers", "maintenance"],
+        ids: ["settings", "tables-settings", "transactions-settings", "qr-menu", "integrations", "notifications", "printers", "maintenance"],
       },
     ];
     const byId = new Map(allowedAccess.map((item) => [item.id, item]));

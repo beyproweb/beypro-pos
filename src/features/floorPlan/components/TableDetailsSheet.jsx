@@ -3,6 +3,36 @@ import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import GuestCompositionCard from "./GuestCompositionCard";
 
+function normalizeHexColor(value, fallback = "#111827") {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^#([0-9a-f]{6}|[0-9a-f]{3})$/i);
+  if (!match) return fallback;
+  if (match[1].length === 6) return `#${match[1].toUpperCase()}`;
+  return `#${match[1]
+    .split("")
+    .map((ch) => `${ch}${ch}`)
+    .join("")
+    .toUpperCase()}`;
+}
+
+function hexToRgb(value) {
+  const normalized = normalizeHexColor(value, "");
+  if (!normalized) return null;
+  const hex = normalized.slice(1);
+  return {
+    r: parseInt(hex.slice(0, 2), 16),
+    g: parseInt(hex.slice(2, 4), 16),
+    b: parseInt(hex.slice(4, 6), 16),
+  };
+}
+
+function getReadableTextColor(value) {
+  const rgb = hexToRgb(value);
+  if (!rgb) return "#FFFFFF";
+  const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+  return brightness >= 160 ? "#0F172A" : "#FFFFFF";
+}
+
 export default function TableDetailsSheet({
   tableNode,
   onClose,
@@ -11,6 +41,7 @@ export default function TableDetailsSheet({
   confirmLabel,
   embedded = false,
   guestCompositionProps = null,
+  accentColor = "#111827",
 }) {
   const { t } = useTranslation();
   if (!tableNode) return null;
@@ -26,6 +57,8 @@ export default function TableDetailsSheet({
   const capacity = Number(tableNode.capacity || state.capacity || 0);
   const tableType = t(String(state.table_type || tableNode.table_type || "regular").replace(/_/g, " "));
   const useMobileFullscreen = embedded && Boolean(guestCompositionProps);
+  const resolvedAccentColor = normalizeHexColor(accentColor, "#111827");
+  const accentTextColor = getReadableTextColor(resolvedAccentColor);
   return (
     <div
       className={[
@@ -76,7 +109,7 @@ export default function TableDetailsSheet({
 
           {guestCompositionProps ? (
             <div className="rounded-[24px] border border-neutral-200 bg-neutral-50/80 p-3 dark:border-neutral-800 dark:bg-neutral-950/70">
-              <GuestCompositionCard {...guestCompositionProps} />
+              <GuestCompositionCard {...guestCompositionProps} accentColor={accentColor} />
             </div>
           ) : null}
         </div>
@@ -87,9 +120,14 @@ export default function TableDetailsSheet({
           onClick={() => onConfirm?.(tableNode)}
           disabled={confirmDisabled}
           className={[
-            "w-full rounded-[24px] bg-neutral-900 px-4 py-4 text-sm font-semibold text-white shadow-[0_18px_45px_-24px_rgba(15,23,42,0.8)] transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-neutral-950 dark:hover:bg-neutral-100",
+            "w-full rounded-[24px] px-4 py-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50",
             useMobileFullscreen ? "sticky bottom-0 mt-4" : "",
           ].join(" ")}
+          style={{
+            backgroundColor: resolvedAccentColor,
+            color: accentTextColor,
+            boxShadow: "0 18px 45px -24px rgba(15,23,42,0.8)",
+          }}
         >
           {resolvedConfirmLabel}
         </button>

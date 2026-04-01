@@ -2,6 +2,42 @@ import React from "react";
 import { Music2, ShoppingCart } from "lucide-react";
 import DrawerButton from "./DrawerButton";
 
+function normalizeHexColor(value, fallback) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^#([0-9a-f]{6}|[0-9a-f]{3})$/i);
+  if (!match) return fallback;
+  if (match[1].length === 6) return `#${match[1].toUpperCase()}`;
+  return `#${match[1]
+    .split("")
+    .map((ch) => `${ch}${ch}`)
+    .join("")
+    .toUpperCase()}`;
+}
+
+function hexToRgb(value) {
+  const normalized = normalizeHexColor(value, "");
+  if (!normalized) return null;
+  const hex = normalized.slice(1);
+  return {
+    r: parseInt(hex.slice(0, 2), 16),
+    g: parseInt(hex.slice(2, 4), 16),
+    b: parseInt(hex.slice(4, 6), 16),
+  };
+}
+
+function getReadableTextColor(value) {
+  const rgb = hexToRgb(value);
+  if (!rgb) return "#FFFFFF";
+  const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+  return brightness >= 160 ? "#0F172A" : "#FFFFFF";
+}
+
+function toRgba(value, alpha) {
+  const rgb = hexToRgb(value);
+  if (!rgb) return undefined;
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+}
+
 function HeaderTabs({
   isDark = false,
   isDrawerOpen = false,
@@ -19,34 +55,48 @@ function HeaderTabs({
   restaurantName,
   mainTitleLogo,
   showCompactBranding = false,
+  layout = "toolbar",
+  accentColor = "#111827",
   t,
 }) {
+  const isToolbar = layout === "toolbar";
+  const resolvedAccentColor = normalizeHexColor(accentColor, "#111827");
+  const accentTextColor = getReadableTextColor(resolvedAccentColor);
   const containerClass = isDark
     ? "border-white/10 bg-white/[0.03]"
     : "border-white/60 bg-white/75";
 
-  const baseTabClass =
-    "h-10 sm:h-11 rounded-xl px-2.5 sm:px-3 text-[12px] sm:text-[14px] font-medium transition-all duration-200 truncate";
+  const baseTabClass = isToolbar
+    ? "h-10 sm:h-11 rounded-xl px-2.5 sm:px-3 text-[12px] sm:text-[14px] font-medium transition-all duration-200 truncate"
+    : "min-h-[42px] rounded-xl px-3.5 sm:px-4 py-2 text-[12px] sm:text-[13px] font-medium tracking-[0.01em] transition-all duration-200 truncate";
 
-  const activeTabClass = isDark
-    ? "bg-white text-neutral-950 border border-white/85 shadow-sm"
-    : "bg-slate-900 text-white border border-slate-900 shadow-sm";
+  const activeTabClass = isToolbar
+    ? isDark
+      ? "bg-white text-neutral-950 border border-white/85 shadow-sm"
+      : "bg-slate-900 text-white border border-slate-900 shadow-sm"
+    : isDark
+      ? "bg-white text-neutral-950 border border-white/85 shadow-[0_16px_30px_rgba(255,255,255,0.08)]"
+      : "bg-slate-900 text-white border border-slate-900 shadow-[0_16px_30px_rgba(15,23,42,0.14)]";
 
-  const inactiveTabClass = isDark
-    ? "bg-transparent text-white/82 border border-transparent hover:bg-white/[0.08] hover:text-white"
-    : "bg-transparent text-gray-700 border border-transparent hover:bg-white hover:text-gray-900";
+  const inactiveTabClass = isToolbar
+    ? isDark
+      ? "bg-transparent text-white/82 border border-transparent hover:bg-white/[0.08] hover:text-white"
+      : "bg-transparent text-gray-700 border border-transparent hover:bg-white hover:text-gray-900"
+    : isDark
+      ? "bg-transparent text-white/76 border border-transparent hover:bg-white/[0.08] hover:text-white"
+      : "bg-transparent text-slate-500 border border-transparent hover:bg-white hover:text-slate-900";
 
   const normalizedCount = Math.max(0, Number(statusShortcutCount) || 0);
 
   const segments = [
     {
       key: "takeaway",
-      label: t("Reservation"),
+      label: t("Reserve"),
       enabled: reservationEnabled,
     },
     {
       key: "table",
-      label: t("Table Order"),
+      label: t("Dine in"),
       enabled: tableEnabled,
     },
     {
@@ -64,7 +114,53 @@ function HeaderTabs({
   const visibleSegments = segments.filter((segment) => segment.enabled);
   const hasVisibleSegments = visibleSegments.length > 0;
   const compactLogoSrc = String(mainTitleLogo || "").trim();
-  const showCompactBrandSlot = !hasVisibleSegments && showCompactBranding;
+  const showCompactBrandSlot = isToolbar && showCompactBranding;
+
+  const segmentControl = hasVisibleSegments ? (
+    <div
+      className={isToolbar ? `min-w-0 flex-1 rounded-2xl border backdrop-blur-xl p-1 ${containerClass}` : "w-full max-w-2xl rounded-2xl border border-slate-200/80 bg-white/88 p-1.5 shadow-[0_20px_70px_rgba(15,23,42,0.08)] ring-1 ring-black/5 backdrop-blur-xl dark:border-white/10 dark:bg-neutral-900/75 dark:ring-white/10"}
+    >
+      <div
+        className="grid gap-1"
+        style={{ gridTemplateColumns: `repeat(${visibleSegments.length}, minmax(0, 1fr))` }}
+      >
+        {visibleSegments.map((segment) => {
+          const isActive = activeOrderType === segment.key;
+          const nextClass = isActive ? activeTabClass : inactiveTabClass;
+          const SegmentIcon = segment.icon;
+          const activeStyle = isActive
+            ? {
+                backgroundColor: resolvedAccentColor,
+                borderColor: resolvedAccentColor,
+                color: accentTextColor,
+                boxShadow: isToolbar
+                  ? `0 8px 20px ${toRgba(resolvedAccentColor, 0.18) || "rgba(15,23,42,0.18)"}`
+                  : `0 16px 30px ${toRgba(resolvedAccentColor, 0.22) || "rgba(15,23,42,0.18)"}`,
+              }
+            : undefined;
+
+          return (
+            <button
+              key={segment.key}
+              type="button"
+              onClick={() => onSelect?.(segment.key)}
+              className={`${baseTabClass} ${nextClass}`}
+              style={activeStyle}
+            >
+              <span className="inline-flex max-w-full items-center justify-center gap-2 truncate">
+                {SegmentIcon ? <SegmentIcon className="h-4 w-4 shrink-0" /> : null}
+                <span className="truncate">{segment.label}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  ) : null;
+
+  if (!isToolbar) {
+    return hasVisibleSegments ? <div className="flex justify-center">{segmentControl}</div> : null;
+  }
 
   return (
     <div
@@ -74,41 +170,14 @@ function HeaderTabs({
     >
       <DrawerButton onClick={onOpenDrawer} isDark={isDark} isOpen={isDrawerOpen} />
 
-      {hasVisibleSegments ? (
-        <div className={`min-w-0 flex-1 rounded-2xl border backdrop-blur-xl p-1 ${containerClass}`}>
-          <div
-            className="grid gap-1"
-            style={{ gridTemplateColumns: `repeat(${visibleSegments.length}, minmax(0, 1fr))` }}
-          >
-            {visibleSegments.map((segment) => {
-              const isActive = activeOrderType === segment.key;
-              const nextClass = isActive ? activeTabClass : inactiveTabClass;
-              const SegmentIcon = segment.icon;
-
-              return (
-                <button
-                  key={segment.key}
-                  type="button"
-                  onClick={() => onSelect?.(segment.key)}
-                  className={`${baseTabClass} ${nextClass}`}
-                >
-                  <span className="inline-flex max-w-full items-center justify-center gap-2 truncate">
-                    {SegmentIcon ? <SegmentIcon className="h-4 w-4 shrink-0" /> : null}
-                    <span className="truncate">{segment.label}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ) : showCompactBrandSlot ? (
+      {showCompactBrandSlot ? (
         <div className="min-w-0 flex-1 px-1">
           <div className="flex h-10 sm:h-11 items-center justify-center overflow-hidden">
             {compactLogoSrc ? (
               <img
                 src={compactLogoSrc}
                 alt={restaurantName || t("Restaurant")}
-                className="block h-auto max-h-[28px] sm:max-h-[30px] w-auto max-w-[212px] sm:max-w-[275px] object-contain"
+                className="block h-auto max-h-[39px] sm:max-h-[41px] w-auto max-w-[293px] sm:max-w-[380px] object-contain"
                 loading="lazy"
               />
             ) : (

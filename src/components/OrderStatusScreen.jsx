@@ -1762,9 +1762,10 @@ const OrderStatusScreen = ({
     hasReservationContext &&
     !canFinalizeReservation &&
     !isCancelledFlow;
+  const hasOrderedItems = items.some((item) => !isCancelledItemStatus(item?.kitchen_status));
   const canShowRequestSongTab =
-    hasCheckedInSignal &&
     isTableContextOrder &&
+    (hasCheckedInSignal || hasOrderedItems) &&
     !hasCheckedOutSignal &&
     !isCancelledFlow;
   const shouldShowCheckInQrCard =

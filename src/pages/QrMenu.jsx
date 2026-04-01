@@ -441,7 +441,15 @@ function GuestWelcomeAuthModal({
   onRegister,
   t,
   brandName,
+  accentColor = "#111827",
 }) {
+  const resolvedAccentColor = normalizeHexColor(accentColor, "#4F46E5");
+  const panelBackground = `radial-gradient(circle at top left, rgba(255,255,255,0.96), ${
+    toRgba(resolvedAccentColor, 0.14) || "rgba(79,70,229,0.14)"
+  } 48%, ${toRgba(resolvedAccentColor, 0.24) || "rgba(79,70,229,0.24)"} 100%)`;
+  const panelGlowStart = toRgba(resolvedAccentColor, 0.24) || "rgba(79,70,229,0.24)";
+  const panelGlowEnd = toRgba(resolvedAccentColor, 0.18) || "rgba(79,70,229,0.18)";
+
   useEffect(() => {
     if (!open || typeof document === "undefined") return undefined;
     const previousOverflow = document.body.style.overflow;
@@ -459,16 +467,32 @@ function GuestWelcomeAuthModal({
         type="button"
         aria-label={t("Close")}
         onClick={onClose}
-        className="absolute inset-0 bg-[rgba(15,23,42,0.58)] backdrop-blur-md"
+        className="absolute inset-0 bg-white sm:bg-[rgba(15,23,42,0.58)] sm:backdrop-blur-md"
       />
 
-      <div className="relative z-[1401] flex min-h-full items-center justify-center p-3 sm:p-5">
-        <div className="relative flex max-h-[92vh] w-full max-w-[1040px] overflow-hidden rounded-[34px] border border-white/40 bg-white/90 shadow-[0_40px_120px_rgba(15,23,42,0.35)] backdrop-blur-2xl dark:border-white/10 dark:bg-neutral-950/92">
-          <div className="relative hidden w-[42%] overflow-hidden border-r border-white/40 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.96),_rgba(224,242,254,0.92)_46%,_rgba(186,230,253,0.74)_100%)] p-7 lg:flex lg:flex-col dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.22),_transparent_36%),linear-gradient(180deg,_rgba(15,23,42,0.98),_rgba(2,6,23,1))]">
-            <div className="pointer-events-none absolute -left-10 top-0 h-40 w-40 rounded-full bg-sky-200/60 blur-3xl dark:bg-sky-500/20" />
-            <div className="pointer-events-none absolute bottom-0 right-0 h-40 w-40 rounded-full bg-cyan-200/60 blur-3xl dark:bg-cyan-400/15" />
+      <div className="relative z-[1401] flex min-h-full items-stretch justify-center p-0 sm:items-center sm:p-5">
+        <div className="relative flex min-h-screen w-full max-w-none overflow-hidden rounded-none border-0 bg-white shadow-none sm:max-h-[92vh] sm:min-h-0 sm:max-w-[1040px] sm:rounded-[34px] sm:border sm:border-white/40 sm:bg-white/90 sm:shadow-[0_40px_120px_rgba(15,23,42,0.35)] sm:backdrop-blur-2xl dark:bg-neutral-950 dark:sm:border-white/10 dark:sm:bg-neutral-950/92">
+          <div
+            className="relative hidden w-[42%] overflow-hidden border-r border-white/40 p-7 lg:flex lg:flex-col dark:border-white/10"
+            style={{ backgroundImage: panelBackground }}
+          >
+            <div
+              className="pointer-events-none absolute -left-10 top-0 h-40 w-40 rounded-full blur-3xl"
+              style={{ backgroundColor: panelGlowStart }}
+            />
+            <div
+              className="pointer-events-none absolute bottom-0 right-0 h-40 w-40 rounded-full blur-3xl"
+              style={{ backgroundColor: panelGlowEnd }}
+            />
             <div className="relative">
-              <div className="inline-flex items-center gap-2 rounded-full border border-sky-200/90 bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-700 shadow-sm dark:border-sky-400/20 dark:bg-white/10 dark:text-sky-200">
+              <div
+                className="inline-flex items-center gap-2 rounded-full border bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] shadow-sm"
+                style={{
+                  borderColor: toRgba(resolvedAccentColor, 0.22) || resolvedAccentColor,
+                  backgroundColor: toRgba(resolvedAccentColor, 0.08) || "rgba(255,255,255,0.8)",
+                  color: resolvedAccentColor,
+                }}
+              >
                 <Sparkles className="h-3.5 w-3.5" />
                 {t("Welcome, guest")}
               </div>
@@ -492,7 +516,7 @@ function GuestWelcomeAuthModal({
             </div>
           </div>
 
-          <div className="relative flex min-w-0 flex-1 flex-col">
+          <div className="relative flex min-w-0 flex-1 flex-col min-h-screen sm:min-h-0">
             <button
               type="button"
               onClick={onClose}
@@ -512,6 +536,7 @@ function GuestWelcomeAuthModal({
                   }}
                   onGoLogin={() => onViewChange?.("login")}
                   onBack={onClose}
+                  accentColor={accentColor}
                 />
               ) : (
                 <LoginPage
@@ -522,11 +547,12 @@ function GuestWelcomeAuthModal({
                   }}
                   onGoRegister={() => onViewChange?.("register")}
                   onBack={onClose}
+                  accentColor={accentColor}
                 />
               )}
             </div>
 
-            <div className="border-t border-slate-200/80 bg-white/85 px-4 py-3 dark:border-white/10 dark:bg-neutral-950/88">
+            <div className="border-t border-slate-200/80 bg-white px-4 py-3 dark:border-white/10 dark:bg-neutral-950 sm:bg-white/85 sm:dark:bg-neutral-950/88">
               <button
                 type="button"
                 onClick={onClose}
@@ -612,6 +638,30 @@ function normalizeHexColor(value, fallback) {
     .map((ch) => `${ch}${ch}`)
     .join("")
     .toUpperCase()}`;
+}
+
+function hexToRgb(value) {
+  const normalized = normalizeHexColor(value, "");
+  if (!normalized) return null;
+  const hex = normalized.slice(1);
+  return {
+    r: parseInt(hex.slice(0, 2), 16),
+    g: parseInt(hex.slice(2, 4), 16),
+    b: parseInt(hex.slice(4, 6), 16),
+  };
+}
+
+function getReadableTextColor(value) {
+  const rgb = hexToRgb(value);
+  if (!rgb) return "#FFFFFF";
+  const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+  return brightness >= 160 ? "#0F172A" : "#FFFFFF";
+}
+
+function toRgba(value, alpha) {
+  const rgb = hexToRgb(value);
+  if (!rgb) return undefined;
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
 }
 
 const QR_MENU_FONT_FAMILIES = {
@@ -1444,6 +1494,8 @@ const DICT = {
     "Please wait...": "Please wait...",
     "Something went wrong. Please try again.": "Something went wrong. Please try again.",
     Close: "Close",
+      "Continue Shopping": "Continue Shopping",
+    "Dine in": "Dine in",
     "Order Another": "Order Another",
     "Order Again": "Order Again",
     Table: "Table",
@@ -1791,6 +1843,8 @@ const DICT = {
     "Please wait...": "Lütfen bekleyin...",
     "Something went wrong. Please try again.": "Bir şeyler ters gitti. Lütfen tekrar deneyin.",
     Close: "Kapat",
+      "Continue Shopping": "Alışverişe Devam Et",
+    "Dine in": "Restoranda",
     "Order Another": "Yeni Sipariş Ver",
     "Order Again": "Tekrar Sipariş Ver",
     Table: "Masa",
@@ -2204,6 +2258,7 @@ const DICT = {
     "Your Order": "Ihre Bestellung",
     "Order Again": "Erneut bestellen",
     Close: "Schließen",
+    "Dine in": "Vor Ort",
     Note: "Notiz",
     "Share QR Menu": "QR-Menü teilen",
     "Save QR Menu to Phone": "QR-Menü auf dem Handy speichern",
@@ -2454,6 +2509,7 @@ const DICT = {
     "Your Order": "Votre commande",
     "Order Again": "Commander à nouveau",
     Close: "Fermer",
+    "Dine in": "Sur place",
     Note: "Note",
     "Share QR Menu": "Partager le menu QR",
     "Save QR Menu to Phone": "Enregistrer le menu QR sur le téléphone",
@@ -3034,13 +3090,16 @@ function QrHeader({
   );
 }
 
-function TableOrderHeader({ t, onBack, title = "Table Order" }) {
+function TableOrderHeader({ t, onBack, title = "Table Order", accentColor = "#111827" }) {
+  const resolvedAccentColor = normalizeHexColor(accentColor, "#111827");
+  const accentTextColor = getReadableTextColor(resolvedAccentColor);
   return (
     <header
-      className="sticky top-0 z-50 px-4 py-3 text-white backdrop-blur-md"
+      className="sticky top-0 z-50 px-4 py-3 backdrop-blur-md"
       style={{
-        background: "rgba(10, 10, 10, 0.92)",
-        borderBottom: "1px solid rgba(255, 255, 255, 0.10)",
+        backgroundColor: toRgba(resolvedAccentColor, 0.94) || resolvedAccentColor,
+        borderBottom: `1px solid ${toRgba(resolvedAccentColor, 0.24) || resolvedAccentColor}`,
+        color: accentTextColor,
       }}
     >
       <div className="mx-auto flex w-full max-w-5xl items-center gap-3">
@@ -3048,17 +3107,18 @@ function TableOrderHeader({ t, onBack, title = "Table Order" }) {
           type="button"
           onClick={onBack}
           aria-label={t("Back")}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-white transition"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-xl transition"
           style={{
-            border: "1px solid rgba(255, 255, 255, 0.15)",
-            background: "rgba(255, 255, 255, 0.06)",
+            border: `1px solid ${toRgba(accentTextColor, 0.18) || accentTextColor}`,
+            background: toRgba(accentTextColor, 0.1) || "rgba(255, 255, 255, 0.1)",
+            color: accentTextColor,
           }}
         >
           <ChevronLeft className="h-5 w-5" />
         </button>
 
         <div className="min-w-0 flex-1 text-center">
-          <h1 className="truncate text-[18px] font-semibold tracking-tight text-white">
+          <h1 className="truncate text-[18px] font-semibold tracking-tight" style={{ color: accentTextColor }}>
             {t(title)}
           </h1>
         </div>
@@ -3195,6 +3255,7 @@ async function load() {
   const reservationTabEnabled = boolish(c.reservation_tab_enabled, true);
   const hideAllProducts = boolish(c.disable_all_products, false);
   const accent = c.branding_color || c.primary_color || "#4F46E5";
+  const primaryAccentColor = normalizeHexColor(c.primary_color || c.branding_color, "#4F46E5");
   const concertReservationButtonColor = normalizeHexColor(
     c.concert_reservation_button_color,
     "#111827"
@@ -4707,6 +4768,7 @@ async function load() {
         restaurantName={displayRestaurantName || "Apollo Cafe"}
         mainTitleLogo={mainTitleLogo}
         tagline={subtitle || tagline || "Fresh • Local • Crafted"}
+        accentColor={primaryAccentColor}
         t={t}
       />
       <HeaderDrawer
@@ -4715,6 +4777,7 @@ async function load() {
         t={t}
         appendIdentifier={appendIdentifier}
         isDark={isDark}
+        accentColor={primaryAccentColor}
         openStatus={openStatus}
         days={days}
         todayName={todayName}
@@ -4731,12 +4794,12 @@ async function load() {
         }
       />
 		
-	    {/* === HERO SECTION === */}
-		    <section id="order-section" className="max-w-6xl mx-auto px-4 pt-[30px] pb-4 space-y-10">
+      {/* === HERO SECTION === */}
+        <section id="order-section" className="max-w-6xl mx-auto px-4 pt-[24px] pb-4 space-y-10">
 
 	      <div className="max-w-4xl mx-auto">
               {/* CONCERT TICKETS */}
-	              <div className="mt-6 max-w-3xl mx-auto">
+                <div className="mt-3 max-w-3xl mx-auto">
 	                {concertEvents.length > 0 ? (
 	                  <div className="space-y-3">
                     {concertEvents.map((event) => {
@@ -5838,6 +5901,7 @@ function TakeawayOrderForm({
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const paymentMethods = usePaymentMethods();
+  const submitButtonTextColor = getReadableTextColor(submitButtonColor);
   const normalizedBookingSettings = useMemo(
     () => normalizeQrBookingSettings(bookingSettings || {}),
     [bookingSettings]
@@ -6556,9 +6620,18 @@ function TakeawayOrderForm({
                 onClick={() => setForm((f) => ({ ...f, mode: "reservation" }))}
                 className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
                   form.mode === "reservation"
-                    ? "bg-neutral-900 text-white border-neutral-900"
+                    ? ""
                     : "bg-white dark:bg-neutral-950 text-neutral-700 dark:text-neutral-200 border-neutral-300 dark:border-neutral-700"
                 }`}
+                style={
+                  form.mode === "reservation"
+                    ? {
+                        backgroundColor: submitButtonColor,
+                        borderColor: submitButtonColor,
+                        color: submitButtonTextColor,
+                      }
+                    : undefined
+                }
               >
                 🎫 {t("Reservation")}
               </button>
@@ -6567,9 +6640,18 @@ function TakeawayOrderForm({
                 onClick={() => setForm((f) => ({ ...f, mode: "pickup" }))}
                 className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
                   form.mode === "pickup"
-                    ? "bg-neutral-900 text-white border-neutral-900"
+                    ? ""
                     : "bg-white dark:bg-neutral-950 text-neutral-700 dark:text-neutral-200 border-neutral-300 dark:border-neutral-700"
                 }`}
+                style={
+                  form.mode === "pickup"
+                    ? {
+                        backgroundColor: submitButtonColor,
+                        borderColor: submitButtonColor,
+                        color: submitButtonTextColor,
+                      }
+                    : undefined
+                }
               >
                 🛍️ {t("Pickup")}
               </button>
@@ -6866,6 +6948,7 @@ function TakeawayOrderForm({
             style={{
               backgroundColor: submitButtonColor,
               borderColor: submitButtonColor,
+              color: submitButtonTextColor,
             }}
           >
             {submitting
@@ -6898,9 +6981,18 @@ function OrderTypePromptModal({
   reservationEnabled = true,
   tableEnabled = true,
   shopIsOpen = true,
+  accentColor = "#111827",
 }) {
   const productName = String(product?.name || "").trim();
   const isGeneric = !productName;
+  const resolvedAccentColor = normalizeHexColor(accentColor, "#111827");
+  const accentTextColor = getReadableTextColor(resolvedAccentColor);
+  const enabledActionStyle = {
+    backgroundColor: resolvedAccentColor,
+    borderColor: resolvedAccentColor,
+    color: accentTextColor,
+    boxShadow: `0 14px 28px ${toRgba(resolvedAccentColor, 0.18) || "rgba(15,23,42,0.18)"}`,
+  };
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 px-4 py-6">
       <div className="w-full max-w-md rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-2xl space-y-5">
@@ -6931,9 +7023,10 @@ function OrderTypePromptModal({
             disabled={!shopIsOpen || !reservationEnabled}
             className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold shadow-sm transition ${
               shopIsOpen && reservationEnabled
-                ? "border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-neutral-700 dark:text-neutral-100 hover:border-neutral-900 dark:hover:border-white hover:text-neutral-900"
+                ? "hover:opacity-95"
                 : "border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-950 text-neutral-400 cursor-not-allowed"
             }`}
+            style={shopIsOpen && reservationEnabled ? enabledActionStyle : undefined}
           >
             <UtensilsCrossed className="w-5 h-5" />
             {shopIsOpen ? t("Reservation") : t("Shop Closed")}
@@ -6943,9 +7036,10 @@ function OrderTypePromptModal({
             disabled={!shopIsOpen || !tableEnabled}
             className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold shadow-lg transition ${
               shopIsOpen && tableEnabled
-                ? "border-neutral-200 dark:border-neutral-700 bg-gradient-to-r from-neutral-900 to-neutral-700 text-white hover:opacity-95"
+                ? "hover:opacity-95"
                 : "border-neutral-200 dark:border-neutral-800 bg-neutral-200 dark:bg-neutral-950 text-neutral-400 cursor-not-allowed shadow-sm"
             }`}
+            style={shopIsOpen && tableEnabled ? enabledActionStyle : undefined}
           >
             <Soup className="w-5 h-5" />
             {shopIsOpen ? t("Table Order") : t("Shop Closed")}
@@ -6956,9 +7050,10 @@ function OrderTypePromptModal({
               disabled={!shopIsOpen}
               className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold shadow-lg transition ${
                 shopIsOpen
-                  ? "border-neutral-200 dark:border-neutral-700 bg-red-600 text-white hover:bg-red-500"
+                  ? "hover:opacity-95"
                   : "border-neutral-200 dark:border-neutral-800 bg-neutral-200 dark:bg-neutral-950 text-neutral-400 cursor-not-allowed shadow-sm"
               }`}
+              style={shopIsOpen ? enabledActionStyle : undefined}
             >
               <Bike className="w-5 h-5" />
               {shopIsOpen ? t("Delivery") : t("Shop Closed")}
@@ -7484,6 +7579,7 @@ export default function QrMenu() {
     startQrVoiceCapture,
     injectQrVoiceItemsToCart,
     openTableScanner,
+    selectTableDirectly,
     closeTableScanner,
     resetToTypePicker,
     handleCloseOrderPage,
@@ -7766,8 +7862,8 @@ export default function QrMenu() {
     ""
   );
   const takeawaySubmitButtonColor = normalizeHexColor(
-    orderSelectCustomization?.concert_reservation_button_color,
-    "#111827"
+    orderSelectCustomization?.primary_color,
+    "#4F46E5"
   );
 
   const resolvedTableForActions =
@@ -7836,6 +7932,7 @@ export default function QrMenu() {
     true
   );
   const allowTableOrder = boolish(orderSelectCustomization?.table_order_enabled, true);
+  const tableQrScanEnabled = boolish(orderSelectCustomization?.table_qr_scan_enabled, true);
   const hideAllQrProducts = boolish(orderSelectCustomization?.disable_all_products, false);
   const editingCartItem = useMemo(
     () =>
@@ -7953,80 +8050,7 @@ export default function QrMenu() {
     }),
     [shopIsOpen, t]
   );
-  const [isQrHeaderDark, setIsQrHeaderDark] = useState(() => {
-    if (typeof window === "undefined" || typeof document === "undefined") {
-      return Boolean(isDarkMain);
-    }
-    const domDarkActive =
-      document.documentElement.classList.contains("dark") ||
-      document.body?.classList.contains("dark") ||
-      document.getElementById("root")?.classList.contains("dark") ||
-      Boolean(document.querySelector(".dark"));
-    const prefersDark =
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const storedTheme = String(storage.getItem("qr_theme") || "")
-      .trim()
-      .toLowerCase();
-    return Boolean(isDarkMain || storedTheme === "dark" || domDarkActive || prefersDark);
-  });
-
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof document === "undefined") {
-      setIsQrHeaderDark(Boolean(isDarkMain));
-      return undefined;
-    }
-
-    const resolveDark = () => {
-      const domDarkActive =
-        document.documentElement.classList.contains("dark") ||
-        document.body?.classList.contains("dark") ||
-        document.getElementById("root")?.classList.contains("dark") ||
-        Boolean(document.querySelector(".dark"));
-      const prefersDark =
-        typeof window.matchMedia === "function" &&
-        window.matchMedia("(prefers-color-scheme: dark)").matches;
-      const storedTheme = String(storage.getItem("qr_theme") || "")
-        .trim()
-        .toLowerCase();
-      return Boolean(isDarkMain || storedTheme === "dark" || domDarkActive || prefersDark);
-    };
-
-    const applyDark = () => setIsQrHeaderDark(resolveDark());
-    applyDark();
-
-    const observer = new MutationObserver(applyDark);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-    if (document.body) {
-      observer.observe(document.body, { attributes: true, attributeFilter: ["class"] });
-    }
-    const root = document.getElementById("root");
-    if (root) {
-      observer.observe(root, { attributes: true, attributeFilter: ["class"] });
-    }
-
-    let mq = null;
-    const onMediaChange = () => applyDark();
-    if (typeof window.matchMedia === "function") {
-      mq = window.matchMedia("(prefers-color-scheme: dark)");
-      if (typeof mq.addEventListener === "function") {
-        mq.addEventListener("change", onMediaChange);
-      } else if (typeof mq.addListener === "function") {
-        mq.addListener(onMediaChange);
-      }
-    }
-
-    return () => {
-      observer.disconnect();
-      if (mq) {
-        if (typeof mq.removeEventListener === "function") {
-          mq.removeEventListener("change", onMediaChange);
-        } else if (typeof mq.removeListener === "function") {
-          mq.removeListener(onMediaChange);
-        }
-      }
-    };
-  }, [isDarkMain, storage]);
+  const isQrHeaderDark = Boolean(isDarkMain);
   const sharedHeaderOrderType = useMemo(() => {
     if (isRequestSongViewOpen && requestSongEnabled) return "request_song";
     const normalized = String(orderType || "").toLowerCase();
@@ -8550,10 +8574,6 @@ export default function QrMenu() {
         document.body
       )
     : null;
-  const handleHeaderStatusShortcutToggle = useCallback(() => {
-    onOpenCartFromNav();
-  }, [onOpenCartFromNav]);
-
   const openOrderStatus = useCallback(
     (requestedOrderId = null) => {
       const resolvedOrderId = Number(
@@ -8576,6 +8596,10 @@ export default function QrMenu() {
     },
     [activeOrder?.id, orderId, setConcertBookingConfirmLabel, setOrderId, setOrderStatus, setShowStatus, storage]
   );
+
+  const handleHeaderStatusShortcutToggle = useCallback(() => {
+    openOrderStatus();
+  }, [openOrderStatus]);
 
   useEffect(() => {
     const requestedOrderId = Number(location.state?.openOrderStatusOrderId || 0);
@@ -9078,15 +9102,12 @@ export default function QrMenu() {
     return (
       <>
         <div className={isQrHeaderDark ? "dark" : ""}>
-          <TableOrderHeader
-            t={t}
-            onBack={() => setOrderType(null)}
-            title="Table Order"
-          />
           <ModernTableSelector
             tables={tables}
             showAreas={showTableAreas}
             t={t}
+            accentColor={takeawaySubmitButtonColor}
+            headerAreaTabs={true}
             formatTableName={formatTableName}
             occupiedNumbers={filteredOccupied}
             occupiedLabel={t("Occupied")}
@@ -9094,7 +9115,11 @@ export default function QrMenu() {
             reservedLabel={t("Reserved")}
             hideTopBar={true}
             onSelect={(tbl) => {
-              openTableScanner(tbl?.tableNumber, Number(tbl?.guests));
+              if (tableQrScanEnabled) {
+                openTableScanner(tbl?.tableNumber, Number(tbl?.guests));
+                return;
+              }
+              selectTableDirectly(tbl?.tableNumber, Number(tbl?.guests));
             }}
             onBack={() => {
               setOrderType(null);
@@ -9265,6 +9290,7 @@ export default function QrMenu() {
         onRegister={registerCustomerSession}
         t={t}
         brandName={brandName}
+        accentColor={takeawaySubmitButtonColor}
       />
       {showHome ? (
         <>
@@ -9302,6 +9328,7 @@ export default function QrMenu() {
               product={pendingPopularProduct}
               t={t}
               shopIsOpen={shopIsOpen}
+              accentColor={takeawaySubmitButtonColor}
               onClose={() => {
                 setShowOrderTypePrompt(false);
                 setPendingPopularProduct(null);
@@ -9328,6 +9355,7 @@ export default function QrMenu() {
                 t={t}
                 onBack={handleCloseOrderPage}
                 title="Table Order"
+                accentColor={takeawaySubmitButtonColor}
               />
             ) : null}
             {shouldShowInnerOrderHeader ? (
@@ -9348,6 +9376,7 @@ export default function QrMenu() {
                   onStatusShortcutClick={handleHeaderStatusShortcutToggle}
                   restaurantName={brandName}
                   tagline="Fresh • Local • Crafted"
+                  accentColor={takeawaySubmitButtonColor}
                   t={t}
                   openStatus={sharedHeaderOpenStatus}
                   showShopHoursDropdown={false}
@@ -9367,6 +9396,7 @@ export default function QrMenu() {
                   t={t}
                   appendIdentifier={appendIdentifier}
                   isDark={isQrHeaderDark}
+                  accentColor={takeawaySubmitButtonColor}
                   initialView={appHeaderDrawerInitialView}
                   hasOrderStatus={hasStatusShortcutOrder}
                   onOpenOrderStatus={() => openOrderStatus()}
@@ -9735,7 +9765,8 @@ export default function QrMenu() {
             showReservationPendingCheckInMessage();
             return;
           }
-          storage.setItem("qr_cart_auto_open", "0");
+          const isEditingCartItem = Boolean(editingCartItemId);
+          storage.setItem("qr_cart_auto_open", isEditingCartItem ? "0" : "1");
           setCart((prev) => {
             const prevItems = toArray(prev);
             if (!editingCartItemId) {
@@ -9747,7 +9778,6 @@ export default function QrMenu() {
                 : existingItem
             );
           });
-          const isEditingCartItem = Boolean(editingCartItemId);
           setEditingCartItemId(null);
           setShowAddModal(false);
           setShowStatus(false);
@@ -9755,6 +9785,13 @@ export default function QrMenu() {
             showQrCartToast(t("Save changes"));
           } else {
             showQrCartToast(`${Math.max(1, Number(item?.quantity) || 1)} ${item?.name || t("Unknown product")} added to Cart`);
+            if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+              window.requestAnimationFrame(() => {
+                window.dispatchEvent(new Event("qr:cart-open"));
+              });
+            } else {
+              window.dispatchEvent(new Event("qr:cart-open"));
+            }
           }
           if (returnHomeAfterAdd) {
             // Home-product flow should return home with cart open.
@@ -9780,6 +9817,7 @@ export default function QrMenu() {
           t={t}
           appendIdentifier={appendIdentifier}
           storage={storage}
+          accentColor={takeawaySubmitButtonColor}
           onClose={() => {
             setShowDeliveryForm(false);
             setOrderType(null);

@@ -844,7 +844,7 @@ function TableCard({
               </div>
             )}
 
-            {hasOrderActivity && (
+            {hasOrderActivity && !hasUnpaidItems && (
               <div className="flex items-center justify-end gap-2 flex-nowrap">
                 {isPaidTable ? (
                   <button

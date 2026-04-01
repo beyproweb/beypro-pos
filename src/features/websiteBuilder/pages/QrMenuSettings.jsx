@@ -256,6 +256,7 @@ export default function QrMenuSettings() {
   const [savingDelivery, setSavingDelivery] = useState(false);
   const [savingReservationPickup, setSavingReservationPickup] = useState(false);
   const [savingTableOrder, setSavingTableOrder] = useState(false);
+  const [savingTableQrScan, setSavingTableQrScan] = useState(false);
   const [savingReservationTab, setSavingReservationTab] = useState(false);
   const [savingReservationGuestComposition, setSavingReservationGuestComposition] =
     useState(false);
@@ -356,6 +357,7 @@ export default function QrMenuSettings() {
   qr_floor_plan_layout: null,
   ...QR_BOOKING_DEFAULTS,
   table_order_enabled: true,
+  table_qr_scan_enabled: true,
   disable_all_products: false,
   reservation_tab_enabled: true,
   table_geo_enabled: false,
@@ -1204,6 +1206,29 @@ async function saveAllCustomization() {
       updateField("table_order_enabled", !nextValue);
     } finally {
       setSavingTableOrder(false);
+    }
+  };
+
+  const toggleTableQrScan = async () => {
+    const nextValue = !settings.table_qr_scan_enabled;
+    updateField("table_qr_scan_enabled", nextValue);
+    setSavingTableQrScan(true);
+    try {
+      await secureFetch("/settings/qr-menu-customization", {
+        method: "POST",
+        body: JSON.stringify({ table_qr_scan_enabled: nextValue }),
+      });
+      toast.success(
+        nextValue
+          ? t("Table QR scan is enabled")
+          : t("Table QR scan is disabled")
+      );
+    } catch (err) {
+      console.error("❌ Failed to toggle table QR scan:", err);
+      toast.error(t("Failed to save table QR scan setting"));
+      updateField("table_qr_scan_enabled", !nextValue);
+    } finally {
+      setSavingTableQrScan(false);
     }
   };
 
@@ -2717,7 +2742,7 @@ async function saveAllCustomization() {
               </div>
 
               <div>
-                <label className="block text-[18px] font-bold text-slate-900 dark:text-slate-100">{t("Table Order")}</label>
+                <label className="block text-[18px] font-bold text-slate-900 dark:text-slate-100">{t("Dine in")}</label>
                 <div className="mt-3 flex flex-wrap items-center gap-4">
                   <span
                     className={`rounded-full px-4 py-2 text-sm font-medium ${
@@ -2726,7 +2751,7 @@ async function saveAllCustomization() {
                         : "border border-rose-200 bg-rose-100 text-rose-700"
                     }`}
                   >
-                    {settings.table_order_enabled ? t("Table order is open") : t("Table order is closed")}
+                    {settings.table_order_enabled ? t("Dine in is open") : t("Dine in is closed")}
                   </span>
                   <button
                     type="button"
@@ -2734,11 +2759,41 @@ async function saveAllCustomization() {
                     disabled={savingTableOrder}
                     className="rounded-full border border-blue-500 px-6 py-2.5 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 disabled:opacity-50"
                   >
-                    {settings.table_order_enabled ? t("Close Table Order") : t("Open Table Order")}
+                    {settings.table_order_enabled ? t("Close Dine in") : t("Open Dine in")}
                   </button>
                 </div>
                 <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-                  {t("Toggle whether table order appears in QR menu order type options.")}
+                  {t("Toggle whether dine in appears in QR menu order type options.")}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[18px] font-bold text-slate-900 dark:text-slate-100">{t("Table QR Scan")}</label>
+                <div className="mt-3 flex flex-wrap items-center gap-4">
+                  <span
+                    className={`rounded-full px-4 py-2 text-sm font-medium ${
+                      settings.table_qr_scan_enabled
+                        ? "border border-emerald-200 bg-emerald-100 text-emerald-800"
+                        : "border border-rose-200 bg-rose-100 text-rose-700"
+                    }`}
+                  >
+                    {settings.table_qr_scan_enabled
+                      ? t("Table QR scan is enabled")
+                      : t("Table QR scan is disabled")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={toggleTableQrScan}
+                    disabled={savingTableQrScan}
+                    className="rounded-full border border-blue-500 px-6 py-2.5 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    {settings.table_qr_scan_enabled
+                      ? t("Disable Table QR Scan")
+                      : t("Enable Table QR Scan")}
+                  </button>
+                </div>
+                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                  {t("When disabled, guests select a table and guest count and start shopping immediately without scanning the table QR.")}
                 </p>
               </div>
 

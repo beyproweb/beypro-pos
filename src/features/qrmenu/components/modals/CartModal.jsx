@@ -1,9 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useCurrency } from "../../../../context/CurrencyContext";
 import { usePaymentMethods } from "../../../../hooks/usePaymentMethods";
-import secureFetch from "../../../../utils/secureFetch";
-import useCustomerAuth from "../../header-drawer/hooks/useCustomerAuth";
-import { fetchCustomerOrders, splitOrdersByState } from "../../header-drawer/services/customerService";
 
 const toArray = (value) => {
   if (Array.isArray(value)) return value;
@@ -23,11 +20,9 @@ const CartModal = React.memo(function CartModal({
   t,
   hasActiveOrder,
   orderScreenStatus,
-  onShowStatus,
   isOrderStatusOpen,
   onOpenCart,
   onEditItem,
-  appendIdentifier,
   layout = "drawer",
   storage,
   voiceListening = false,
@@ -37,15 +32,11 @@ const CartModal = React.memo(function CartModal({
   const [show, setShow] = useState(isPanel);
   const { formatCurrency } = useCurrency();
   const paymentMethods = usePaymentMethods();
-  const { customer, isLoggedIn } = useCustomerAuth(storage);
-  const [customerOrders, setCustomerOrders] = useState([]);
-  const [ordersLoading, setOrdersLoading] = useState(false);
-  const [ordersError, setOrdersError] = useState("");
 
   const cartArray = toArray(cart);
   const cartLength = cartArray.length;
-  const prevItems = cartArray.filter((i) => i.locked);
-  const newItems = cartArray.filter((i) => !i.locked);
+  const prevItems = cartArray.filter((item) => item.locked);
+  const newItems = cartArray.filter((item) => !item.locked);
   const newItemsCount = newItems.length;
   const hasNewItems = newItemsCount > 0;
 
@@ -65,15 +56,6 @@ const CartModal = React.memo(function CartModal({
   const prevOrderTypeRef = useRef(orderType);
   const suppressStatusAutoCloseRef = useRef(false);
   const suppressStatusReleaseTimerRef = useRef(null);
-
-  const statusLabel = useMemo(() => {
-    if (!hasActiveOrder || !orderScreenStatus) return null;
-    const s = (orderScreenStatus || "").toLowerCase();
-    if (["new", "pending", "confirmed", "preparing"].includes(s)) return t("Preparing");
-    if (["ready"].includes(s)) return t("Ready for Pickup");
-    if (["delivered", "served"].includes(s)) return t("Delivered");
-    return null;
-  }, [hasActiveOrder, orderScreenStatus, t]);
 
   const paymentPromptText = t("Please select a payment method before continuing.");
   const normalizedOrderStatus = String(orderScreenStatus || "").toLowerCase();
@@ -103,42 +85,6 @@ const CartModal = React.memo(function CartModal({
     },
     [setPaymentMethod]
   );
-
-  const fetcher = useCallback(
-    async (path) => {
-      const withIdentifier = typeof appendIdentifier === "function" ? appendIdentifier(path) : path;
-      return secureFetch(withIdentifier);
-    },
-    [appendIdentifier]
-  );
-
-  const loadCustomerOrders = useCallback(async () => {
-    if (!isLoggedIn || !customer) {
-      setCustomerOrders([]);
-      setOrdersError("");
-      return;
-    }
-
-    setOrdersLoading(true);
-    setOrdersError("");
-    try {
-      const next = await fetchCustomerOrders({ customer, fetcher, storage });
-      setCustomerOrders(next);
-    } catch (err) {
-      setCustomerOrders([]);
-      setOrdersError(err?.message || "Failed to load orders");
-    } finally {
-      setOrdersLoading(false);
-    }
-  }, [customer, fetcher, isLoggedIn, storage]);
-
-  const { active: activeOrders, past: pastOrders } = useMemo(
-    () => splitOrdersByState(customerOrders),
-    [customerOrders]
-  );
-  const visiblePastOrders = pastOrders.slice(0, 3);
-  const hasTrackedOrders =
-    hasActiveOrder || activeOrders.length > 0 || visiblePastOrders.length > 0 || ordersLoading;
 
   const handleCartSubmit = useCallback(() => {
     if (!paymentMethod) {
@@ -196,11 +142,6 @@ const CartModal = React.memo(function CartModal({
     if (!paymentMethod) return;
     setPaymentPrompt(false);
   }, [paymentMethod]);
-
-  useEffect(() => {
-    if (!(isPanel || show)) return;
-    loadCustomerOrders();
-  }, [isPanel, loadCustomerOrders, show]);
 
   useEffect(() => {
     if (isPanel || typeof window === "undefined") return undefined;
@@ -286,21 +227,6 @@ const CartModal = React.memo(function CartModal({
     setShow(false);
   }, []);
 
-  const handleOpenStatus = useCallback(
-    (selectedOrderId = null) => {
-      suppressStatusAutoCloseRef.current = false;
-      if (suppressStatusReleaseTimerRef.current) {
-        window.clearTimeout(suppressStatusReleaseTimerRef.current);
-        suppressStatusReleaseTimerRef.current = null;
-      }
-      if (!isPanel) {
-        setShow(false);
-      }
-      onShowStatus?.(selectedOrderId);
-    },
-    [isPanel, onShowStatus]
-  );
-
   const goToProductPage = useCallback(() => {
     suppressStatusAutoCloseRef.current = false;
     if (suppressStatusReleaseTimerRef.current) {
@@ -311,48 +237,6 @@ const CartModal = React.memo(function CartModal({
     onOpenCart?.();
     if (!isPanel) setShow(false);
   }, [isPanel, onOpenCart, storage]);
-
-  const renderOrderCard = (order, options = {}) => {
-    const createdAtLabel = order?.createdAt ? new Date(order.createdAt).toLocaleString() : null;
-    const statusText = t(order?.status || "pending");
-    const actionLabel = options.actionLabel || t("Order Status");
-    const totalValue = Number(order?.total || 0);
-
-    return (
-      <div
-        key={`${options.section || "order"}-${order?.id || createdAtLabel || statusText}`}
-        className="rounded-xl border border-neutral-200 bg-white px-4 py-3"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-neutral-900">
-                #{order?.id || t("Current")}
-              </span>
-              <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600">
-                {statusText}
-              </span>
-            </div>
-            <div className="mt-1 text-xs text-neutral-500">
-              {createdAtLabel || t("Live order")} • {Number(order?.itemCount || 0)} {t("items")}
-            </div>
-          </div>
-          <div className="shrink-0 text-right">
-            <div className="text-sm font-semibold text-neutral-900">
-              {totalValue > 0 ? formatCurrency(totalValue) : "-"}
-            </div>
-            <button
-              type="button"
-              onClick={() => handleOpenStatus(order?.id || null)}
-              className="mt-2 rounded-full border border-neutral-200 px-3 py-1 text-[11px] font-semibold text-neutral-700 transition hover:bg-neutral-50"
-            >
-              {actionLabel}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   const cartPanel = (
     <div
@@ -375,90 +259,6 @@ const CartModal = React.memo(function CartModal({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto pr-1">
-        {hasTrackedOrders || isLoggedIn ? (
-          <div className="mb-5 rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">
-                  {t("Order Status")}
-                </div>
-
-              </div>
-              {isLoggedIn ? (
-                <button
-                  type="button"
-                  onClick={loadCustomerOrders}
-                  className="rounded-full border border-neutral-200 bg-white px-3 py-1 text-[11px] font-semibold text-neutral-700 transition hover:bg-neutral-50"
-                >
-                  {t("Refresh")}
-                </button>
-              ) : null}
-            </div>
-
-            <div className="mt-4 space-y-3">
-              {ordersLoading ? (
-                <div className="text-sm text-neutral-500">{t("Loading orders...")}</div>
-              ) : null}
-
-              {ordersError ? (
-                <div className="text-xs font-medium text-rose-600">{t(ordersError)}</div>
-              ) : null}
-
-              {activeOrders.length > 0 ? (
-                <div className="space-y-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
-                    {t("Active Orders")}
-                  </div>
-                  {activeOrders.map((order) => renderOrderCard(order, { section: "active" }))}
-                </div>
-              ) : null}
-
-              {hasActiveOrder && activeOrders.length === 0 ? (
-                <div className="space-y-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
-                    {t("Current Order")}
-                  </div>
-                  {renderOrderCard(
-                    {
-                      id: null,
-                      status: normalizedOrderStatus || "pending",
-                      total,
-                      createdAt: new Date().toISOString(),
-                      itemCount: prevItems.length,
-                    },
-                    { section: "current" }
-                  )}
-                </div>
-              ) : null}
-
-              {visiblePastOrders.length > 0 ? (
-                <div className="space-y-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
-                    {t("Recent Orders")}
-                  </div>
-                  {visiblePastOrders.map((order) =>
-                    renderOrderCard(order, { section: "past", actionLabel: t("View Details") })
-                  )}
-                </div>
-              ) : null}
-
-              {!ordersLoading && !ordersError && !hasTrackedOrders && isLoggedIn ? (
-                <div className="text-sm text-neutral-500">{t("No orders yet.")}</div>
-              ) : null}
-
-              {hasActiveOrder ? (
-                <button
-                  type="button"
-                  onClick={() => handleOpenStatus()}
-                  className="w-full rounded-full bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-neutral-800"
-                >
-                  {t("Open Current Order Status")}
-                </button>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-
         {cartLength === 0 ? (
           <div className="py-8 text-center">
             <div className="text-neutral-400 italic">{t("Cart is empty.")}</div>
@@ -731,7 +531,7 @@ const CartModal = React.memo(function CartModal({
               onClick={goToProductPage}
               className="w-full py-3 rounded-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white font-semibold shadow-[0_8px_20px_rgba(37,99,235,0.3)] hover:from-sky-700 hover:to-indigo-700 transition-all active:scale-[0.99]"
             >
-              ↺ {t("Order Another")}
+                ↺ {t("Continue Shopping")}
             </button>
           )}
 
@@ -787,10 +587,7 @@ const CartModal = React.memo(function CartModal({
         >
           <span className="text-xl">🛒</span>
           <div className="flex flex-col items-start">
-            <span className="text-sm">{hasTrackedOrders && !hasNewItems ? t("Orders & Cart") : t("View Cart")}</span>
-            {hasActiveOrder && statusLabel && (
-              <span className="text-[11px] uppercase tracking-wide opacity-90">{statusLabel}</span>
-            )}
+            <span className="text-sm">{t("View Cart")}</span>
           </div>
           {hasNewItems && (
             <span className="ml-3 inline-flex items-center justify-center rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">

@@ -22,6 +22,10 @@ const UNRESTRICTED_WINDOW_MINUTES = 24 * 60;
 const UNRESTRICTED_BOOKING_MAX_DAYS = 365;
 const MIN_BOOKING_SLOT_INTERVAL_MINUTES = 5;
 
+function asObject(value) {
+  return value && typeof value === "object" ? value : {};
+}
+
 function asPositiveInt(value, fallback = 0) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
@@ -29,90 +33,91 @@ function asPositiveInt(value, fallback = 0) {
 }
 
 export function normalizeQrBookingSettings(raw = {}) {
+  const source = asObject(raw);
   return {
     ...QR_BOOKING_DEFAULTS,
     reservation_booking_settings_enabled:
-      raw.reservation_booking_settings_enabled !== false &&
-      String(raw.reservation_booking_settings_enabled || "").toLowerCase() !== "false",
+      source.reservation_booking_settings_enabled !== false &&
+      String(source.reservation_booking_settings_enabled || "").toLowerCase() !== "false",
     booking_slot_settings_enabled:
-      raw.booking_slot_settings_enabled !== false &&
-      String(raw.booking_slot_settings_enabled || "").toLowerCase() !== "false",
+      source.booking_slot_settings_enabled !== false &&
+      String(source.booking_slot_settings_enabled || "").toLowerCase() !== "false",
     concert_booking_settings_enabled:
-      raw.concert_booking_settings_enabled !== false &&
-      String(raw.concert_booking_settings_enabled || "").toLowerCase() !== "false",
+      source.concert_booking_settings_enabled !== false &&
+      String(source.concert_booking_settings_enabled || "").toLowerCase() !== "false",
     reservation_default_duration_minutes: Math.max(
       15,
       asPositiveInt(
-        raw.reservation_default_duration_minutes,
+        source.reservation_default_duration_minutes,
         QR_BOOKING_DEFAULTS.reservation_default_duration_minutes
       )
     ),
     reservation_buffer_minutes: Math.max(
       0,
-      asPositiveInt(raw.reservation_buffer_minutes, QR_BOOKING_DEFAULTS.reservation_buffer_minutes) ||
+      asPositiveInt(source.reservation_buffer_minutes, QR_BOOKING_DEFAULTS.reservation_buffer_minutes) ||
         0
     ),
     reservation_max_per_table_per_day:
-      raw.reservation_max_per_table_per_day === null ||
-      raw.reservation_max_per_table_per_day === undefined ||
-      raw.reservation_max_per_table_per_day === ""
+      source.reservation_max_per_table_per_day === null ||
+      source.reservation_max_per_table_per_day === undefined ||
+      source.reservation_max_per_table_per_day === ""
         ? ""
-        : Math.max(1, asPositiveInt(raw.reservation_max_per_table_per_day, 1)),
+        : Math.max(1, asPositiveInt(source.reservation_max_per_table_per_day, 1)),
     reservation_allow_while_occupied_now:
-      raw.reservation_allow_while_occupied_now === true ||
-      String(raw.reservation_allow_while_occupied_now || "").toLowerCase() === "true",
+      source.reservation_allow_while_occupied_now === true ||
+      String(source.reservation_allow_while_occupied_now || "").toLowerCase() === "true",
     reservation_early_checkin_window_minutes: Math.max(
       0,
       asPositiveInt(
-        raw.reservation_early_checkin_window_minutes,
+        source.reservation_early_checkin_window_minutes,
         QR_BOOKING_DEFAULTS.reservation_early_checkin_window_minutes
       ) || 0
     ),
     reservation_late_arrival_grace_minutes: Math.max(
       0,
       asPositiveInt(
-        raw.reservation_late_arrival_grace_minutes,
+        source.reservation_late_arrival_grace_minutes,
         QR_BOOKING_DEFAULTS.reservation_late_arrival_grace_minutes
       ) || 0
     ),
     reservation_auto_cancel_no_show_after_minutes: Math.max(
       0,
       asPositiveInt(
-        raw.reservation_auto_cancel_no_show_after_minutes,
+        source.reservation_auto_cancel_no_show_after_minutes,
         QR_BOOKING_DEFAULTS.reservation_auto_cancel_no_show_after_minutes
       ) || 0
     ),
     concert_event_duration_minutes: Math.max(
       15,
       asPositiveInt(
-        raw.concert_event_duration_minutes,
+        source.concert_event_duration_minutes,
         QR_BOOKING_DEFAULTS.concert_event_duration_minutes
       )
     ),
-    concert_event_end_time: String(raw.concert_event_end_time || "").trim(),
+    concert_event_end_time: String(source.concert_event_end_time || "").trim(),
     concert_early_entry_window_minutes: Math.max(
       0,
       asPositiveInt(
-        raw.concert_early_entry_window_minutes,
+        source.concert_early_entry_window_minutes,
         QR_BOOKING_DEFAULTS.concert_early_entry_window_minutes
       ) || 0
     ),
     concert_late_entry_cutoff_minutes: Math.max(
       0,
       asPositiveInt(
-        raw.concert_late_entry_cutoff_minutes,
+        source.concert_late_entry_cutoff_minutes,
         QR_BOOKING_DEFAULTS.concert_late_entry_cutoff_minutes
       ) || 0
     ),
     concert_allow_reentry:
-      raw.concert_allow_reentry === true ||
-      String(raw.concert_allow_reentry || "").toLowerCase() === "true",
+      source.concert_allow_reentry === true ||
+      String(source.concert_allow_reentry || "").toLowerCase() === "true",
     booking_time_interval_minutes: Math.max(
       5,
       Math.min(
         180,
         asPositiveInt(
-          raw.booking_time_interval_minutes,
+          source.booking_time_interval_minutes,
           QR_BOOKING_DEFAULTS.booking_time_interval_minutes
         )
       )
@@ -121,7 +126,7 @@ export function normalizeQrBookingSettings(raw = {}) {
       1,
       Math.min(
         365,
-        asPositiveInt(raw.booking_max_days_in_advance, QR_BOOKING_DEFAULTS.booking_max_days_in_advance)
+        asPositiveInt(source.booking_max_days_in_advance, QR_BOOKING_DEFAULTS.booking_max_days_in_advance)
       )
     ),
   };

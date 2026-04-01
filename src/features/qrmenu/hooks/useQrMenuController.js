@@ -1185,6 +1185,21 @@ const syncTableGuestsFromQr = useCallback(
   [appendIdentifier]
 );
 
+const selectTableDirectly = useCallback((tableNumber, guests = 1) => {
+  const normalizedTable = Number(tableNumber);
+  if (!Number.isFinite(normalizedTable) || normalizedTable <= 0) return false;
+  const normalizedGuests = clampGuestCount(guests, 1);
+  setShowTableScanner(false);
+  setTableScanTarget(null);
+  setTableScanReady(false);
+  setTableScanError("");
+  setTable(normalizedTable);
+  saveSelectedTable(normalizedTable);
+  storage.setItem("qr_table_guests", String(normalizedGuests));
+  syncTableGuestsFromQr(normalizedTable, normalizedGuests);
+  return true;
+}, [saveSelectedTable, setTable, storage, syncTableGuestsFromQr]);
+
 const handleTableScanSuccess = useCallback(
   (decodedText) => {
     if (tableScanInFlight.current) return;
@@ -3416,6 +3431,7 @@ function handleReset(options = null) {
     startQrVoiceCapture,
     injectQrVoiceItemsToCart,
     openTableScanner,
+    selectTableDirectly,
     closeTableScanner,
     resetToTypePicker,
     handleCloseOrderPage,

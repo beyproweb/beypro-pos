@@ -82,6 +82,36 @@ function formatExpiry(v) {
   return s.slice(0, 2) + "/" + s.slice(2);
 }
 
+function normalizeHexColor(value, fallback) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^#([0-9a-f]{6}|[0-9a-f]{3})$/i);
+  if (!match) return fallback;
+  if (match[1].length === 6) return `#${match[1].toUpperCase()}`;
+  return `#${match[1]
+    .split("")
+    .map((ch) => `${ch}${ch}`)
+    .join("")
+    .toUpperCase()}`;
+}
+
+function hexToRgb(value) {
+  const normalized = normalizeHexColor(value, "");
+  if (!normalized) return null;
+  const hex = normalized.slice(1);
+  return {
+    r: parseInt(hex.slice(0, 2), 16),
+    g: parseInt(hex.slice(2, 4), 16),
+    b: parseInt(hex.slice(4, 6), 16),
+  };
+}
+
+function getReadableTextColor(value) {
+  const rgb = hexToRgb(value);
+  if (!rgb) return "#FFFFFF";
+  const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+  return brightness >= 160 ? "#0F172A" : "#FFFFFF";
+}
+
 const CheckoutModal = React.memo(function CheckoutModal({
   submitting,
   t,
@@ -89,7 +119,10 @@ const CheckoutModal = React.memo(function CheckoutModal({
   onSubmit,
   appendIdentifier,
   storage,
+  accentColor = "#111827",
 }) {
+  const resolvedAccentColor = normalizeHexColor(accentColor, "#111827");
+  const accentTextColor = getReadableTextColor(resolvedAccentColor);
   const [form, setForm] = useState({
     name: "",
     phone: "",
@@ -503,7 +536,11 @@ const CheckoutModal = React.memo(function CheckoutModal({
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-3 rounded-full bg-neutral-900 text-white font-medium text-lg hover:bg-neutral-800 transition disabled:opacity-50"
+            className="w-full py-3 rounded-full font-medium text-lg transition disabled:opacity-50"
+            style={{
+              backgroundColor: resolvedAccentColor,
+              color: accentTextColor,
+            }}
           >
             {submitting ? t("Please wait...") : t("Continue")}
           </button>

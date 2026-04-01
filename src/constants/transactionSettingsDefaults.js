@@ -1,5 +1,6 @@
 export const DEFAULT_TRANSACTION_SETTINGS = {
   autoCloseTableAfterPay: false,
+  autoCloseDeliveredTableFromKitchen: false,
   autoClosePacketAfterPay: false,
   // null = all methods, [] = none, ["cash", ...] = subset
   autoClosePacketAfterPayMethods: null,

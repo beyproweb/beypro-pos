@@ -19,6 +19,7 @@ function Header({
   restaurantName,
   mainTitleLogo,
   tagline,
+  accentColor = "#111827",
   t,
   openStatus,
   showShopHoursDropdown,
@@ -75,18 +76,34 @@ function Header({
             restaurantName={restaurantName}
             mainTitleLogo={mainTitleLogo}
             showCompactBranding={showCompactBranding}
+            layout="toolbar"
+            accentColor={accentColor}
             t={t}
           />
         </div>
       </header>
 
-      <div className="h-[74px] sm:h-[80px]" aria-hidden="true" />
+      <div className="h-[70px] sm:h-[76px]" aria-hidden="true" />
 
       {showInfo ? (
         <HeaderInfo
+          isDark={isDark}
+          isDrawerOpen={isDrawerOpen}
+          onOpenDrawer={onOpenDrawer}
+          onSelect={onSelect}
+          reservationEnabled={reservationEnabled}
+          tableEnabled={tableEnabled}
+          deliveryEnabled={deliveryEnabled}
+          requestSongEnabled={requestSongEnabled}
+          activeOrderType={activeOrderType}
+          statusShortcutCount={statusShortcutCount}
+          statusShortcutEnabled={statusShortcutEnabled}
+          statusShortcutOpen={statusShortcutOpen}
+          onStatusShortcutClick={onStatusShortcutClick}
           restaurantName={restaurantName}
           mainTitleLogo={mainTitleLogo}
           tagline={tagline}
+          accentColor={accentColor}
           t={t}
           openStatus={openStatus}
           showShopHoursDropdown={showShopHoursDropdown}

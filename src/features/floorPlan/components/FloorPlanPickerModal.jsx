@@ -359,6 +359,7 @@ export default function FloorPlanPickerModal({
             }}
             confirmDisabled={!canConfirm}
             guestCompositionProps={effectiveGuestCompositionProps}
+            accentColor={accentColor}
             confirmLabel={
               canConfirm
                 ? t("Confirm table")

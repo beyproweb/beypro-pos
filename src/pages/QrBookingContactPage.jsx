@@ -1,6 +1,7 @@
 import React from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import secureFetch from "../utils/secureFetch";
 import BookingPageLayout from "../features/floorPlan/components/BookingPageLayout";
 import BookingSection from "../features/floorPlan/components/BookingSection";
 import RegisteredCustomerBadge from "../features/floorPlan/components/RegisteredCustomerBadge";
@@ -43,6 +44,42 @@ function Field({ label, error = "", children }) {
   );
 }
 
+function normalizeHexColor(value, fallback = "#111827") {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^#([0-9a-f]{6}|[0-9a-f]{3})$/i);
+  if (!match) return fallback;
+  if (match[1].length === 6) return `#${match[1].toUpperCase()}`;
+  return `#${match[1]
+    .split("")
+    .map((ch) => `${ch}${ch}`)
+    .join("")
+    .toUpperCase()}`;
+}
+
+function hexToRgb(value) {
+  const normalized = normalizeHexColor(value, "");
+  if (!normalized) return null;
+  const hex = normalized.slice(1);
+  return {
+    r: parseInt(hex.slice(0, 2), 16),
+    g: parseInt(hex.slice(2, 4), 16),
+    b: parseInt(hex.slice(4, 6), 16),
+  };
+}
+
+function getReadableTextColor(value) {
+  const rgb = hexToRgb(value);
+  if (!rgb) return "#FFFFFF";
+  const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+  return brightness >= 160 ? "#0F172A" : "#FFFFFF";
+}
+
+function toRgba(value, alpha) {
+  const rgb = hexToRgb(value);
+  if (!rgb) return undefined;
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+}
+
 export default function QrBookingContactPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -80,7 +117,7 @@ export default function QrBookingContactPage() {
       search: location.search,
     });
   }, [concertId, id, location.pathname, location.search, slug]);
-  const accentColor = "#111827";
+  const [accentColor, setAccentColor] = React.useState("#111827");
 
   const [mode, setMode] = React.useState("register");
   const [isEditMode, setIsEditMode] = React.useState(() => Boolean(editRequested));
@@ -101,6 +138,42 @@ export default function QrBookingContactPage() {
   });
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadAccentColor() {
+      if (!identifier) return;
+      try {
+        const response = await secureFetch(
+          `/public/qr-menu-customization/${encodeURIComponent(identifier)}`
+        );
+        if (cancelled) return;
+        const nextAccent = normalizeHexColor(
+          response?.customization?.primary_color,
+          "#111827"
+        );
+        setAccentColor(nextAccent);
+      } catch {
+        if (!cancelled) {
+          setAccentColor("#111827");
+        }
+      }
+    }
+
+    loadAccentColor();
+    return () => {
+      cancelled = true;
+    };
+  }, [identifier]);
+
+  const accentTextColor = getReadableTextColor(accentColor);
+  const selectedPillStyle = {
+    backgroundColor: accentColor,
+    borderColor: accentColor,
+    color: accentTextColor,
+    boxShadow: `0 14px 28px ${toRgba(accentColor, 0.18) || "rgba(15,23,42,0.18)"}`,
+  };
 
   React.useEffect(() => {
     if (!isLoggedIn) {
@@ -242,6 +315,7 @@ export default function QrBookingContactPage() {
       subtitle={t("Complete your profile before continuing.")}
       onBack={handleBack}
       accentColor={accentColor}
+      showHeaderIndicator={false}
       actionLabel={loading ? t("Saving...") : isLoggedIn && isEditMode ? t("Save changes") : t("Continue to Booking")}
       actionHelper={t("Secure this booking with your saved profile.")}
       onAction={handleContinue}
@@ -272,9 +346,10 @@ export default function QrBookingContactPage() {
                   className={[
                     "rounded-full px-4 py-2 text-sm font-semibold transition",
                     mode === "register"
-                      ? "bg-slate-900 text-white dark:bg-white dark:text-slate-950"
+                      ? ""
                       : "text-neutral-600 dark:text-neutral-300",
                   ].join(" ")}
+                  style={mode === "register" ? selectedPillStyle : undefined}
                 >
                   {t("Register")}
                 </button>
@@ -284,9 +359,10 @@ export default function QrBookingContactPage() {
                   className={[
                     "rounded-full px-4 py-2 text-sm font-semibold transition",
                     mode === "login"
-                      ? "bg-slate-900 text-white dark:bg-white dark:text-slate-950"
+                      ? ""
                       : "text-neutral-600 dark:text-neutral-300",
                   ].join(" ")}
+                  style={mode === "login" ? selectedPillStyle : undefined}
                 >
                   {t("Login")}
                 </button>
@@ -397,9 +473,12 @@ export default function QrBookingContactPage() {
               className={[
                 "rounded-[24px] border px-4 py-4 text-left transition",
                 paymentForm.payment_method === "bank_transfer"
-                  ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-950"
+                  ? ""
                   : "border-neutral-200 bg-white text-neutral-900 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-100",
               ].join(" ")}
+              style={
+                paymentForm.payment_method === "bank_transfer" ? selectedPillStyle : undefined
+              }
             >
               <div className="text-xs font-semibold uppercase tracking-[0.16em] opacity-75">{t("Active")}</div>
               <div className="mt-2 text-base font-semibold">{t("Bank Transfer")}</div>
@@ -416,9 +495,12 @@ export default function QrBookingContactPage() {
               className={[
                 "rounded-[24px] border px-4 py-4 text-left transition",
                 paymentForm.payment_method === "credit_card"
-                  ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-950"
+                  ? ""
                   : "border-neutral-200 bg-white text-neutral-900 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-100",
               ].join(" ")}
+              style={
+                paymentForm.payment_method === "credit_card" ? selectedPillStyle : undefined
+              }
             >
               <div className="text-xs font-semibold uppercase tracking-[0.16em] opacity-75">{t("Credit Card")}</div>
               <div className="mt-2 text-base font-semibold">{t("Card Details")}</div>

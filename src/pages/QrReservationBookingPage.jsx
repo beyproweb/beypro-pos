@@ -69,6 +69,18 @@ function buildReservationApiPath(identifier, pathname = "/orders/reservations") 
   return `${pathname}?${params.toString()}`;
 }
 
+function normalizeHexColor(value, fallback = "#111827") {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^#([0-9a-f]{6}|[0-9a-f]{3})$/i);
+  if (!match) return fallback;
+  if (match[1].length === 6) return `#${match[1].toUpperCase()}`;
+  return `#${match[1]
+    .split("")
+    .map((ch) => `${ch}${ch}`)
+    .join("")
+    .toUpperCase()}`;
+}
+
 export default function QrReservationBookingPage() {
   const { t } = useTranslation();
   const { formatCurrency } = useCurrency();
@@ -407,7 +419,7 @@ export default function QrReservationBookingPage() {
     !guestCompositionError &&
     !submitting;
 
-  const accentColor = String(settings?.primary_color || "#111827");
+  const accentColor = normalizeHexColor(settings?.primary_color, "#111827");
   const summaryItems = [
     {
       label: t("Date"),
@@ -594,6 +606,7 @@ export default function QrReservationBookingPage() {
       subtitle={loading ? t("Loading booking page") : t("Step-by-step reservation flow")}
       onBack={handleBack}
       accentColor={accentColor}
+      showHeaderIndicator={false}
       actionLabel={submitting && hasConfirmedTable ? t("Saving...") : primaryActionLabel}
       actionHelper={primaryActionHelper}
       onAction={primaryActionHandler}

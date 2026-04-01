@@ -1,6 +1,47 @@
 import React from "react";
 
-function RegisterPage({ t, onRegister, onGoLogin, onBack }) {
+function normalizeHexColor(value, fallback = "#111827") {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^#([0-9a-f]{6}|[0-9a-f]{3})$/i);
+  if (!match) return fallback;
+  if (match[1].length === 6) return `#${match[1].toUpperCase()}`;
+  return `#${match[1]
+    .split("")
+    .map((ch) => `${ch}${ch}`)
+    .join("")
+    .toUpperCase()}`;
+}
+
+function hexToRgb(value) {
+  const normalized = normalizeHexColor(value, "");
+  if (!normalized) return null;
+  const hex = normalized.slice(1);
+  return {
+    r: parseInt(hex.slice(0, 2), 16),
+    g: parseInt(hex.slice(2, 4), 16),
+    b: parseInt(hex.slice(4, 6), 16),
+  };
+}
+
+function getReadableTextColor(value) {
+  const rgb = hexToRgb(value);
+  if (!rgb) return "#FFFFFF";
+  const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+  return brightness >= 160 ? "#0F172A" : "#FFFFFF";
+}
+
+function toRgba(value, alpha) {
+  const rgb = hexToRgb(value);
+  if (!rgb) return undefined;
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+}
+
+function RegisterPage({ t, onRegister, onGoLogin, onBack, accentColor = "#111827" }) {
+  const resolvedAccentColor = normalizeHexColor(accentColor, "#111827");
+  const accentTextColor = getReadableTextColor(resolvedAccentColor);
+  const pageBackground = `radial-gradient(circle at top left, ${
+    toRgba(resolvedAccentColor, 0.12) || "rgba(17,24,39,0.12)"
+  }, transparent 44%), linear-gradient(180deg, #f8fafc 0%, #ffffff 100%)`;
   const [form, setForm] = React.useState({
     email: "",
     username: "",
@@ -29,7 +70,10 @@ function RegisterPage({ t, onRegister, onGoLogin, onBack }) {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(191,219,254,0.65),_transparent_44%),linear-gradient(180deg,_#eff6ff_0%,_#ffffff_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.14),_transparent_36%),linear-gradient(180deg,_#0f172a_0%,_#020617_100%)]">
+    <div
+      className="h-full overflow-y-auto dark:bg-[linear-gradient(180deg,_#0f172a_0%,_#020617_100%)]"
+      style={{ backgroundImage: pageBackground }}
+    >
       <div className="sticky top-0 z-10 border-b border-gray-200/80 bg-white/90 px-4 py-3 backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-950/85 flex items-center gap-2">
         <button
           type="button"
@@ -43,7 +87,14 @@ function RegisterPage({ t, onRegister, onGoLogin, onBack }) {
 
       <div className="px-4 py-5">
         <div className="overflow-hidden rounded-[28px] border border-white/70 bg-white/90 p-5 shadow-[0_24px_70px_rgba(15,23,42,0.12)] backdrop-blur-xl dark:border-white/10 dark:bg-neutral-900/75 dark:shadow-[0_28px_80px_rgba(2,6,23,0.45)]">
-          <div className="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-700 dark:border-cyan-500/20 dark:bg-cyan-500/10 dark:text-cyan-200">
+          <div
+            className="inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em]"
+            style={{
+              borderColor: toRgba(resolvedAccentColor, 0.24) || resolvedAccentColor,
+              backgroundColor: toRgba(resolvedAccentColor, 0.1) || resolvedAccentColor,
+              color: resolvedAccentColor,
+            }}
+          >
             {t("Create Account")}
           </div>
           <h3 className="mt-4 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
@@ -112,7 +163,12 @@ function RegisterPage({ t, onRegister, onGoLogin, onBack }) {
             <button
               type="submit"
               disabled={loading}
-              className="h-12 w-full rounded-2xl bg-slate-950 text-sm font-semibold text-white shadow-[0_16px_30px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 disabled:opacity-60 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
+              className="h-12 w-full rounded-2xl text-sm font-semibold transition disabled:opacity-60"
+              style={{
+                backgroundColor: resolvedAccentColor,
+                color: accentTextColor,
+                boxShadow: `0 16px 30px ${toRgba(resolvedAccentColor, 0.24) || "rgba(15,23,42,0.18)"}`,
+              }}
             >
               {loading ? "..." : t("Create Account")}
             </button>

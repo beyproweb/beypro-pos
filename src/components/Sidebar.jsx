@@ -752,7 +752,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
       </nav>
 
       {canShowLanguageSelector && (
-        <div className="mt-1.5 w-full px-1.5">
+        <div className="mt-0.5 w-full px-1.5">
           <div className="mx-1.5 my-1.5 h-px bg-white/15" />
           {isOpen ? (
             <div className="mx-1.5 my-1.5 rounded-xl border border-white/15 bg-white/5 px-2 py-1.5 shadow-lg">
@@ -820,7 +820,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
         </div>
       )}
 
-      <div className="mb-3 flex flex-col items-center gap-1 px-2.5 text-center">
+      <div className="mb-1.5 flex flex-col items-center gap-1 px-2.5 text-center">
         {displayName && (
           <span className="w-full max-w-[140px] truncate text-center text-[10px] uppercase tracking-[0.18em] text-white/55">
             {displayName}
