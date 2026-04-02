@@ -41,6 +41,13 @@ export default function LoginScreen() {
     ? i18n.language
     : DEFAULT_LANGUAGE;
 
+  const normalizeLoginError = (message) => {
+    const normalized = String(message || "").trim();
+    if (!normalized) return t("Login failed");
+    if (normalized === "Invalid password") return t("Invalid credentials");
+    return normalized;
+  };
+
   useEffect(() => {
     if (rememberMe) return undefined;
 
@@ -138,7 +145,7 @@ export default function LoginScreen() {
       navigate("/tableoverview?tab=tables", { replace: true });
     } catch (err) {
       console.error("❌ Login failed:", err);
-      setError(err.message || t("Login failed"));
+      setError(normalizeLoginError(err?.message));
     } finally {
       setLoading(false);
     }
