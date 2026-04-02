@@ -4,7 +4,7 @@ function formatPrice(price, lang) {
   const value = Number(price);
   if (!Number.isFinite(value) || value <= 0) return "";
   try {
-    return `(+₺${new Intl.NumberFormat(lang || "en").format(value)})`;
+    return `(+₺${new Intl.NumberFormat(lang || "tr").format(value)})`;
   } catch {
     return `(+₺${value.toFixed(2)})`;
   }

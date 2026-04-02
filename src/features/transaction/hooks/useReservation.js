@@ -435,58 +435,69 @@ export const useReservation = ({
 
       setExistingReservation(finalSavedReservation);
       upsertReservationShadow(finalSavedReservation);
-      const savedReservationId = Number(finalSavedReservation?.id);
-      const currentOrderId = Number(order?.id);
-      const savedIntoCurrentOrder =
-        Number.isFinite(savedReservationId) &&
-        savedReservationId > 0 &&
-        Number.isFinite(currentOrderId) &&
-        currentOrderId > 0 &&
-        savedReservationId === currentOrderId;
-      if (savedIntoCurrentOrder) {
-        const reservationClientCount =
-          finalSavedReservation.reservation_clients ??
-          (parseInt(reservationClients, 10) || 0);
-        const syncedOrder = {
-          ...(order || {}),
+      const reservationClientCount =
+        finalSavedReservation.reservation_clients ??
+        (parseInt(reservationClients, 10) || 0);
+      const resolvedOrderId =
+        finalSavedReservation.order_id ??
+        finalSavedReservation.orderId ??
+        order?.id ??
+        null;
+      const resolvedTableNumberForSync =
+        finalSavedReservation.table_number ??
+        finalSavedReservation.tableNumber ??
+        resolvedTableNumber ??
+        order?.table_number ??
+        order?.tableNumber ??
+        null;
+      const syncedOrder = {
+        ...(order || {}),
+        ...(Number.isFinite(Number(resolvedOrderId)) && Number(resolvedOrderId) > 0
+          ? { id: Number(resolvedOrderId) }
+          : {}),
+        ...(Number.isFinite(Number(resolvedTableNumberForSync))
+          ? {
+              table_number: Number(resolvedTableNumberForSync),
+              tableNumber: Number(resolvedTableNumberForSync),
+            }
+          : {}),
+        status: finalSavedReservation.status || "reserved",
+        order_type: finalSavedReservation.order_type || order?.order_type || "table",
+        reservation: {
+          ...(order?.reservation && typeof order.reservation === "object"
+            ? order.reservation
+            : {}),
+          id: finalSavedReservation.id ?? null,
+          order_id: resolvedOrderId,
+          table_number: resolvedTableNumberForSync,
           status: finalSavedReservation.status || "reserved",
-          order_type: finalSavedReservation.order_type || order?.order_type || "table",
-          reservation: {
-            ...(order?.reservation && typeof order.reservation === "object"
-              ? order.reservation
-              : {}),
-            id: finalSavedReservation.id ?? null,
-            order_id: finalSavedReservation.id ?? order?.id ?? null,
-            table_number: finalSavedReservation.table_number ?? resolvedTableNumber ?? null,
-            status: finalSavedReservation.status || "reserved",
-            order_type: finalSavedReservation.order_type || "reservation",
-            reservation_date: finalSavedReservation.reservation_date || reservationDate,
-            reservation_time: finalSavedReservation.reservation_time || reservationTime,
-            reservation_clients: reservationClientCount,
-            reservation_notes: finalSavedReservation.reservation_notes || reservationNotes,
-            customer_name:
-              finalSavedReservation.customer_name ||
-              finalSavedReservation.customerName ||
-              typedCustomerName,
-            customer_phone:
-              finalSavedReservation.customer_phone ||
-              finalSavedReservation.customerPhone ||
-              typedCustomerPhone,
-          },
-          reservation_id: finalSavedReservation.id ?? null,
-          reservationId: finalSavedReservation.id ?? null,
+          order_type: finalSavedReservation.order_type || "reservation",
           reservation_date: finalSavedReservation.reservation_date || reservationDate,
-          reservationDate: finalSavedReservation.reservation_date || reservationDate,
           reservation_time: finalSavedReservation.reservation_time || reservationTime,
-          reservationTime: finalSavedReservation.reservation_time || reservationTime,
           reservation_clients: reservationClientCount,
-          reservationClients: reservationClientCount,
           reservation_notes: finalSavedReservation.reservation_notes || reservationNotes,
-          reservationNotes: finalSavedReservation.reservation_notes || reservationNotes,
-        };
-        setOrder((prev) => ({ ...(prev || {}), ...syncedOrder }));
-        onReservationStateChange?.(syncedOrder);
-      }
+          customer_name:
+            finalSavedReservation.customer_name ||
+            finalSavedReservation.customerName ||
+            typedCustomerName,
+          customer_phone:
+            finalSavedReservation.customer_phone ||
+            finalSavedReservation.customerPhone ||
+            typedCustomerPhone,
+        },
+        reservation_id: finalSavedReservation.id ?? null,
+        reservationId: finalSavedReservation.id ?? null,
+        reservation_date: finalSavedReservation.reservation_date || reservationDate,
+        reservationDate: finalSavedReservation.reservation_date || reservationDate,
+        reservation_time: finalSavedReservation.reservation_time || reservationTime,
+        reservationTime: finalSavedReservation.reservation_time || reservationTime,
+        reservation_clients: reservationClientCount,
+        reservationClients: reservationClientCount,
+        reservation_notes: finalSavedReservation.reservation_notes || reservationNotes,
+        reservationNotes: finalSavedReservation.reservation_notes || reservationNotes,
+      };
+      setOrder((prev) => ({ ...(prev || {}), ...syncedOrder }));
+      onReservationStateChange?.(syncedOrder);
       setReservationDate(finalSavedReservation.reservation_date || reservationDate);
       setReservationTime(finalSavedReservation.reservation_time || reservationTime);
       setReservationClients(

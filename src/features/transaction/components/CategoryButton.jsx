@@ -1,5 +1,6 @@
 import React, { useCallback } from "react";
 import { normalizeGroupKey } from "../../transactions/utils/normalization";
+import { normalizeTableDensity, TABLE_DENSITY } from "../../tables/tableDensity";
 
 function CategoryButton({
   cat,
@@ -15,9 +16,13 @@ function CategoryButton({
   reorderCategoryByKeyToIndex,
   categoryImages,
   t,
-  setIsReorderingCategories,
   CATEGORY_FALLBACK_IMAGE,
+  tableDensity = TABLE_DENSITY.COMFORTABLE,
 }) {
+  const normalizedDensity = normalizeTableDensity(tableDensity);
+  const isCompactMode =
+    normalizedDensity === TABLE_DENSITY.COMPACT ||
+    normalizedDensity === TABLE_DENSITY.DENSE;
   const normalizedVariant = variant === "bar" ? "vertical" : variant;
   const slug = (cat || "").trim().toLowerCase();
   const catSrc = categoryImages[slug] || "";
@@ -26,6 +31,33 @@ function CategoryButton({
   const key = normalizeGroupKey(cat);
   const isDragging = !!key && key === draggingCategoryKey;
   const hasCatalogSearch = catalogSearch.trim() !== "";
+  const compactPalette = [
+    {
+      base: "border-emerald-200/80 bg-emerald-50/80 dark:border-emerald-500/30 dark:bg-emerald-900/20",
+      text: "text-emerald-900 dark:text-emerald-100",
+    },
+    {
+      base: "border-sky-200/80 bg-sky-50/80 dark:border-sky-500/30 dark:bg-sky-900/20",
+      text: "text-sky-900 dark:text-sky-100",
+    },
+    {
+      base: "border-amber-200/80 bg-amber-50/85 dark:border-amber-500/30 dark:bg-amber-900/20",
+      text: "text-amber-900 dark:text-amber-100",
+    },
+    {
+      base: "border-rose-200/80 bg-rose-50/80 dark:border-rose-500/30 dark:bg-rose-900/20",
+      text: "text-rose-900 dark:text-rose-100",
+    },
+    {
+      base: "border-violet-200/80 bg-violet-50/80 dark:border-violet-500/30 dark:bg-violet-900/20",
+      text: "text-violet-900 dark:text-violet-100",
+    },
+    {
+      base: "border-cyan-200/80 bg-cyan-50/80 dark:border-cyan-500/30 dark:bg-cyan-900/20",
+      text: "text-cyan-900 dark:text-cyan-100",
+    },
+  ];
+  const paletteClass = compactPalette[Math.abs(Number(idx) || 0) % compactPalette.length];
 
   const clearDraggingCategory = useCallback(() => {
     setDraggingCategoryKey("");
@@ -51,7 +83,9 @@ function CategoryButton({
       try {
         e.dataTransfer.effectAllowed = "move";
         e.dataTransfer.setData("text/plain", dragKey);
-      } catch {}
+      } catch (err) {
+        void err;
+      }
     },
     [cat, isDragEnabled, setDraggingCategoryKey]
   );
@@ -61,7 +95,9 @@ function CategoryButton({
     e.preventDefault();
     try {
       e.dataTransfer.dropEffect = "move";
-    } catch {}
+    } catch (err) {
+      void err;
+    }
   }, [isDragEnabled]);
 
   const handleDrop = useCallback(
@@ -96,7 +132,9 @@ function CategoryButton({
       setDraggingCategoryKey(dragKey);
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
-      } catch {}
+      } catch (err) {
+        void err;
+      }
       e.preventDefault();
     },
     [cat, isDragEnabled, setDraggingCategoryKey]
@@ -143,6 +181,35 @@ function CategoryButton({
   );
 
   if (normalizedVariant === "sidebar") {
+    if (isCompactMode) {
+      return (
+        <button
+          key={`${variant}-${cat}-${idx}`}
+          type="button"
+          data-cat-idx={idx}
+          onClick={handleSelectCategory}
+          className={[
+            "group relative flex w-full items-center justify-center overflow-hidden rounded-lg px-2 py-2",
+            "border text-left shadow-none transition-all duration-150 select-none",
+            isActive ? "" : paletteClass.base,
+            "active:scale-[0.985]",
+            isActive
+              ? "border-[rgb(var(--accent-color))/0.6] bg-[rgb(var(--accent-color))/0.16] dark:bg-[rgb(var(--accent-color))/0.24]"
+              : "hover:brightness-[0.97] dark:hover:brightness-110",
+          ].join(" ")}
+        >
+          <span
+            className={[
+              "min-w-0 truncate text-sm font-semibold leading-tight text-center",
+              isActive ? "text-slate-900 dark:text-slate-50" : paletteClass.text,
+            ].join(" ")}
+          >
+            {t(cat)}
+          </span>
+        </button>
+      );
+    }
+
     return (
       <button
         key={`${variant}-${cat}-${idx}`}
@@ -185,40 +252,53 @@ function CategoryButton({
     );
   }
 
-  const baseClasses =
-    "flex flex-col items-center justify-center gap-0.5 rounded-lg border bg-white/70 px-1.5 py-1 text-center shadow-xs transition-all duration-100 select-none touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/60 active:scale-[0.98] dark:bg-slate-900/50 dark:border-slate-700/50 dark:shadow-xs";
+  const baseClasses = isCompactMode
+    ? "flex items-center justify-center gap-0.5 rounded-md border bg-white/75 px-1 py-1 text-center shadow-none transition-all duration-100 select-none touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/60 active:scale-[0.98] dark:bg-slate-900/55 dark:border-slate-700/60"
+    : "flex flex-col items-center justify-center gap-0.5 rounded-lg border bg-white/70 px-1.5 py-1 text-center shadow-xs transition-all duration-100 select-none touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/60 active:scale-[0.98] dark:bg-slate-900/50 dark:border-slate-700/50 dark:shadow-xs";
 
-  const paddingClass =
-    normalizedVariant === "mobile"
-      ? "px-1 py-1.5"
-      : normalizedVariant === "grid"
+  const paddingClass = isCompactMode
+    ? normalizedVariant === "mobile"
       ? "px-1 py-1"
-      : normalizedVariant === "vertical"
-      ? "px-1 py-1"
-      : normalizedVariant === "horizontal"
-      ? "px-1 py-0.5"
-      : "px-1.5 py-1.5";
+      : "px-1 py-0.5"
+    : normalizedVariant === "mobile"
+    ? "px-1 py-1.5"
+    : normalizedVariant === "grid"
+    ? "px-1 py-1"
+    : normalizedVariant === "vertical"
+    ? "px-1 py-1"
+    : normalizedVariant === "horizontal"
+    ? "px-1 py-0.5"
+    : "px-1.5 py-1.5";
 
-  const widthClass =
-    normalizedVariant === "mobile"
-      ? "min-w-[80px] max-w-[90px] snap-start"
-      : normalizedVariant === "grid"
-      ? "w-[80px]"
-      : normalizedVariant === "vertical"
-      ? "w-[80px]"
-      : normalizedVariant === "horizontal"
-      ? "w-[80px]"
-      : "w-full";
-  const activeClasses =
-    "border-indigo-400/80 bg-indigo-50 shadow-sm dark:border-indigo-500/40 dark:bg-indigo-950/30";
+  const widthClass = isCompactMode
+    ? normalizedVariant === "mobile"
+      ? "min-w-[84px] max-w-[94px] snap-start"
+      : normalizedVariant === "grid" || normalizedVariant === "vertical" || normalizedVariant === "horizontal"
+      ? "w-[84px]"
+      : "w-full"
+    : normalizedVariant === "mobile"
+    ? "min-w-[80px] max-w-[90px] snap-start"
+    : normalizedVariant === "grid"
+    ? "w-[80px]"
+    : normalizedVariant === "vertical"
+    ? "w-[80px]"
+    : normalizedVariant === "horizontal"
+    ? "w-[80px]"
+    : "w-full";
+  const activeClasses = isCompactMode
+    ? "border-[rgb(var(--accent-color))/0.6] bg-[rgb(var(--accent-color))/0.12] shadow-none dark:bg-[rgb(var(--accent-color))/0.22]"
+    : "border-indigo-400/80 bg-indigo-50 shadow-sm dark:border-indigo-500/40 dark:bg-indigo-950/30";
   const inactiveClasses =
     "border-slate-200/60 hover:border-slate-300 dark:border-slate-700/40 dark:hover:border-slate-600";
 
   const imageClasses = "h-[48px] w-[48px] object-cover rounded-lg";
-  const labelClasses =
-    normalizedVariant === "grid" || normalizedVariant === "vertical" || normalizedVariant === "horizontal"
-      ? "text-[10px] font-semibold text-slate-700 text-center leading-tight truncate max-w-[78px] dark:text-slate-200"
-      : "text-[11px] font-semibold text-slate-700 text-center leading-tight truncate max-w-[76px] dark:text-slate-200";
+  const labelClasses = isCompactMode
+    ? normalizedVariant === "grid" || normalizedVariant === "vertical" || normalizedVariant === "horizontal"
+      ? "text-[11px] font-semibold text-slate-700 text-center leading-tight truncate max-w-[84px] dark:text-slate-200"
+      : "text-[12px] font-semibold text-slate-700 text-center leading-tight truncate max-w-[86px] dark:text-slate-200"
+    : normalizedVariant === "grid" || normalizedVariant === "vertical" || normalizedVariant === "horizontal"
+    ? "text-[10px] font-semibold text-slate-700 text-center leading-tight truncate max-w-[78px] dark:text-slate-200"
+    : "text-[11px] font-semibold text-slate-700 text-center leading-tight truncate max-w-[76px] dark:text-slate-200";
 
   return (
     <button
@@ -241,13 +321,15 @@ function CategoryButton({
         isDragging ? "ring-2 ring-indigo-400/70" : ""
       }`}
     >
-      <img
-        src={resolvedCatSrc}
-        alt={cat}
-        className={imageClasses}
-        loading="lazy"
-        onError={handleTileImageError}
-      />
+      {!isCompactMode && (
+        <img
+          src={resolvedCatSrc}
+          alt={cat}
+          className={imageClasses}
+          loading="lazy"
+          onError={handleTileImageError}
+        />
+      )}
       <span className={labelClasses}>{t(cat)}</span>
     </button>
   );

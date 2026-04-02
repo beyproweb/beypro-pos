@@ -4,11 +4,20 @@ import {
   loginCustomer,
   logoutCustomer,
   registerCustomer,
+  restoreCustomerSession,
   updateCustomerProfile,
 } from "../services/customerService";
 
-export default function useCustomerAuth(storage) {
+export default function useCustomerAuth(storage, options = {}) {
   const [customer, setCustomer] = useState(() => getCustomerSession(storage));
+  const [isRestoring, setIsRestoring] = useState(false);
+  const authContext = useMemo(
+    () => ({
+      storage,
+      fetcher: options?.fetcher,
+    }),
+    [options?.fetcher, storage]
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -27,7 +36,16 @@ export default function useCustomerAuth(storage) {
     };
 
     const handleStorage = (event) => {
-      if (event?.key && event.key !== "qr_customer_session") return;
+      const key = String(event?.key || "");
+      if (
+        key &&
+        key !== "qr_customer_session" &&
+        !key.endsWith("_customer_session") &&
+        key !== "qr_customer_token" &&
+        !key.endsWith("_customer_token")
+      ) {
+        return;
+      }
       syncCustomer();
     };
 
@@ -39,43 +57,68 @@ export default function useCustomerAuth(storage) {
     };
   }, [storage]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function restore() {
+      if (typeof authContext.fetcher !== "function") return;
+      setIsRestoring(true);
+      try {
+        const next = await restoreCustomerSession(authContext);
+        if (!cancelled) {
+          setCustomer(next || null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsRestoring(false);
+        }
+      }
+    }
+
+    restore();
+    return () => {
+      cancelled = true;
+    };
+  }, [authContext]);
+
   const isLoggedIn = useMemo(() => Boolean(customer?.id), [customer]);
 
   const login = useCallback(
-    (payload) => {
-      const next = loginCustomer(payload, storage);
+    async (payload) => {
+      const next = await loginCustomer(payload, authContext);
       setCustomer(next);
       return next;
     },
-    [storage]
+    [authContext]
   );
 
   const register = useCallback(
-    (payload) => {
-      const next = registerCustomer(payload, storage);
+    async (payload) => {
+      const next = await registerCustomer(payload, authContext);
       setCustomer(next);
       return next;
     },
-    [storage]
+    [authContext]
   );
 
   const logout = useCallback(() => {
-    logoutCustomer(storage);
+    logoutCustomer(authContext);
     setCustomer(null);
-  }, [storage]);
+  }, [authContext]);
 
   const updateProfile = useCallback(
-    (payload) => {
-      const next = updateCustomerProfile(payload, storage);
+    async (payload) => {
+      const next = await updateCustomerProfile(payload, authContext);
       setCustomer(next);
       return next;
     },
-    [storage]
+    [authContext]
   );
 
   return {
     customer,
     isLoggedIn,
+    isRestoring,
     login,
     register,
     logout,

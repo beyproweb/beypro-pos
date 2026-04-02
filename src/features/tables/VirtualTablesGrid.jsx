@@ -20,7 +20,12 @@ const GRID_CLASS_NAME = `
   w-full
 `;
 
-const DEFAULT_VIEWPORT = { scrollTop: 0, viewportHeight: 0, viewportWidth: 0 };
+const DEFAULT_VIEWPORT = {
+  scrollTop: 0,
+  viewportHeight: 0,
+  viewportWidth: 0,
+  containerWidth: 0,
+};
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -34,6 +39,28 @@ const getRowGapForViewport = (viewportWidth) => {
   if (viewportWidth < 640) return 16;
   if (viewportWidth >= 640) return 32;
   return 12;
+};
+
+const getColumnsForWidth = ({
+  viewportWidth,
+  containerWidth,
+  minColumnWidth,
+  columnGap,
+  maxColumns,
+}) => {
+  const normalizedMin = Math.max(1, Math.trunc(Number(minColumnWidth) || 0));
+  if (!normalizedMin) {
+    return getColumnsForViewport(viewportWidth);
+  }
+
+  const availableWidth = Math.max(0, Math.trunc(Number(containerWidth) || 0));
+  if (availableWidth <= 0) return 1;
+
+  const gap = Math.max(0, Math.trunc(Number(columnGap) || 0));
+  const fit = Math.max(1, Math.floor((availableWidth + gap) / (normalizedMin + gap)));
+  const normalizedMax = Math.trunc(Number(maxColumns) || 0);
+  if (normalizedMax > 0) return Math.min(normalizedMax, fit);
+  return fit;
 };
 
 const findRowIndexForOffset = (prefixHeights, offset) => {
@@ -66,6 +93,11 @@ function VirtualTablesGrid({
   estimatedItemHeight,
   overscan = 6,
   className = "",
+  minColumnWidth = null,
+  maxColumns = null,
+  columnGap = null,
+  rowGap = null,
+  containerMaxWidth = 1600,
 }) {
   const renderCount = useRenderCount("TableGrid", { logEvery: 1 });
   const onTableGridProfileRender = React.useMemo(() => createProfilerOnRender("TableGrid"), []);
@@ -82,18 +114,45 @@ function VirtualTablesGrid({
       scrollTop: 0,
       viewportHeight: window.innerHeight,
       viewportWidth: window.innerWidth,
+      containerWidth: 0,
     };
   });
   const [measuredRowHeights, setMeasuredRowHeights] = React.useState({});
   const measuredRowHeightsRef = React.useRef({});
+  const dynamicGridEnabled = Number(minColumnWidth) > 0;
 
   React.useEffect(() => {
     measuredRowHeightsRef.current = measuredRowHeights || {};
   }, [measuredRowHeights]);
 
+  const resolvedRowGap = React.useMemo(() => {
+    const custom = Math.trunc(Number(rowGap) || 0);
+    if (custom > 0) return custom;
+    return getRowGapForViewport(viewport.viewportWidth || 0);
+  }, [rowGap, viewport.viewportWidth]);
+
+  const resolvedColumnGap = React.useMemo(() => {
+    const custom = Math.trunc(Number(columnGap) || 0);
+    if (custom > 0) return custom;
+    return resolvedRowGap;
+  }, [columnGap, resolvedRowGap]);
+
   const columnCount = React.useMemo(
-    () => getColumnsForViewport(viewport.viewportWidth || 0),
-    [viewport.viewportWidth]
+    () =>
+      getColumnsForWidth({
+        viewportWidth: viewport.viewportWidth || 0,
+        containerWidth: viewport.containerWidth || 0,
+        minColumnWidth,
+        columnGap: resolvedColumnGap,
+        maxColumns,
+      }),
+    [
+      maxColumns,
+      minColumnWidth,
+      resolvedColumnGap,
+      viewport.containerWidth,
+      viewport.viewportWidth,
+    ]
   );
 
   const rowCount = React.useMemo(
@@ -143,11 +202,13 @@ function VirtualTablesGrid({
   }, []);
 
   React.useEffect(() => {
+    if (dynamicGridEnabled) return undefined;
     measuredRowHeightsRef.current = {};
     setMeasuredRowHeights({});
-  }, [columnCount, rowIdentitySignature]);
+  }, [columnCount, dynamicGridEnabled, rowIdentitySignature]);
 
   React.useEffect(() => {
+    if (dynamicGridEnabled) return undefined;
     if (typeof window === "undefined") return undefined;
     const rafId = window.requestAnimationFrame(() => {
       measureMountedRows();
@@ -155,7 +216,7 @@ function VirtualTablesGrid({
     return () => {
       window.cancelAnimationFrame(rafId);
     };
-  }, [measureMountedRows, rowIdentitySignature]);
+  }, [dynamicGridEnabled, measureMountedRows, rowIdentitySignature]);
 
   const rowHeights = React.useMemo(
     () =>
@@ -169,22 +230,17 @@ function VirtualTablesGrid({
     [estimatedItemHeight, measuredRowHeights, rowCount]
   );
 
-  const rowGap = React.useMemo(
-    () => getRowGapForViewport(viewport.viewportWidth || 0),
-    [viewport.viewportWidth]
-  );
-
   const rowOffsets = React.useMemo(
     () =>
       withPerfTimer("[perf] TableGrid row offsets", () => {
         const offsets = new Array(rowCount + 1).fill(0);
         for (let i = 0; i < rowCount; i += 1) {
-          const gapAfterRow = i < rowCount - 1 ? rowGap : 0;
+          const gapAfterRow = i < rowCount - 1 ? resolvedRowGap : 0;
           offsets[i + 1] = offsets[i] + rowHeights[i] + gapAfterRow;
         }
         return offsets;
       }),
-    [rowCount, rowGap, rowHeights]
+    [resolvedRowGap, rowCount, rowHeights]
   );
 
   const totalHeight = rowOffsets[rowCount] || 0;
@@ -202,12 +258,14 @@ function VirtualTablesGrid({
     const visibleBottomAbs = Math.min(windowBottom, containerBottomAbs);
     const scrollTop = Math.max(0, visibleTopAbs - containerTopAbs);
     const viewportHeight = Math.max(0, visibleBottomAbs - visibleTopAbs);
+    const containerWidth = Math.max(0, Math.trunc(rect.width || 0));
 
     setViewport((prev) => {
       if (
         prev.scrollTop === scrollTop &&
         prev.viewportHeight === viewportHeight &&
-        prev.viewportWidth === window.innerWidth
+        prev.viewportWidth === window.innerWidth &&
+        prev.containerWidth === containerWidth
       ) {
         return prev;
       }
@@ -215,11 +273,13 @@ function VirtualTablesGrid({
         scrollTop,
         viewportHeight,
         viewportWidth: window.innerWidth,
+        containerWidth,
       };
     });
   }, []);
 
   React.useEffect(() => {
+    if (dynamicGridEnabled) return undefined;
     if (typeof window === "undefined") return undefined;
     const scrollEventTarget = typeof document !== "undefined" ? document : window;
 
@@ -249,11 +309,20 @@ function VirtualTablesGrid({
         rafRef.current = null;
       }
     };
-  }, [calculateViewport]);
+  }, [calculateViewport, dynamicGridEnabled]);
 
   React.useEffect(() => {
+    if (dynamicGridEnabled) return;
     calculateViewport();
-  }, [calculateViewport, totalHeight]);
+  }, [
+    calculateViewport,
+    className,
+    containerMaxWidth,
+    dynamicGridEnabled,
+    minColumnWidth,
+    resolvedColumnGap,
+    totalHeight,
+  ]);
 
   const setRowNode = React.useCallback((rowIndex, node) => {
     const previousNode = rowNodesRef.current.get(rowIndex);
@@ -289,7 +358,11 @@ function VirtualTablesGrid({
 
     updateHeight();
 
-    const observer = new ResizeObserver(updateHeight);
+    if (typeof window === "undefined" || typeof window.ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new window.ResizeObserver(updateHeight);
     observer.observe(node);
     resizeObserversRef.current.set(rowIndex, observer);
   }, []);
@@ -337,6 +410,61 @@ function VirtualTablesGrid({
     return Array.from({ length: endRow - startRow + 1 }, (_, idx) => startRow + idx);
   }, [endRow, startRow]);
 
+  const autoFillMinColumnWidth = Math.max(
+    120,
+    Math.trunc(Number(minColumnWidth) || 120)
+  );
+  const autoFillGridStyle = dynamicGridEnabled
+    ? {
+        gridTemplateColumns: `repeat(auto-fill, minmax(${autoFillMinColumnWidth}px, 1fr))`,
+        columnGap: `${resolvedColumnGap}px`,
+        rowGap: `${resolvedRowGap}px`,
+      }
+    : undefined;
+  const rowGridStyle = dynamicGridEnabled
+    ? {
+        gridTemplateColumns: `repeat(${Math.max(1, columnCount)}, minmax(${Math.max(
+          1,
+          Math.trunc(Number(minColumnWidth) || 0)
+        )}px, 1fr))`,
+        columnGap: `${resolvedColumnGap}px`,
+      }
+    : undefined;
+  const rowGridClassName = dynamicGridEnabled
+    ? "grid place-items-stretch w-full transition-all duration-200"
+    : GRID_CLASS_NAME;
+  const resolvedMaxWidth =
+    typeof containerMaxWidth === "number"
+      ? `${Math.max(320, Math.trunc(containerMaxWidth))}px`
+      : containerMaxWidth || "1600px";
+
+  if (dynamicGridEnabled) {
+    return (
+      <React.Profiler id="TableGrid" onRender={onTableGridProfileRender}>
+        <div className={className}>
+          {showRenderCounter && (
+            <div className="mb-2 flex w-full justify-end">
+              <RenderCounter label="TableGrid" value={renderCount} />
+            </div>
+          )}
+          <div
+            className="w-full transition-all duration-200"
+            style={{ maxWidth: resolvedMaxWidth }}
+          >
+            <div
+              className="grid w-full place-items-stretch transition-all duration-200"
+              style={autoFillGridStyle}
+            >
+              {list.map((item) => (
+                <React.Fragment key={itemKey(item)}>{renderItem(item)}</React.Fragment>
+              ))}
+            </div>
+          </div>
+        </div>
+      </React.Profiler>
+    );
+  }
+
   return (
     <React.Profiler id="TableGrid" onRender={onTableGridProfileRender}>
       <div className={className}>
@@ -347,8 +475,11 @@ function VirtualTablesGrid({
         )}
         <div
           ref={containerRef}
-          className="relative w-full max-w-[1600px]"
-          style={{ height: `${Math.max(0, totalHeight)}px` }}
+          className="relative w-full transition-all duration-200"
+          style={{
+            height: `${Math.max(0, totalHeight)}px`,
+            maxWidth: resolvedMaxWidth,
+          }}
         >
           {visibleRowIndexes.map((rowIndex) => {
             const rowTop = rowOffsets[rowIndex] || 0;
@@ -360,7 +491,7 @@ function VirtualTablesGrid({
                 key={`row-${rowIndex}`}
                 style={{ position: "absolute", top: `${rowTop}px`, left: 0, right: 0 }}
               >
-                <div ref={getRowRef(rowIndex)} className={GRID_CLASS_NAME}>
+                <div ref={getRowRef(rowIndex)} className={rowGridClassName} style={rowGridStyle}>
                   {rowItems.map((item) => (
                     <React.Fragment key={itemKey(item)}>{renderItem(item)}</React.Fragment>
                   ))}
@@ -381,14 +512,31 @@ const areVirtualTablesGridPropsEqual = (prevProps, nextProps) => {
     prevProps.itemKey === nextProps.itemKey &&
     prevProps.estimatedItemHeight === nextProps.estimatedItemHeight &&
     prevProps.overscan === nextProps.overscan &&
-    prevProps.className === nextProps.className;
+    prevProps.className === nextProps.className &&
+    prevProps.minColumnWidth === nextProps.minColumnWidth &&
+    prevProps.maxColumns === nextProps.maxColumns &&
+    prevProps.columnGap === nextProps.columnGap &&
+    prevProps.rowGap === nextProps.rowGap &&
+    prevProps.containerMaxWidth === nextProps.containerMaxWidth;
 
   if (!isEqual) {
     logMemoDiff({
       component: "TableGrid",
       prevProps,
       nextProps,
-      watchedProps: ["items", "renderItem", "itemKey", "estimatedItemHeight", "overscan", "className"],
+      watchedProps: [
+        "items",
+        "renderItem",
+        "itemKey",
+        "estimatedItemHeight",
+        "overscan",
+        "className",
+        "minColumnWidth",
+        "maxColumns",
+        "columnGap",
+        "rowGap",
+        "containerMaxWidth",
+      ],
     });
   }
 

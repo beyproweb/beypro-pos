@@ -112,7 +112,7 @@ function LoginPage({ t, onLogin, onGoRegister, onBack, accentColor = "#111827" }
             <input
               value={login}
               onChange={(e) => setLogin(e.target.value)}
-              placeholder={t("Email or username")}
+              placeholder={t("Phone number or email")}
               className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:border-neutral-600"
               style={{ boxShadow: "none" }}
               autoComplete="username"

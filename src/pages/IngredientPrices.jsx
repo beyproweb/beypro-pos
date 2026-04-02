@@ -50,7 +50,7 @@ export default function Ingredient() {
   const [historyLoading, setHistoryLoading] = useState({}); // key -> boolean
   const [sortBy, setSortBy] = useState("alpha"); // alpha | change | price
   const locale = useMemo(() => {
-    const lang = (i18n.language || "en").split("-")[0];
+    const lang = (i18n.language || "tr").split("-")[0];
     if (lang === "tr") return "tr-TR";
     if (lang === "de") return "de-DE";
     if (lang === "fr") return "fr-FR";

@@ -1,5 +1,6 @@
 import {
   buildReservationShadowRecord,
+  removeBookingFromViewBookingCache,
   removeReservationShadow,
   upsertReservationShadow,
 } from "../../orders/tableOrdersCache";
@@ -31,6 +32,8 @@ export function createConfirmFlow(deps) {
     discountValue,
     discountType,
     fetchOrderItems,
+    transactionSettings,
+    transactionSettingsRef,
     setIsFloatingCartOpen,
     scheduleNavigate,
     setHeader,
@@ -50,6 +53,51 @@ export function createConfirmFlow(deps) {
       ? orderItems.some((item) => item.kitchen_status === "preparing")
       : false;
   }
+
+  const asEnabledFlag = (value) => {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value !== 0;
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      return ["1", "true", "yes", "on", "enabled"].includes(normalized);
+    }
+    return false;
+  };
+
+  const isAutoNavigateAfterConfirmEnabled = () => {
+    const source =
+      (transactionSettingsRef &&
+        typeof transactionSettingsRef === "object" &&
+        transactionSettingsRef.current &&
+        typeof transactionSettingsRef.current === "object"
+        ? transactionSettingsRef.current
+        : null) ||
+      (transactionSettings && typeof transactionSettings === "object"
+        ? transactionSettings
+        : {});
+
+    const raw =
+      source.autoNavigateTableAfterConfirm ??
+      source.returnToTableOverviewAfterConfirm ??
+      source.autoNavigateAfterConfirm ??
+      false;
+
+    return asEnabledFlag(raw);
+  };
+
+  const clearReservationBookingCaches = () => {
+    const reservationId =
+      existingReservation?.id ??
+      order?.reservation?.id ??
+      order?.reservation_id ??
+      order?.reservationId ??
+      null;
+    const orderId = order?.id ?? null;
+    const tableNumber = order?.table_number ?? order?.tableNumber ?? null;
+
+    removeReservationShadow({ reservationId, orderId, tableNumber });
+    removeBookingFromViewBookingCache({ reservationId, orderId, tableNumber });
+  };
 
   async function handleMultifunction(modeOrEvent = null) {
     const closeMode = typeof modeOrEvent === "string" ? modeOrEvent : null;
@@ -150,15 +198,7 @@ export function createConfirmFlow(deps) {
           }
           await txApiRequest(`/orders/${order.id}/close${identifier}`, closeRequestOptions);
           if (isReservationFinalizeClose) {
-            removeReservationShadow({
-              reservationId:
-                existingReservation?.id ??
-                order?.reservation?.id ??
-                order?.reservation_id ??
-                order?.reservationId,
-              orderId: order?.id,
-              tableNumber: order?.table_number ?? order?.tableNumber,
-            });
+            clearReservationBookingCaches();
           } else {
             const shadow = buildReservationShadowRecord({
               reservation: existingReservation,
@@ -305,23 +345,40 @@ export function createConfirmFlow(deps) {
         return;
       }
 
+      const shouldAutoNavigateAfterConfirm = isAutoNavigateAfterConfirmEnabled();
+      const isTableScopeConfirm =
+        orderType === "table" ||
+        orderType === "reservation" ||
+        hasReservationContext;
+
+      if (shouldAutoNavigateAfterConfirm && isTableScopeConfirm) {
+        setIsFloatingCartOpen(false);
+        // Confirm already succeeded; leave instantly instead of waiting for background refresh.
+        debugNavigate("/tableoverview?tab=tables", { replace: true });
+        return;
+      }
+
       // ✅ STEP 3: Background reconciliation (don't block UI)
       const t2 = isDev ? performance.now() : 0;
       if (typeof requestIdleCallback === "function") {
         requestIdleCallback(() => {
-          fetchOrderItems(updated.id).then(() => {
-            if (isDev) perfLog("fetchOrderItems (background)", t2);
-          }).catch((err) => {
-            console.warn("⚠️ Background refresh failed:", err);
-          });
+          fetchOrderItems(updated.id)
+            .then(() => {
+              if (isDev) perfLog("fetchOrderItems (background)", t2);
+            })
+            .catch((err) => {
+              console.warn("⚠️ Background refresh failed:", err);
+            });
         });
       } else {
         setTimeout(() => {
-          fetchOrderItems(updated.id).then(() => {
-            if (isDev) perfLog("fetchOrderItems (background)", t2);
-          }).catch((err) => {
-            console.warn("⚠️ Background refresh failed:", err);
-          });
+          fetchOrderItems(updated.id)
+            .then(() => {
+              if (isDev) perfLog("fetchOrderItems (background)", t2);
+            })
+            .catch((err) => {
+              console.warn("⚠️ Background refresh failed:", err);
+            });
         }, 0);
       }
 
@@ -416,15 +473,7 @@ export function createConfirmFlow(deps) {
         }
         await txApiRequest(`/orders/${order.id}/close${identifier}`, closeRequestOptions);
         if (isReservationFinalizeClose) {
-          removeReservationShadow({
-            reservationId:
-              existingReservation?.id ??
-              order?.reservation?.id ??
-              order?.reservation_id ??
-              order?.reservationId,
-            orderId: order?.id,
-            tableNumber: order?.table_number ?? order?.tableNumber,
-          });
+          clearReservationBookingCaches();
         } else {
           const shadow = buildReservationShadowRecord({
             reservation: existingReservation,

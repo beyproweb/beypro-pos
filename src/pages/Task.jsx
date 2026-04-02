@@ -377,7 +377,7 @@ export default function Task() {
     if (!value) return t("No due date");
     const dt = new Date(value);
     if (Number.isNaN(dt.getTime())) return value;
-    return dt.toLocaleString(i18n.language || "en", {
+    return dt.toLocaleString(i18n.language || "tr", {
       year: "numeric",
       month: "short",
       day: "2-digit",
@@ -743,7 +743,7 @@ export default function Task() {
                   {staffPanelItems.map((member) => {
                     const isActive = activeStaffId === member.id;
                     const nextDueLabel = member.nextDue
-                      ? new Date(member.nextDue).toLocaleString(i18n.language || "en", {
+                      ? new Date(member.nextDue).toLocaleString(i18n.language || "tr", {
                           month: "short",
                           day: "2-digit",
                           hour: "2-digit",

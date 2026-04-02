@@ -57,13 +57,13 @@ function ProfilePage({ t, customer, onSave, onBack }) {
           type="email"
           value={form.email}
           onChange={(e) => onChange("email", e.target.value)}
-          placeholder={t("Email")}
+          placeholder={t("Email (optional)")}
           className="w-full h-10 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 text-sm"
         />
         <input
           value={form.username}
           onChange={(e) => onChange("username", e.target.value)}
-          placeholder={t("Username")}
+          placeholder={t("Full Name")}
           className="w-full h-10 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 text-sm"
         />
         <input
@@ -75,7 +75,7 @@ function ProfilePage({ t, customer, onSave, onBack }) {
         <input
           value={form.address}
           onChange={(e) => onChange("address", e.target.value)}
-          placeholder={t("Address")}
+          placeholder={t("Address (optional)")}
           className="w-full h-10 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 text-sm"
         />
 

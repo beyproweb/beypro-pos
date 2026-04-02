@@ -1,7 +1,6 @@
 import React from "react";
 import ProductGrid from "../../../components/transaction/ProductGrid";
 import CategoryBarRight from "./CategoryBarRight";
-import CategoryButton from "./CategoryButton";
 
 function ProductGridSection({
   products,
@@ -18,6 +17,7 @@ function ProductGridSection({
   onCategoryScrollUp,
   onCategoryScrollDown,
   categoryBarDisabled = false,
+  tableDensity = "comfortable",
 }) {
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden">
@@ -30,6 +30,7 @@ function ProductGridSection({
           formatCurrency={formatCurrency}
           enableVirtualization={enableProductGridVirtualization}
           virtualizationOverscan={virtualizationProductOverscan}
+          tableDensity={tableDensity}
         />
         <CategoryBarRight
           categoryColumns={categoryColumns}
@@ -39,6 +40,7 @@ function ProductGridSection({
           onScrollLeft={onCategoryScrollUp}
           onScrollRight={onCategoryScrollDown}
           disabled={categoryBarDisabled}
+          tableDensity={tableDensity}
         />
       </div>
     </div>

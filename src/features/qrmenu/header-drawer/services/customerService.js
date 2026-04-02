@@ -1,5 +1,6 @@
 const STORAGE_KEYS = {
   session: "qr_customer_session",
+  token: "qr_customer_token",
   users: "qr_customer_users",
   checkoutInfo: "qr_delivery_info",
   orderHistory: "qr_customer_orders",
@@ -15,6 +16,13 @@ const ACTIVE_ORDER_STATUSES = new Set([
   "reserved",
 ]);
 
+const AUTH_ERROR_MESSAGES = {
+  accountNotFound: "No account found for this phone number or email. Please register.",
+  invalidLoginInput: "Please enter your phone number or email and password.",
+  invalidCredentials: "Incorrect password.",
+  missingLoginFields: "Phone number or email and password are required",
+};
+
 function parseJSON(raw, fallback) {
   try {
     return JSON.parse(raw);
@@ -29,15 +37,6 @@ function getStorage(storage) {
   return null;
 }
 
-function emitSessionChange(customer) {
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(
-    new CustomEvent("qr:customer-session-changed", {
-      detail: { customer: sanitizeCustomer(customer) },
-    })
-  );
-}
-
 function normalizeText(value) {
   return String(value || "").trim();
 }
@@ -47,7 +46,32 @@ function normalizeEmail(value) {
 }
 
 function normalizePhone(value) {
-  return normalizeText(value).replace(/\s+/g, "");
+  let digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("00") && digits.length > 2) digits = digits.slice(2);
+  if (digits.startsWith("90") && digits.length > 10) digits = digits.slice(2);
+  if (digits.startsWith("0") && digits.length > 10) digits = digits.slice(1);
+  return digits;
+}
+
+function normalizeLanguage(value) {
+  const raw = normalizeText(value).split(",")[0];
+  return raw ? raw.slice(0, 32) : "";
+}
+
+function resolveLanguage(payload) {
+  const explicit = normalizeLanguage(payload?.language);
+  if (explicit) return explicit;
+
+  if (typeof window !== "undefined") {
+    const storedLang = normalizeLanguage(window.localStorage?.getItem?.("i18nextLng"));
+    if (storedLang) return storedLang;
+
+    const browserLang = normalizeLanguage(window.navigator?.language);
+    if (browserLang) return browserLang;
+  }
+
+  return "";
 }
 
 function buildCheckoutInfo(payload, existing = {}) {
@@ -62,42 +86,65 @@ function buildCheckoutInfo(payload, existing = {}) {
 }
 
 function sanitizeCustomer(user) {
-  if (!user || typeof user !== "object") return null;
+  const source = user?.customer && typeof user.customer === "object" ? user.customer : user;
+  if (!source || typeof source !== "object") return null;
+
   return {
-    id: normalizeText(user.id),
-    email: normalizeEmail(user.email),
-    username: normalizeText(user.username),
-    phone: normalizePhone(user.phone),
-    address: normalizeText(user.address),
-    createdAt: user.createdAt || null,
-    updatedAt: user.updatedAt || null,
+    id: normalizeText(source.id),
+    email: normalizeEmail(source.email),
+    username: normalizeText(source.username || source.name),
+    phone: normalizePhone(source.phone),
+    address: normalizeText(source.address),
+    language: normalizeLanguage(source.language),
+    createdAt: source.createdAt || source.created_at || null,
+    updatedAt: source.updatedAt || source.updated_at || null,
   };
 }
 
-function getUsers(storageArg) {
-  const storage = getStorage(storageArg);
-  if (!storage) return [];
-  const list = parseJSON(storage.getItem(STORAGE_KEYS.users) || "[]", []);
-  return Array.isArray(list) ? list : [];
+function emitSessionChange(customer) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent("qr:customer-session-changed", {
+      detail: { customer: sanitizeCustomer(customer) },
+    })
+  );
 }
 
-function saveUsers(users, storageArg) {
+function clearLegacyUsers(storageArg) {
   const storage = getStorage(storageArg);
   if (!storage) return;
-  storage.setItem(STORAGE_KEYS.users, JSON.stringify(Array.isArray(users) ? users : []));
+  storage.removeItem(STORAGE_KEYS.users);
 }
 
-function saveSession(customer, storageArg) {
+function saveSessionState({ customer, token }, storageArg) {
   const storage = getStorage(storageArg);
-  if (!storage) return;
+  if (!storage) return null;
+
   const sanitized = sanitizeCustomer(customer);
   if (!sanitized) {
     storage.removeItem(STORAGE_KEYS.session);
+    if (!token) {
+      storage.removeItem(STORAGE_KEYS.token);
+    }
     emitSessionChange(null);
-    return;
+    return null;
   }
+
   storage.setItem(STORAGE_KEYS.session, JSON.stringify(sanitized));
+  if (token) {
+    storage.setItem(STORAGE_KEYS.token, normalizeText(token));
+  }
+  clearLegacyUsers(storage);
   emitSessionChange(sanitized);
+  return sanitized;
+}
+
+function clearSessionState(storageArg) {
+  const storage = getStorage(storageArg);
+  if (!storage) return;
+  storage.removeItem(STORAGE_KEYS.session);
+  storage.removeItem(STORAGE_KEYS.token);
+  emitSessionChange(null);
 }
 
 function getSession(storageArg) {
@@ -105,6 +152,12 @@ function getSession(storageArg) {
   if (!storage) return null;
   const session = parseJSON(storage.getItem(STORAGE_KEYS.session) || "null", null);
   return sanitizeCustomer(session);
+}
+
+function getSessionToken(storageArg) {
+  const storage = getStorage(storageArg);
+  if (!storage) return "";
+  return normalizeText(storage.getItem(STORAGE_KEYS.token));
 }
 
 function upsertCheckoutInfo(customer, storageArg) {
@@ -123,6 +176,56 @@ function upsertCheckoutInfo(customer, storageArg) {
   );
 
   storage.setItem(STORAGE_KEYS.checkoutInfo, JSON.stringify(next));
+}
+
+function requireFetcher(context) {
+  const fetcher = context?.fetcher;
+  if (typeof fetcher !== "function") {
+    throw new Error("QR customer auth API is not available.");
+  }
+  return fetcher;
+}
+
+function createAuthError(message, cause) {
+  const err = new Error(message);
+  if (cause) {
+    err.cause = cause;
+    err.details = cause?.details;
+  }
+  return err;
+}
+
+function normalizeAuthError(error) {
+  const message = normalizeText(error?.message);
+
+  switch (message) {
+    case AUTH_ERROR_MESSAGES.accountNotFound:
+      return createAuthError(AUTH_ERROR_MESSAGES.accountNotFound, error);
+    case AUTH_ERROR_MESSAGES.invalidCredentials:
+      return createAuthError("Invalid credentials.", error);
+    case AUTH_ERROR_MESSAGES.missingLoginFields:
+      return createAuthError(AUTH_ERROR_MESSAGES.invalidLoginInput, error);
+    default:
+      return error;
+  }
+}
+
+async function requestCustomerAuth(path, options = {}, context = {}) {
+  const fetcher = requireFetcher(context);
+  try {
+    return await fetcher(path, options);
+  } catch (error) {
+    throw normalizeAuthError(error);
+  }
+}
+
+function buildAuthHeaders(context, extra = {}) {
+  const token = getSessionToken(context?.storage);
+  if (!token) return extra;
+  return {
+    Authorization: `Bearer ${token}`,
+    ...extra,
+  };
 }
 
 export function saveCheckoutPrefill(payload, storageArg) {
@@ -212,135 +315,160 @@ export function getCustomerSession(storageArg) {
   return getSession(storageArg);
 }
 
-export function registerCustomer(payload, storageArg) {
-  const users = getUsers(storageArg);
+export function getCustomerSessionToken(storageArg) {
+  return getSessionToken(storageArg);
+}
 
-  const email = normalizeEmail(payload?.email);
-  const username = normalizeText(payload?.username);
+export async function restoreCustomerSession(context = {}) {
+  const cached = getSession(context?.storage);
+  const token = getSessionToken(context?.storage);
+
+  if (!token) {
+    return cached;
+  }
+
+  if (typeof context?.fetcher !== "function") {
+    return cached;
+  }
+
+  try {
+    const payload = await requestCustomerAuth(
+      "/public/customer-auth/me",
+      {
+        method: "GET",
+        headers: buildAuthHeaders(context),
+      },
+      context
+    );
+    const customer = saveSessionState(
+      {
+        customer: payload?.customer,
+        token,
+      },
+      context?.storage
+    );
+    upsertCheckoutInfo(customer, context?.storage);
+    return customer;
+  } catch {
+    clearSessionState(context?.storage);
+    return null;
+  }
+}
+
+export async function registerCustomer(payload, context = {}) {
+  const name = normalizeText(payload?.username || payload?.name);
   const phone = normalizePhone(payload?.phone);
+  const email = normalizeEmail(payload?.email) || "";
   const address = normalizeText(payload?.address);
   const password = normalizeText(payload?.password);
+  const language = resolveLanguage(payload);
 
-  if (!email || !username || !phone || !address || !password) {
+  if (!name || !phone || !password) {
     throw new Error("Please fill all required fields.");
   }
 
-  const emailExists = users.some((user) => normalizeEmail(user.email) === email);
-  if (emailExists) {
-    throw new Error("Email already registered.");
-  }
-
-  const usernameExists = users.some(
-    (user) => normalizeText(user.username).toLowerCase() === username.toLowerCase()
+  const response = await requestCustomerAuth(
+    "/public/customer-auth/register",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        phone,
+        email: email || undefined,
+        address: address || undefined,
+        password,
+        language: language || undefined,
+      }),
+    },
+    context
   );
-  if (usernameExists) {
-    throw new Error("Username already in use.");
-  }
 
-  const now = new Date().toISOString();
-  const customer = {
-    id: `cust_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`,
-    email,
-    username,
-    phone,
-    address,
-    password,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  users.push(customer);
-  saveUsers(users, storageArg);
-
-  const sessionCustomer = sanitizeCustomer(customer);
-  saveSession(sessionCustomer, storageArg);
-  upsertCheckoutInfo(sessionCustomer, storageArg);
-  return sessionCustomer;
+  const customer = saveSessionState(
+    {
+      customer: response?.customer,
+      token: response?.token,
+    },
+    context?.storage
+  );
+  upsertCheckoutInfo(customer, context?.storage);
+  return customer;
 }
 
-export function loginCustomer(payload, storageArg) {
-  const login = normalizeText(payload?.login).toLowerCase();
+export async function loginCustomer(payload, context = {}) {
+  const login = normalizeText(payload?.login || payload?.phone || payload?.email);
   const password = normalizeText(payload?.password);
+
   if (!login || !password) {
-    throw new Error("Please enter your credentials.");
+    throw createAuthError(AUTH_ERROR_MESSAGES.invalidLoginInput);
   }
 
-  const users = getUsers(storageArg);
-  const customer = users.find((user) => {
-    const byEmail = normalizeEmail(user.email) === login;
-    const byUsername = normalizeText(user.username).toLowerCase() === login;
-    return (byEmail || byUsername) && normalizeText(user.password) === password;
-  });
+  const response = await requestCustomerAuth(
+    "/public/customer-auth/login",
+    {
+      method: "POST",
+      body: JSON.stringify({ login, password }),
+    },
+    context
+  );
 
-  if (!customer) {
-    throw new Error("Invalid credentials.");
-  }
-
-  const sessionCustomer = sanitizeCustomer(customer);
-  saveSession(sessionCustomer, storageArg);
-  upsertCheckoutInfo(sessionCustomer, storageArg);
-  return sessionCustomer;
+  const customer = saveSessionState(
+    {
+      customer: response?.customer,
+      token: response?.token,
+    },
+    context?.storage
+  );
+  upsertCheckoutInfo(customer, context?.storage);
+  return customer;
 }
 
-export function logoutCustomer(storageArg) {
-  const storage = getStorage(storageArg);
-  if (!storage) return;
-  storage.removeItem(STORAGE_KEYS.session);
-  emitSessionChange(null);
+export function logoutCustomer(context = {}) {
+  clearSessionState(context?.storage || context);
 }
 
-export function updateCustomerProfile(payload, storageArg) {
-  const session = getSession(storageArg);
+export async function updateCustomerProfile(payload, context = {}) {
+  const session = getSession(context?.storage);
   if (!session?.id) {
     throw new Error("Please login first.");
   }
 
-  const users = getUsers(storageArg);
-  const index = users.findIndex((user) => normalizeText(user.id) === normalizeText(session.id));
-  if (index < 0) {
-    throw new Error("Profile not found.");
-  }
+  const name = normalizeText(payload?.username || payload?.name || session.username);
+  const phone = normalizePhone(payload?.phone || session.phone);
+  const email =
+    payload?.email === undefined ? session.email : normalizeEmail(payload?.email) || "";
+  const address =
+    payload?.address === undefined ? session.address : normalizeText(payload?.address);
+  const language = resolveLanguage(payload) || session.language;
 
-  const nextEmail = normalizeEmail(payload?.email || users[index].email);
-  const nextUsername = normalizeText(payload?.username || users[index].username);
-  const nextPhone = normalizePhone(payload?.phone || users[index].phone);
-  const nextAddress = normalizeText(payload?.address || users[index].address);
-
-  if (!nextEmail || !nextUsername || !nextPhone || !nextAddress) {
+  if (!name || !phone) {
     throw new Error("Please fill all required fields.");
   }
 
-  const emailCollision = users.some(
-    (user, i) => i !== index && normalizeEmail(user.email) === nextEmail
+  const response = await requestCustomerAuth(
+    "/public/customer-auth/me",
+    {
+      method: "PATCH",
+      headers: buildAuthHeaders(context),
+      body: JSON.stringify({
+        name,
+        phone,
+        email: email || "",
+        address: address || "",
+        language: language || undefined,
+      }),
+    },
+    context
   );
-  if (emailCollision) {
-    throw new Error("Email already registered.");
-  }
 
-  const usernameCollision = users.some(
-    (user, i) =>
-      i !== index && normalizeText(user.username).toLowerCase() === nextUsername.toLowerCase()
+  const customer = saveSessionState(
+    {
+      customer: response?.customer,
+      token: getSessionToken(context?.storage),
+    },
+    context?.storage
   );
-  if (usernameCollision) {
-    throw new Error("Username already in use.");
-  }
-
-  const updated = {
-    ...users[index],
-    email: nextEmail,
-    username: nextUsername,
-    phone: nextPhone,
-    address: nextAddress,
-    updatedAt: new Date().toISOString(),
-  };
-
-  users[index] = updated;
-  saveUsers(users, storageArg);
-
-  const sessionCustomer = sanitizeCustomer(updated);
-  saveSession(sessionCustomer, storageArg);
-  upsertCheckoutInfo(sessionCustomer, storageArg);
-  return sessionCustomer;
+  upsertCheckoutInfo(customer, context?.storage);
+  return customer;
 }
 
 export function getCheckoutPrefill(storageArg) {
@@ -410,11 +538,7 @@ export function getCustomerOrderHistory(customerArg = null, storageArg) {
   return dedupeOrders(filtered);
 }
 
-export async function fetchCustomerOrders({
-  customer,
-  fetcher,
-  storage,
-}) {
+export async function fetchCustomerOrders({ customer, fetcher, storage }) {
   if (!customer || typeof fetcher !== "function") {
     return getCustomerOrderHistory(customer, storage);
   }
@@ -443,14 +567,12 @@ export async function fetchCustomerOrders({
           remote.push(row);
         }
       });
-
     } catch {
       // Continue with other endpoints and fallback storage.
     }
   }
 
-  const merged = dedupeOrders([...remote, ...getCustomerOrderHistory(customer, storage)]);
-  return merged;
+  return dedupeOrders([...remote, ...getCustomerOrderHistory(customer, storage)]);
 }
 
 export function splitOrdersByState(orders) {

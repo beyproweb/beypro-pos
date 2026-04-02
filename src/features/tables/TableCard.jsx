@@ -1,5 +1,7 @@
 import React from "react";
 import {
+  getCanonicalTableOrderStatus,
+  hasKitchenLifecycleSignal,
   isCheckedInReservationStatus,
   isCheckedOutReservationStatus,
   normalizeOrderStatus,
@@ -15,6 +17,10 @@ import {
   logMemoDiff,
   useRenderCount,
 } from "./dev/perfDebug";
+import {
+  TABLE_DENSITY,
+  normalizeTableDensity,
+} from "./tableDensity";
 
 const KITCHEN_STATUSES = ["new", "preparing", "ready", "delivered"];
 const CHECKIN_REGRESSION_STATUSES = new Set([
@@ -35,6 +41,14 @@ const PANEL_BASE_CLASS =
   "rounded-[24px] border bg-white/92 p-3 shadow-[0_14px_34px_rgba(15,23,42,0.08)] backdrop-blur-sm";
 const ACTION_BUTTON_BASE_CLASS =
   "inline-flex h-10 items-center justify-center rounded-2xl border-0 px-4 text-sm font-semibold leading-none text-white shadow-[0_12px_28px_rgba(15,23,42,0.14)] transition duration-150 hover:brightness-95 active:scale-[0.99] sm:h-9 sm:px-3.5 sm:text-[13px]";
+
+const DENSITY_STATUS_META = {
+  empty: { cardClass: "border-slate-500 bg-slate-300/95", label: "Empty" },
+  active: { cardClass: "border-amber-500 bg-amber-300/95", label: "Active" },
+  paid: { cardClass: "border-emerald-600 bg-emerald-300/95", label: "Paid" },
+  unpaid: { cardClass: "border-rose-600 bg-rose-300/95", label: "Unpaid" },
+  reserved: { cardClass: "border-sky-600 bg-sky-300/95", label: "Reserved" },
+};
 
 const cx = (...classes) => classes.filter(Boolean).join(" ");
 
@@ -79,11 +93,16 @@ function TableCard({
   waiterCallsByTable,
   handleResolveWaiterCall,
   showManualTableLock,
+  showGuestCount = true,
+  tableDensity = TABLE_DENSITY.COMFORTABLE,
 }) {
   const renderCount = useRenderCount("TableCard", {
     id: table?.tableNumber,
     logEvery: 20,
   });
+  const normalizedDensity = normalizeTableDensity(tableDensity);
+  const isCompactDensity = normalizedDensity !== TABLE_DENSITY.COMFORTABLE;
+  const isLargeCompact = normalizedDensity === TABLE_DENSITY.COMPACT;
   const showRenderCounter = isTablePerfDebugEnabled();
   const tableOrder = table.order;
   const tableItems = Array.isArray(tableOrder?.items) ? tableOrder.items : [];
@@ -96,14 +115,19 @@ function TableCard({
     tableOrder?.receipt_id != null ||
     tableOrder?.receiptId != null ||
     (Array.isArray(tableOrder?.receiptMethods) && tableOrder.receiptMethods.length > 0);
+  const hasKitchenActivity = hasKitchenLifecycleSignal(tableOrder);
   const hasOrderActivity =
     hasOrderItems ||
     hasSuborderItems ||
     hasReceiptHistory ||
+    hasKitchenActivity ||
     Number(tableOrder?.total || 0) > 0 ||
     normalizeOrderStatus(tableOrder?.payment_status ?? tableOrder?.paymentStatus) === "paid" ||
     Boolean(table.isFullyPaid);
-  const normalizedOrderStatus = normalizeOrderStatus(tableOrder?.status);
+  const normalizedOrderStatus = getCanonicalTableOrderStatus(
+    tableOrder,
+    table?.tableStatus ?? ""
+  );
   const tablePrepMeta = getTablePrepMeta(table.tableNumber);
   const waiterCall = waiterCallsByTable?.[String(table.tableNumber)] || null;
   const isCallingWaiter = Boolean(waiterCall);
@@ -207,29 +231,29 @@ function TableCard({
   const hasCheckedInVisualTone =
     normalizedOrderStatus === "checked_in" || fallbackReservationToneStatus === "checked_in";
   const cardToneClass = hasUnpaidItems
-      ? "border-rose-400 bg-rose-200"
+      ? "border-rose-600 bg-rose-300"
       : isLockedTable && !hasOrderActivity
-        ? "border-slate-500 bg-slate-300"
+        ? "border-slate-600 bg-slate-400"
       : normalizedOrderStatus === "confirmed"
-        ? "border-rose-400 bg-rose-200"
+        ? "border-rose-600 bg-rose-300"
         : hasReservedVisualTone
-          ? "border-sky-400 bg-sky-200"
+          ? "border-sky-600 bg-sky-300"
           : hasCheckedInVisualTone
-            ? "border-emerald-400 bg-emerald-200"
+            ? "border-emerald-600 bg-emerald-300"
             : isPaidTable
-              ? "border-emerald-400 bg-emerald-200"
-              : "border-slate-400 bg-slate-200";
+              ? "border-emerald-600 bg-emerald-300"
+              : "border-slate-500 bg-slate-300";
   const cardAccentGlowClass = hasUnpaidItems
-    ? "bg-rose-300/85"
+    ? "bg-rose-500/85"
     : isLockedTable && !hasOrderActivity
       ? "bg-white/45"
       : normalizedOrderStatus === "confirmed"
-        ? "bg-rose-300/85"
+        ? "bg-rose-500/85"
         : hasReservedVisualTone
-        ? "bg-sky-300/85"
+        ? "bg-sky-500/85"
         : hasCheckedInVisualTone || isPaidTable
-          ? "bg-emerald-300/85"
-          : "bg-slate-300/85";
+          ? "bg-emerald-500/85"
+          : "bg-slate-500/85";
   const hasPreparingItems = tableItems.some((i) => i.kitchen_status === "preparing");
   const shouldRenderAccentGlow = !(isLockedTable && !hasOrderActivity);
   const isKitchenDelivered =
@@ -558,6 +582,7 @@ function TableCard({
     !isPaidTable &&
     !hasUnpaidItems &&
     !hasReceiptHistory &&
+    !hasKitchenActivity &&
     !hasSuborderItems &&
     tableItems.length === 0 &&
     Number(tableOrder?.total || 0) <= 0;
@@ -581,9 +606,11 @@ function TableCard({
   const tableDisplayLabel = `${tableLabelText} ${String(table.tableNumber).padStart(2, "0")}`;
   const paidStatusLabel = t("Unpaid");
   const fullyPaidStatusLabel = t("Paid");
+  const normalizedStatusLabelKey =
+    normalizedOrderStatus === "draft" ? "Free" : normalizedOrderStatus || "confirmed";
   const orderStatusLabel = isCheckedInReservationStatus(normalizedOrderStatus)
     ? t("Checked-in")
-    : t(tableOrder?.status === "draft" ? "Free" : tableOrder?.status);
+    : t(normalizedStatusLabelKey);
   const showOrderStatusBadge =
     normalizedOrderStatus !== "confirmed" &&
     !isPaidTable &&
@@ -628,6 +655,147 @@ function TableCard({
     },
     [handleToggleTableLock, isLockedTable, table.tableNumber]
   );
+
+  const densityStatusKey = hasUnpaidItems
+    ? "unpaid"
+    : shouldShowReservedBadge
+      ? "reserved"
+      : isPaidTable
+        ? "paid"
+      : isFreeDisplay && !isLockedTable
+        ? "empty"
+        : "active";
+  const densityStatusMeta = DENSITY_STATUS_META[densityStatusKey] || DENSITY_STATUS_META.active;
+  const densityStatusLabel = t(densityStatusMeta.label);
+  const compactAmountValue = Number(table?.unpaidTotal || 0);
+  const compactAmountNumberLabel = Number.isFinite(compactAmountValue)
+    ? Math.round(compactAmountValue).toLocaleString()
+    : "0";
+  const compactCurrencySymbol = (
+    String(displayTotal || "").match(/[^\d\s.,-]+/g) || [""]
+  )[0];
+  const compactTotalLabel = `${compactCurrencySymbol}${compactAmountNumberLabel}`;
+  const compactGuestsValue = Number.isFinite(clampedGuests) ? clampedGuests : 0;
+  const compactSeatsValue = Number.isFinite(seats) && seats > 0 ? seats : 0;
+  const compactGuestLabel = compactSeatsValue > 0
+    ? `${compactGuestsValue}/${compactSeatsValue}`
+    : `${compactGuestsValue}`;
+  const compactAreaLabel = showAreas
+    ? formatAreaLabel(table.area)
+    : table.label || "";
+  const compactAuxDots = [
+    showReadyAt
+      ? {
+          key: "ready",
+          className: isOrderDelayed ? "bg-rose-500" : "bg-amber-500",
+          title: `${t("Ready at")} ${readyAtLabel}`,
+        }
+      : null,
+    isCallingWaiter
+      ? {
+          key: "waiter",
+          className: "bg-rose-500 animate-pulse",
+          title: t("Calling"),
+        }
+      : null,
+  ].filter(Boolean);
+  const compactTooltip = [
+    tableDisplayLabel,
+    `${t("Status")}: ${densityStatusLabel}`,
+    `${t("Amount")}: ${displayTotal}`,
+    showGuestCount ? `${t("Guests")}: ${compactGuestLabel}` : null,
+    compactAreaLabel,
+  ]
+    .filter(Boolean)
+    .join(" • ");
+  const canToggleLockCompact =
+    showManualTableLock && (isFreeDisplay || (isLockedTable && !hasOrderActivity));
+
+  if (isCompactDensity) {
+    return (
+      <div
+        key={table.tableNumber}
+        onClick={handleCardClick}
+        title={compactTooltip}
+        className={cx(
+          "group relative w-full cursor-pointer border transition-all duration-200",
+          densityStatusMeta.cardClass,
+          isLargeCompact ? "rounded-xl p-3" : "rounded-lg p-2",
+          isCallingWaiter && "ring-1 ring-rose-500/80"
+        )}
+      >
+        <div className={cx("flex min-w-0 items-center", isLargeCompact ? "gap-2.5" : "gap-2")}>
+          <span
+            className={cx(
+              "inline-flex shrink-0 items-center justify-center rounded-md border border-white/70 bg-white/65 px-2 py-0.5 font-extrabold tabular-nums leading-none text-slate-950 shadow-[0_1px_2px_rgba(15,23,42,0.08)]",
+              isLargeCompact ? "text-[20px]" : "text-[16px]"
+            )}
+          >
+            {String(table.tableNumber).padStart(2, "0")}
+          </span>
+          <div className={cx("flex shrink-0 items-center", isLargeCompact ? "gap-2" : "gap-1.5")}>
+            <span
+              className={cx(
+                "shrink-0 whitespace-nowrap font-medium leading-none text-slate-700/95",
+                isLargeCompact ? "text-xs" : "text-[10px]"
+              )}
+              title={displayTotal}
+            >
+              {compactTotalLabel}
+            </span>
+            {showGuestCount ? (
+              <span
+                className={cx(
+                  "shrink-0 whitespace-nowrap font-medium leading-none text-slate-600",
+                  isLargeCompact ? "text-[11px]" : "text-[10px]"
+                )}
+                title={`${t("Guests")} ${compactGuestLabel}`}
+              >
+                👥{compactGuestLabel}
+              </span>
+            ) : null}
+          </div>
+          <div className={cx("ml-auto flex shrink-0 items-center", isLargeCompact ? "gap-1.5" : "gap-1")}>
+            {canToggleLockCompact ? (
+              <button
+                type="button"
+                onClick={handleToggleLockClick}
+                title={isLockedTable ? t("Unlock table") : t("Mark table occupied")}
+                className={cx(
+                  "inline-flex items-center justify-center rounded border border-slate-200 leading-none transition hover:bg-slate-100",
+                  isLargeCompact ? "h-6 w-6 text-xs" : "h-5 w-5 text-[11px]",
+                  isLockedTable ? "bg-yellow-100 text-slate-900" : "bg-white text-slate-600"
+                )}
+              >
+                {isLockedTable ? "🔓" : "🔒"}
+              </button>
+            ) : isLockedTable ? (
+              <span className="text-[11px]" title={t("Locked")}>
+                🔒
+              </span>
+            ) : null}
+
+            {compactAuxDots.map((dot) => (
+              <span
+                key={dot.key}
+                className={cx("inline-flex h-2 w-2 rounded-full", dot.className)}
+                title={dot.title}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div
+          className={cx(
+            "mt-1 truncate leading-tight text-slate-500",
+            isLargeCompact ? "text-xs" : "text-[11px]"
+          )}
+        >
+          {compactAreaLabel || table.label || "—"}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -870,7 +1038,7 @@ function TableCard({
           </div>
         </div>
 
-        {table.seats && !(isLockedTable && !hasOrderActivity) ? (
+        {showGuestCount && table.seats && !(isLockedTable && !hasOrderActivity) ? (
           <div className="mt-2 flex justify-center border-t border-slate-200/60 pt-2">
             <div
               className={cx(
@@ -948,7 +1116,9 @@ const areTableCardPropsEqual = (prevProps, nextProps) => {
     prevProps.getTablePrepMeta === nextProps.getTablePrepMeta &&
     prevProps.waiterCallsByTable === nextProps.waiterCallsByTable &&
     prevProps.handleResolveWaiterCall === nextProps.handleResolveWaiterCall &&
-    prevProps.showManualTableLock === nextProps.showManualTableLock;
+    prevProps.showManualTableLock === nextProps.showManualTableLock &&
+    prevProps.showGuestCount === nextProps.showGuestCount &&
+    prevProps.tableDensity === nextProps.tableDensity;
 
   if (!isEqual) {
     logMemoDiff({
@@ -973,6 +1143,8 @@ const areTableCardPropsEqual = (prevProps, nextProps) => {
         "waiterCallsByTable",
         "handleResolveWaiterCall",
         "showManualTableLock",
+        "showGuestCount",
+        "tableDensity",
       ],
     });
   }

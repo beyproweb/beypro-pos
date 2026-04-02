@@ -9,6 +9,7 @@ import {
   buildPublicMenuPath,
   resolvePublicBookingIdentifier,
 } from "../features/qrmenu/publicBookingRoutes";
+import { createQrScopedStorage } from "../features/qrmenu/utils/createQrScopedStorage";
 import BookingPageLayout from "../features/floorPlan/components/BookingPageLayout";
 import BookingSection from "../features/floorPlan/components/BookingSection";
 import BookingSummaryCard from "../features/floorPlan/components/BookingSummaryCard";
@@ -33,16 +34,6 @@ import {
   resolveGuestCompositionPolicyMessage,
 } from "../features/floorPlan/utils/bookingRules";
 
-function getStorage() {
-  if (typeof window !== "undefined" && window.localStorage) {
-    return window.localStorage;
-  }
-  return {
-    setItem: () => {},
-    removeItem: () => {},
-  };
-}
-
 function formatTableLabel(tableLike, fallbackPrefix = "Table") {
   const number = Number(
     tableLike?.table_number ?? tableLike?.tableNumber ?? tableLike?.number ?? tableLike
@@ -65,6 +56,20 @@ export default function QrConcertBookingPage() {
   const identifier = React.useMemo(
     () => resolvePublicBookingIdentifier({ slug, id, search: location.search }),
     [id, location.search, slug]
+  );
+  const customerAuthFetcher = React.useCallback(
+    async (path, options = undefined) => {
+      const rawPath = String(path || "");
+      if (!identifier || rawPath.includes("identifier=")) {
+        return secureFetch(rawPath, options);
+      }
+      const separator = rawPath.includes("?") ? "&" : "?";
+      return secureFetch(
+        `${rawPath}${separator}identifier=${encodeURIComponent(identifier)}`,
+        options
+      );
+    },
+    [identifier]
   );
   const menuPath = React.useMemo(
     () => buildPublicMenuPath({ pathname: location.pathname, slug, id, search: location.search }),
@@ -93,9 +98,10 @@ export default function QrConcertBookingPage() {
       requestedBookingType,
     };
   }, [location.search]);
-  const storage = React.useMemo(() => getStorage(), []);
-  const { customer, isLoggedIn } = useCustomerAuth(storage);
-  const customerPrefill = React.useMemo(() => getCheckoutPrefill(storage), [storage]);
+  const storage = React.useMemo(() => createQrScopedStorage(identifier), [identifier]);
+  const { customer, isLoggedIn } = useCustomerAuth(storage, { fetcher: customerAuthFetcher });
+  const isLoggedInEffective = Boolean(isLoggedIn || customer?.id);
+  const [customerPrefill, setCustomerPrefill] = React.useState(() => getCheckoutPrefill(storage));
   const customerEmailPrefill = React.useMemo(() => {
     const value = String(customerPrefill?.email || "").trim().toLowerCase();
     return !value || EMAIL_REGEX.test(value) ? value : "";
@@ -129,14 +135,49 @@ export default function QrConcertBookingPage() {
   });
 
   React.useEffect(() => {
-    setForm((prev) => ({
-      ...prev,
-      customer_name: prev.customer_name || customerPrefill?.name || "",
-      customer_phone: prev.customer_phone || formatQrPhoneForInput(customerPrefill?.phone || ""),
-      customer_email: prev.customer_email || customerEmailPrefill,
-      bank_reference: prev.bank_reference || customerPrefill?.bank_reference || "",
-    }));
-  }, [customerEmailPrefill, customerPrefill]);
+    setCustomerPrefill(getCheckoutPrefill(storage));
+  }, [
+    customer?.address,
+    customer?.email,
+    customer?.id,
+    customer?.phone,
+    customer?.updatedAt,
+    customer?.username,
+    storage,
+  ]);
+
+  React.useEffect(() => {
+    const nextName = customer?.username || customerPrefill?.name || "";
+    const nextPhone = formatQrPhoneForInput(customer?.phone || customerPrefill?.phone || "");
+    const nextEmail = customer?.email || customerEmailPrefill || "";
+    const nextReference = customerPrefill?.bank_reference || "";
+    setForm((prev) =>
+      isLoggedInEffective
+        ? {
+            ...prev,
+            customer_name: nextName,
+            customer_phone: nextPhone,
+            customer_email: nextEmail,
+            bank_reference: prev.bank_reference || nextReference,
+          }
+        : {
+            ...prev,
+            customer_name: prev.customer_name || nextName,
+            customer_phone: prev.customer_phone || nextPhone,
+            customer_email: prev.customer_email || nextEmail,
+            bank_reference: prev.bank_reference || nextReference,
+          }
+    );
+  }, [
+    customer?.email,
+    customer?.phone,
+    customer?.username,
+    customerEmailPrefill,
+    customerPrefill?.bank_reference,
+    customerPrefill?.name,
+    customerPrefill?.phone,
+    isLoggedInEffective,
+  ]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -399,7 +440,7 @@ export default function QrConcertBookingPage() {
     !String(form.customer_email || "").trim() ||
     EMAIL_REGEX.test(String(form.customer_email).trim().toLowerCase());
   const hasRegisteredProfile = Boolean(
-    isLoggedIn && form.customer_name.trim() && phoneValid && emailValid
+    isLoggedInEffective && form.customer_name.trim() && phoneValid && emailValid
   );
   const quantity = isTableBooking ? selectedGuests : Math.max(1, Number(form.quantity) || 1);
   const availableTicketsRaw = Number(

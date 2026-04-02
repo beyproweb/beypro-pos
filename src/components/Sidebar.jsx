@@ -42,6 +42,13 @@ import { safeNavigate } from "../utils/navigation";
 import secureFetch from "../utils/secureFetch";
 import { CURRENCY_KEYS } from "../utils/currency";
 import { useCurrency } from "../context/CurrencyContext";
+import {
+  DEFAULT_LANGUAGE,
+  normalizeLanguageCode,
+  persistLanguage,
+  readStoredLanguage,
+  resolvePreferredLanguage,
+} from "../utils/language";
 
 export const SIDEBAR_WIDTH_OPEN = 196;
 export const SIDEBAR_WIDTH_COLLAPSED = 64;
@@ -133,37 +140,6 @@ function getDisplayName(user) {
     user?.email ||
     null
   );
-}
-
-function normalizeLanguageCode(raw) {
-  if (!raw) return null;
-  const normalized = String(raw).trim();
-  if (!normalized) return null;
-  const lower = normalized.toLowerCase();
-  const mapped =
-    lower === "english"
-      ? "en"
-      : lower === "turkish"
-        ? "tr"
-        : lower === "german"
-          ? "de"
-          : lower === "french"
-            ? "fr"
-            : lower.split("-")[0];
-
-  return languageOptions.some((opt) => opt.code === mapped) ? mapped : null;
-}
-
-function readStoredLanguage() {
-  if (typeof window === "undefined") return null;
-  try {
-    return (
-      normalizeLanguageCode(window.localStorage.getItem("beyproLanguage")) ||
-      normalizeLanguageCode(window.localStorage.getItem("beyproGuestLanguage"))
-    );
-  } catch {
-    return null;
-  }
 }
 
 function readHiddenKeys(storageKey) {
@@ -329,7 +305,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
   }, [currentUser]);
   const canShowLanguageSelector = useMemo(() => isLoggedIn, [isLoggedIn]);
 
-  const [sidebarLanguage, setSidebarLanguage] = useState("en");
+  const [sidebarLanguage, setSidebarLanguage] = useState(DEFAULT_LANGUAGE);
   const [sidebarCurrency, setSidebarCurrency] = useState(currencyKey || "₺ TRY");
   const lastSavedLocalization = useRef({ language: null, currency: null });
   const autoSaveTimerRef = useRef(null);
@@ -340,7 +316,9 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
     if (!canSeeLocalization) {
       const storedLanguage = readStoredLanguage();
       const currentLanguage = normalizeLanguageCode(i18n.language);
-      const nextLanguage = storedLanguage || currentLanguage || "en";
+      const nextLanguage = resolvePreferredLanguage({
+        preferred: storedLanguage || currentLanguage,
+      });
 
       setSidebarLanguage(nextLanguage);
       if (normalizeLanguageCode(i18n.language) !== nextLanguage) {
@@ -361,7 +339,10 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
         const storedLanguage = readStoredLanguage();
         const serverLanguage = normalizeLanguageCode(data?.language);
         const currentLanguage = normalizeLanguageCode(i18n.language);
-        const nextLanguage = storedLanguage || serverLanguage || currentLanguage || "en";
+        const nextLanguage = resolvePreferredLanguage({
+          storage: localStorage,
+          preferred: storedLanguage || serverLanguage || currentLanguage,
+        });
         const nextCurrency = data?.currency || currencyKey || "₺ TRY";
 
         setSidebarLanguage(nextLanguage);
@@ -607,7 +588,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
   return (
     <aside
       className={`
-        fixed top-0 left-0 z-50 h-screen
+        ios-safe-sidebar fixed top-0 left-0 z-50 h-screen
         transition-all duration-300 ease-in-out
         shadow-2xl border-r border-white/15
         backdrop-blur-2xl
@@ -763,15 +744,12 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
                 </label>
                 <select
                   id="sidebar-language"
-                  value={sidebarLanguage || "en"}
+                  value={sidebarLanguage || DEFAULT_LANGUAGE}
                   onChange={(e) => {
-                    const selectedLang = e.target.value || "en";
+                    const selectedLang = e.target.value || DEFAULT_LANGUAGE;
                     setSidebarLanguage(selectedLang);
                     i18n.changeLanguage(selectedLang);
-                    try {
-                      localStorage.setItem("beyproLanguage", selectedLang);
-                      localStorage.setItem("beyproGuestLanguage", selectedLang);
-                    } catch {}
+                    persistLanguage(selectedLang, localStorage);
                   }}
                   title={t("Language", { defaultValue: "Language" })}
                   className="h-7 w-[62px] rounded-lg px-1.5 bg-white/10 text-white text-[11px] font-bold border border-white/15 focus:ring-2 focus:ring-accent/60 outline-none"

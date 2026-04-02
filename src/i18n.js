@@ -1,5 +1,12 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
+import {
+  DEFAULT_LANGUAGE,
+  ensureDefaultLanguage,
+  getBrowserStorage,
+  normalizeLanguageCode,
+  syncDocumentLanguage,
+} from "./utils/language";
 
 const resources = {
   "en": {
@@ -1864,6 +1871,9 @@ const resources = {
       "Contact support for help": "Contact support for help",
       "Support section will be available soon.": "Support section will be available soon.",
       "Email or username": "Email or username",
+      "Email (optional)": "Email (optional)",
+      "Full name": "Full name",
+      "Address (optional)": "Address (optional)",
       "Password": "Password",
       "Username": "Username",
       "Create Account": "Create Account",
@@ -1876,9 +1886,15 @@ const resources = {
       "Past": "Past",
       "Failed to load orders": "Failed to load orders",
       "Please fill all required fields.": "Please fill all required fields.",
+      "Please enter your name.": "Please enter your name.",
+      "Please enter a valid phone number.": "Please enter a valid phone number.",
+      "Please enter a valid phone number or email.": "Please enter a valid phone number or email.",
+      "Please enter your password.": "Please enter your password.",
+      "Please enter your phone number or email and password.": "Please enter your phone number or email and password.",
       "Email already registered.": "Email already registered.",
       "Username already in use.": "Username already in use.",
       "Please enter your credentials.": "Please enter your credentials.",
+      "No account found for this phone number or email. Please register.": "No account found for this phone number or email. Please register.",
       "Invalid credentials.": "Invalid credentials.",
       "Please login first.": "Please login first.",
       "Profile not found.": "Profile not found.",
@@ -4080,6 +4096,9 @@ const resources = {
       "Contact support for help": "Yardım için destekle iletişime geçin",
       "Support section will be available soon.": "Destek bölümü yakında kullanıma açılacak.",
       "Email or username": "E-posta veya kullanıcı adı",
+      "Email (optional)": "E-posta (isteğe bağlı)",
+      "Full name": "Ad soyad",
+      "Address (optional)": "Adres (isteğe bağlı)",
       "Password": "Şifre",
       "Username": "Kullanıcı adı",
       "Create Account": "Hesap Oluştur",
@@ -4092,9 +4111,15 @@ const resources = {
       "Past": "Geçmiş",
       "Failed to load orders": "Siparişler yüklenemedi",
       "Please fill all required fields.": "Lütfen tüm gerekli alanları doldurun.",
+      "Please enter your name.": "Lütfen adınızı girin.",
+      "Please enter a valid phone number.": "Lütfen geçerli bir telefon numarası girin.",
+      "Please enter a valid phone number or email.": "Lütfen geçerli bir telefon numarası veya e-posta adresi girin.",
+      "Please enter your password.": "Lütfen şifrenizi girin.",
+      "Please enter your phone number or email and password.": "Lütfen telefon numaranızı veya e-posta adresinizi ve şifrenizi girin.",
       "Email already registered.": "E-posta zaten kayıtlı.",
       "Username already in use.": "Kullanıcı adı zaten kullanılıyor.",
       "Please enter your credentials.": "Lütfen giriş bilgilerinizi girin.",
+      "No account found for this phone number or email. Please register.": "Bu telefon numarası veya e-posta için hesap bulunamadı. Lütfen kayıt olun.",
       "Invalid credentials.": "Geçersiz giriş bilgileri.",
       "Please login first.": "Lütfen önce giriş yapın.",
       "Profile not found.": "Profil bulunamadı.",
@@ -6439,9 +6464,18 @@ const resources = {
       "Past": "Vergangen",
       "Failed to load orders": "Bestellungen konnten nicht geladen werden",
       "Please fill all required fields.": "Bitte alle Pflichtfelder ausfüllen.",
+      "Please enter your name.": "Bitte geben Sie Ihren Namen ein.",
+      "Please enter a valid phone number.": "Bitte geben Sie eine gültige Telefonnummer ein.",
+      "Please enter a valid phone number or email.": "Bitte geben Sie eine gültige Telefonnummer oder E-Mail-Adresse ein.",
+      "Please enter your password.": "Bitte geben Sie Ihr Passwort ein.",
+      "Please enter your phone number or email and password.": "Bitte geben Sie Ihre Telefonnummer oder E-Mail-Adresse und Ihr Passwort ein.",
       "Email already registered.": "E-Mail ist bereits registriert.",
       "Username already in use.": "Benutzername wird bereits verwendet.",
+      "Email (optional)": "E-Mail (optional)",
+      "Full name": "Vollständiger Name",
+      "Address (optional)": "Adresse (optional)",
       "Please enter your credentials.": "Bitte Zugangsdaten eingeben.",
+      "No account found for this phone number or email. Please register.": "Für diese Telefonnummer oder E-Mail wurde kein Konto gefunden. Bitte registrieren Sie sich.",
       "Invalid credentials.": "Ungültige Zugangsdaten.",
       "Please login first.": "Bitte zuerst anmelden.",
       "Profile not found.": "Profil nicht gefunden.",
@@ -7405,9 +7439,18 @@ const resources = {
       "Past": "Passées",
       "Failed to load orders": "Impossible de charger les commandes",
       "Please fill all required fields.": "Veuillez remplir tous les champs obligatoires.",
+      "Please enter your name.": "Veuillez saisir votre nom.",
+      "Please enter a valid phone number.": "Veuillez saisir un numéro de téléphone valide.",
+      "Please enter a valid phone number or email.": "Veuillez saisir un numéro de téléphone ou un e-mail valide.",
+      "Please enter your password.": "Veuillez saisir votre mot de passe.",
+      "Please enter your phone number or email and password.": "Veuillez saisir votre numéro de téléphone ou votre e-mail ainsi que votre mot de passe.",
       "Email already registered.": "L'e-mail est déjà enregistré.",
       "Username already in use.": "Le nom d'utilisateur est déjà utilisé.",
+      "Email (optional)": "E-mail (facultatif)",
+      "Full name": "Nom complet",
+      "Address (optional)": "Adresse (facultatif)",
       "Please enter your credentials.": "Veuillez saisir vos identifiants.",
+      "No account found for this phone number or email. Please register.": "Aucun compte n’a été trouvé pour ce numéro de téléphone ou cet e-mail. Veuillez vous inscrire.",
       "Invalid credentials.": "Identifiants invalides.",
       "Please login first.": "Veuillez vous connecter d'abord.",
       "Profile not found.": "Profil introuvable.",
@@ -8296,34 +8339,20 @@ i18n
   .init({
     resources,
     lng: (() => {
-      if (typeof window === "undefined") return "en";
-      try {
-        const raw =
-          window.localStorage.getItem("qr_lang") ||
-          window.localStorage.getItem("beyproLanguage") ||
-          window.localStorage.getItem("beyproGuestLanguage");
-        if (!raw) return "en";
-
-        const normalized = String(raw).trim();
-        const lower = normalized.toLowerCase();
-        const mapped =
-          lower === "english"
-            ? "en"
-            : lower === "turkish"
-              ? "tr"
-              : lower === "german"
-                ? "de"
-                : lower === "french"
-                  ? "fr"
-                  : lower.split("-")[0];
-
-        return Object.prototype.hasOwnProperty.call(resources, mapped) ? mapped : "en";
-      } catch {
-        return "en";
-      }
+      if (typeof window === "undefined") return DEFAULT_LANGUAGE;
+      const storage = getBrowserStorage();
+      const resolved = ensureDefaultLanguage(storage);
+      return Object.prototype.hasOwnProperty.call(resources, resolved)
+        ? resolved
+        : DEFAULT_LANGUAGE;
     })(),
-    fallbackLng: "en",
+    fallbackLng: DEFAULT_LANGUAGE,
     interpolation: { escapeValue: false }
   });
+
+syncDocumentLanguage(i18n.resolvedLanguage || i18n.language || DEFAULT_LANGUAGE);
+i18n.on("languageChanged", (language) => {
+  syncDocumentLanguage(normalizeLanguageCode(language, DEFAULT_LANGUAGE));
+});
 
 export default i18n;

@@ -14,6 +14,7 @@ import {
   buildPublicMenuPath,
   resolvePublicBookingIdentifier,
 } from "../features/qrmenu/publicBookingRoutes";
+import { createQrScopedStorage } from "../features/qrmenu/utils/createQrScopedStorage";
 import { mergeFloorPlanVisualStyles } from "../features/floorPlan/utils/floorPlan";
 import BookingPageLayout from "../features/floorPlan/components/BookingPageLayout";
 import BookingSection from "../features/floorPlan/components/BookingSection";
@@ -36,17 +37,6 @@ import {
   QR_PHONE_REGEX,
   resolveGuestCompositionPolicyMessage,
 } from "../features/floorPlan/utils/bookingRules";
-
-function getStorage() {
-  if (typeof window !== "undefined" && window.localStorage) {
-    return window.localStorage;
-  }
-  return {
-    getItem: () => null,
-    setItem: () => {},
-    removeItem: () => {},
-  };
-}
 
 function formatTableLabel(tableLike, fallbackPrefix = "Table") {
   const number = Number(
@@ -91,6 +81,20 @@ export default function QrReservationBookingPage() {
     () => resolvePublicBookingIdentifier({ slug, id, search: location.search }),
     [id, location.search, slug]
   );
+  const customerAuthFetcher = React.useCallback(
+    async (path, options = undefined) => {
+      const rawPath = String(path || "");
+      if (!identifier || rawPath.includes("identifier=")) {
+        return secureFetch(rawPath, options);
+      }
+      const separator = rawPath.includes("?") ? "&" : "?";
+      return secureFetch(
+        `${rawPath}${separator}identifier=${encodeURIComponent(identifier)}`,
+        options
+      );
+    },
+    [identifier]
+  );
   const menuPath = React.useMemo(
     () => buildPublicMenuPath({ pathname: location.pathname, slug, id, search: location.search }),
     [id, location.pathname, location.search, slug]
@@ -99,9 +103,10 @@ export default function QrReservationBookingPage() {
     () => buildReservationContactPath({ pathname: location.pathname, slug, id, search: location.search }),
     [id, location.pathname, location.search, slug]
   );
-  const storage = React.useMemo(() => getStorage(), []);
-  const { customer, isLoggedIn } = useCustomerAuth(storage);
-  const customerPrefill = React.useMemo(() => getCheckoutPrefill(storage), [storage]);
+  const storage = React.useMemo(() => createQrScopedStorage(identifier), [identifier]);
+  const { customer, isLoggedIn } = useCustomerAuth(storage, { fetcher: customerAuthFetcher });
+  const isLoggedInEffective = Boolean(isLoggedIn || customer?.id);
+  const [customerPrefill, setCustomerPrefill] = React.useState(() => getCheckoutPrefill(storage));
   const customerEmailPrefill = React.useMemo(() => {
     const value = String(customerPrefill?.email || "").trim().toLowerCase();
     return !value || EMAIL_REGEX.test(value) ? value : "";
@@ -120,8 +125,9 @@ export default function QrReservationBookingPage() {
   const [submitting, setSubmitting] = React.useState(false);
   const confirmationSectionRef = React.useRef(null);
   const previousConfirmedTableRef = React.useRef("");
+  const todayIsoDate = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [form, setForm] = React.useState({
-    reservation_date: "",
+    reservation_date: todayIsoDate,
     reservation_time: "",
     reservation_clients: "2",
     reservation_men: "",
@@ -134,13 +140,45 @@ export default function QrReservationBookingPage() {
   });
 
   React.useEffect(() => {
-    setForm((prev) => ({
-      ...prev,
-      name: prev.name || customerPrefill?.name || "",
-      phone: prev.phone || formatQrPhoneForInput(customerPrefill?.phone || ""),
-      email: prev.email || customerEmailPrefill,
-    }));
-  }, [customerEmailPrefill, customerPrefill]);
+    setCustomerPrefill(getCheckoutPrefill(storage));
+  }, [
+    customer?.address,
+    customer?.email,
+    customer?.id,
+    customer?.phone,
+    customer?.updatedAt,
+    customer?.username,
+    storage,
+  ]);
+
+  React.useEffect(() => {
+    const nextName = customer?.username || customerPrefill?.name || "";
+    const nextPhone = formatQrPhoneForInput(customer?.phone || customerPrefill?.phone || "");
+    const nextEmail = customer?.email || customerEmailPrefill || "";
+    setForm((prev) =>
+      isLoggedInEffective
+        ? {
+            ...prev,
+            name: nextName,
+            phone: nextPhone,
+            email: nextEmail,
+          }
+        : {
+            ...prev,
+            name: prev.name || nextName,
+            phone: prev.phone || nextPhone,
+            email: prev.email || nextEmail,
+          }
+    );
+  }, [
+    customer?.email,
+    customer?.phone,
+    customer?.username,
+    customerEmailPrefill,
+    customerPrefill?.name,
+    customerPrefill?.phone,
+    isLoggedInEffective,
+  ]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -398,7 +436,9 @@ export default function QrReservationBookingPage() {
   const phoneValue = normalizeQrPhone(form.phone);
   const phoneValid = QR_PHONE_REGEX.test(phoneValue);
   const emailValid = !String(form.email || "").trim() || EMAIL_REGEX.test(String(form.email).trim());
-  const hasRegisteredProfile = Boolean(isLoggedIn && form.name.trim() && phoneValid && emailValid);
+  const hasRegisteredProfile = Boolean(
+    isLoggedInEffective && form.name.trim() && phoneValid && emailValid
+  );
   const hasConfirmedTable = Number(form.table_number || 0) > 0;
   const selectedTimeSlot = slots.find(
     (slot) => slot.time === String(form.reservation_time || "").slice(0, 5)

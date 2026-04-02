@@ -45,6 +45,75 @@ export const hasReservationSignal = (order) => {
   );
 };
 
+const KITCHEN_ACTIVITY_STATUSES = new Set([
+  "new",
+  "preparing",
+  "ready",
+  "delivered",
+]);
+
+const hasKitchenStatusInItems = (items) =>
+  Array.isArray(items) &&
+  items.some((item) =>
+    KITCHEN_ACTIVITY_STATUSES.has(
+      String(
+        item?.kitchen_status ??
+          item?.kitchenStatus ??
+          item?.item_status ??
+          item?.itemStatus ??
+          item?.status ??
+          ""
+      )
+        .trim()
+        .toLowerCase()
+    )
+  );
+
+export const hasKitchenLifecycleSignal = (order) => {
+  if (!order || typeof order !== "object") return false;
+  if (
+    KITCHEN_ACTIVITY_STATUSES.has(
+      String(order?.kitchen_status ?? order?.kitchenStatus ?? "").trim().toLowerCase()
+    ) ||
+    order?.kitchen_delivered_at ||
+    order?.kitchenDeliveredAt ||
+    order?.kitchen_status_updated_at ||
+    order?.kitchenStatusUpdatedAt ||
+    order?.prep_started_at ||
+    order?.prepStartedAt ||
+    order?.estimated_ready_at ||
+    order?.estimatedReadyAt
+  ) {
+    return true;
+  }
+
+  if (hasKitchenStatusInItems(order?.items)) return true;
+
+  const suborderItems = Array.isArray(order?.suborders)
+    ? order.suborders.flatMap((suborder) =>
+        Array.isArray(suborder?.items) ? suborder.items : []
+      )
+    : [];
+  return hasKitchenStatusInItems(suborderItems);
+};
+
+export const getCanonicalTableOrderStatus = (order, fallbackStatus = "") => {
+  const normalized = normalizeOrderStatus(order?.status ?? fallbackStatus);
+  if (
+    normalized === "new" ||
+    normalized === "preparing" ||
+    normalized === "ready" ||
+    normalized === "delivered" ||
+    normalized === "in_progress" ||
+    normalized === "open" ||
+    normalized === "unpaid"
+  ) {
+    return "confirmed";
+  }
+  if (!normalized && hasKitchenLifecycleSignal(order)) return "confirmed";
+  return normalized;
+};
+
 const normalizeReservationDateValue = (value) => {
   if (!value) return "";
   const raw = String(value).trim();
@@ -112,7 +181,7 @@ export const isReservationDueNow = (source, nowMs = Date.now()) => {
 
 export const hasUnpaidAnywhere = (order) => {
   if (!order) return false;
-  const status = normalizeOrderStatus(order?.status);
+  const status = getCanonicalTableOrderStatus(order);
   const paymentStatus = String(order?.payment_status || "").toLowerCase();
 
   const suborders = Array.isArray(order.suborders) ? order.suborders : [];
@@ -134,7 +203,7 @@ export const hasUnpaidAnywhere = (order) => {
 };
 
 export const isOrderPaid = (order) => {
-  const status = normalizeOrderStatus(order?.status);
+  const status = getCanonicalTableOrderStatus(order);
   const paymentStatus = String(order?.payment_status || "").toLowerCase();
   return status === "paid" || paymentStatus === "paid" || order?.is_paid === true;
 };
@@ -149,9 +218,11 @@ export const isOrderFullyPaid = (order) => isOrderPaid(order) && !hasUnpaidAnywh
 export const isEffectivelyFreeOrder = (order) => {
   if (!order) return true;
 
-  const status = normalizeOrderStatus(order.status);
+  const status = getCanonicalTableOrderStatus(order);
+  const hasKitchenSignal = hasKitchenLifecycleSignal(order);
   if (status === "closed") return true;
   if (isOrderPaid(order)) return false;
+  if (hasUnpaidAnywhere(order)) return false;
 
   const hasSignal = hasReservationSignal(order);
   if ((status === "reserved" || order.order_type === "reservation") && hasSignal) {
@@ -159,7 +230,11 @@ export const isEffectivelyFreeOrder = (order) => {
     // even before check-in.
     const total = Number(order.total || 0);
     const items = Array.isArray(order.items) ? order.items : null;
-    if ((Array.isArray(items) && items.length > 0) || total > 0) {
+    const suborders = Array.isArray(order.suborders) ? order.suborders : [];
+    const hasSuborderItems = suborders.some((sub) =>
+      Array.isArray(sub?.items) ? sub.items.length > 0 : false
+    );
+    if ((Array.isArray(items) && items.length > 0) || hasSuborderItems || total > 0) {
       return false;
     }
     return !isReservationDueNow(order);
@@ -169,14 +244,28 @@ export const isEffectivelyFreeOrder = (order) => {
     return false;
   }
 
-  if (status === "draft") return true;
+  if (status === "draft") return !hasKitchenSignal;
+
+  if (
+    hasKitchenSignal &&
+    (status === "confirmed" ||
+      status === "new" ||
+      status === "preparing" ||
+      status === "ready" ||
+      status === "delivered" ||
+      status === "in_progress" ||
+      status === "open" ||
+      status === "unpaid")
+  ) {
+    return false;
+  }
 
   const total = Number(order.total || 0);
   const items = Array.isArray(order.items) ? order.items : null;
 
-  if (items) return items.length === 0 && total <= 0;
+  if (items) return items.length === 0 && total <= 0 && !hasKitchenSignal;
 
-  return total <= 0;
+  return total <= 0 && !hasKitchenSignal;
 };
 
 export const parseLooseDateToMs = (val) => {
@@ -211,42 +300,42 @@ export const isDelayed = (order) => {
 export const getTableColor = (order) => {
   if (!order) return "bg-gray-400 text-black";
 
-  const status = normalizeOrderStatus(order.status);
+  const status = getCanonicalTableOrderStatus(order);
+  const hasKitchenSignal = hasKitchenLifecycleSignal(order);
   const hasSignal = hasReservationSignal(order);
 
   if (isOrderFullyPaid(order)) {
     return "bg-green-500 text-white";
   }
 
+  if (hasUnpaidAnywhere(order)) {
+    return "bg-red-500 text-white";
+  }
+
   if (status === "checked_in" && hasSignal) {
     return "bg-emerald-500 text-white";
   }
 
-  const suborders = Array.isArray(order.suborders) ? order.suborders : [];
   const items = Array.isArray(order.items) ? order.items : null;
   const total = Number(order.total || 0);
 
   if (!items) {
-    if (total <= 0) return "bg-gray-400 text-black";
+    if (total <= 0 && !hasKitchenSignal) return "bg-gray-400 text-black";
     if (status === "confirmed") return "bg-red-500 text-white";
+    if (hasKitchenSignal) return "bg-yellow-400 text-black";
     return "bg-gray-400 text-black";
   }
 
   if (items.length === 0) {
+    if (hasKitchenSignal) return "bg-yellow-400 text-black";
     return "bg-gray-400 text-black";
   }
 
-  const hasUnpaidSubOrder = suborders.some((sub) =>
-    Array.isArray(sub.items) ? sub.items.some((i) => !i.paid_at && !i.paid) : false
-  );
-
-  const hasUnpaidMainItem = items.some((i) => !i.paid_at && !i.paid);
-
-  if (hasUnpaidSubOrder || hasUnpaidMainItem) {
-    return "bg-red-500 text-white";
+  if (status === "confirmed") {
+    return "bg-yellow-400 text-black";
   }
 
-  if (status === "confirmed") {
+  if (hasKitchenSignal) {
     return "bg-yellow-400 text-black";
   }
 
@@ -324,7 +413,7 @@ export const getMemoizedTableDerivedFields = (order) => {
   const cached = tableDerivedFieldsCache.get(order);
   if (cached) return cached;
 
-  const tableStatus = normalizeOrderStatus(order.status);
+  const tableStatus = getCanonicalTableOrderStatus(order);
   const hasSignal = hasReservationSignal(order);
   const hasUnpaidItems = hasUnpaidAnywhere(order);
   const isFullyPaid = isOrderFullyPaid(order);
@@ -395,6 +484,23 @@ export const resolveTableVisualState = (tableLike = {}, prevDerived = null) => {
           console.log("[tableVisuals] resolve: preferring prevDerived due to partial source", { tableNumber: tableLike?.tableNumber, prevDerived, resolved });
         return prevDerived;
       }
+    }
+
+    const sparseFreeFallback =
+      (!Array.isArray(source.items) || source.items.length === 0) &&
+      Number(source?.total || 0) <= 0 &&
+      !source?.receiptMethods &&
+      !hasKitchenLifecycleSignal(source) &&
+      !getCanonicalTableOrderStatus(source);
+
+    if (prevDerived && sparseFreeFallback && resolved.isFreeTable && !prevDerived.isFreeTable) {
+      if (import.meta.env.DEV)
+        console.log("[tableVisuals] resolve: preserving prevDerived active state on sparse fallback", {
+          tableNumber: tableLike?.tableNumber,
+          prevDerived,
+          resolved,
+        });
+      return prevDerived;
     }
     if (import.meta.env.DEV) console.log("[tableVisuals] resolve: derived", { tableNumber: tableLike?.tableNumber, resolved });
     return resolved;

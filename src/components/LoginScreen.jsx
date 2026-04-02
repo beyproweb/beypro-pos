@@ -6,6 +6,7 @@ import { normalizeUser } from "../utils/normalizeUser";
 import { BASE_URL } from "../utils/secureFetch";
 import { useTranslation } from "react-i18next";
 import { requestDriverLocationPermission } from "../utils/driverLocationPermission";
+import { DEFAULT_LANGUAGE, persistLanguage } from "../utils/language";
 
 const REMEMBER_ME_PREFERENCE_KEY = "beyproRememberMe";
 
@@ -38,7 +39,7 @@ export default function LoginScreen() {
 
   const resolvedLanguage = supportedLanguages.some((l) => l.code === i18n.language)
     ? i18n.language
-    : "en";
+    : DEFAULT_LANGUAGE;
 
   useEffect(() => {
     if (rememberMe) return undefined;
@@ -270,14 +271,9 @@ export default function LoginScreen() {
                     id="login-language"
                     value={resolvedLanguage}
                     onChange={(e) => {
-                      const next = e.target.value || "en";
+                      const next = e.target.value || DEFAULT_LANGUAGE;
                       i18n.changeLanguage(next);
-                      try {
-                        localStorage.setItem("beyproLanguage", next);
-                        localStorage.setItem("beyproGuestLanguage", next);
-                      } catch {
-                        // ignore storage errors
-                      }
+                      persistLanguage(next, window.localStorage);
                     }}
                     className="h-9 rounded-xl px-3 bg-gray-50 text-gray-800 text-xs lg:text-sm font-semibold border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none"
                     title={t("Language")}

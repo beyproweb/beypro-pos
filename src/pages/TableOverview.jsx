@@ -34,8 +34,14 @@ import { useRegisterGuard } from "../hooks/useRegisterGuard";
 import OrderHistory from "../components/OrderHistory";
 import { useHeader } from "../context/HeaderContext";
 import { useNotifications } from "../context/NotificationsContext";
+import { useAppearance } from "../context/AppearanceContext";
 import { useSetting } from "../components/hooks/useSetting";
 import { DEFAULT_TRANSACTION_SETTINGS } from "../constants/transactionSettingsDefaults";
+import TableDensityToggle from "../features/tables/components/TableDensityToggle";
+import {
+  DEFAULT_TABLE_DENSITY,
+  normalizeTableDensity,
+} from "../features/tables/tableDensity";
 import secureFetch from "../utils/secureFetch";
 import { printViaBridge } from "../utils/receiptPrinter";
 import { fetchOrderWithItems } from "../utils/orderPrinting";
@@ -360,9 +366,13 @@ const isSpecialTableArea = (value) =>
   value === AREA_FILTER_VIEW_BOOKING || value === AREA_FILTER_SONG_REQUEST;
 
 const getTableOverviewAreaFromSearch = (search = "") => {
-  const params = new URLSearchParams(search);
+  const params = new globalThis.URLSearchParams(search);
   const requested = String(params.get("area") || "");
   return requested || AREA_FILTER_ALL;
+};
+const getTableOverviewNumberFilterFromSearch = (search = "") => {
+  const params = new globalThis.URLSearchParams(search);
+  return String(params.get("table") || "").replace(/[^\d]/g, "");
 };
 
 const getRestaurantScopedCacheKey = (suffix) => {
@@ -608,6 +618,10 @@ export default function TableOverview() {
     if (!isDedicatedViewBookingPage) return requestedArea;
     return requestedArea === AREA_FILTER_ALL ? AREA_FILTER_VIEW_BOOKING : requestedArea;
   }, [isDedicatedViewBookingPage, location.search]);
+  const tableNumberFilterFromUrl = React.useMemo(
+    () => getTableOverviewNumberFilterFromSearch(location.search),
+    [location.search]
+  );
 
   const activeTab = tabFromUrl;
   const [useStressData, setUseStressData] = useState(false);
@@ -651,6 +665,10 @@ export default function TableOverview() {
   const recentlyClosedRef = useRef(new Map()); // Track recently closed orders: key=orderId|tableNumber, value=timestamp
   const [closedOrdersVersion, setClosedOrdersVersion] = useState(0); // Increment to force ordersByTable recompute
   const { loading: authLoading } = useAuth();
+  const { appearance, setAppearance, saveAppearance } = useAppearance();
+  const tableDensity = normalizeTableDensity(
+    appearance?.table_density ?? DEFAULT_TABLE_DENSITY
+  );
   const { t } = useTranslation();
 
   useEffect(() => {
@@ -4225,6 +4243,48 @@ useEffect(() => {
       durationMs: Number((performance.now() - patchStartedAt).toFixed(2)),
     });
 
+    const detailPatch = detail.patch && typeof detail.patch === "object" ? detail.patch : null;
+    const reservationPayload =
+      detailPatch?.reservation && typeof detailPatch.reservation === "object"
+        ? detailPatch.reservation
+        : detailPatch;
+    const reservationStatus = normalizeOrderStatus(
+      reservationPayload?.status ??
+        reservationPayload?.reservation_status ??
+        reservationPayload?.reservationStatus ??
+        ""
+    );
+    const normalizedReservationId = Number(
+      reservationPayload?.id ??
+        reservationPayload?.reservation_id ??
+        reservationPayload?.reservationId ??
+        detailPatch?.reservation_id ??
+        detailPatch?.reservationId
+    );
+    const normalizedOrderId = Number(
+      detail.order_id ??
+        reservationPayload?.order_id ??
+        reservationPayload?.orderId ??
+        detailPatch?.order_id ??
+        detailPatch?.orderId
+    );
+
+    if (nextStatus === "checked_in" || reservationStatus === "checked_in") {
+      markBookingCheckedInInViewBookingLists({
+        tableNumber,
+        reservationId: Number.isFinite(normalizedReservationId) ? normalizedReservationId : null,
+        orderId: Number.isFinite(normalizedOrderId) ? normalizedOrderId : null,
+        reservation: reservationPayload,
+      });
+    } else if (nextStatus === "confirmed" || reservationStatus === "confirmed") {
+      markBookingConfirmedLocally({
+        tableNumber,
+        reservationId: Number.isFinite(normalizedReservationId) ? normalizedReservationId : null,
+        orderId: Number.isFinite(normalizedOrderId) ? normalizedOrderId : null,
+        reservation: reservationPayload,
+      });
+    }
+
     return true;
   };
 
@@ -4848,11 +4908,30 @@ const reservationsForModel = React.useMemo(() => {
   return Array.from(byTable.values());
 }, [concertBookings, effectiveOrdersByTableRaw, effectiveReservationsToday]);
 
-const { tables, groupedTables } = useTablesModel({
+const { tables } = useTablesModel({
   tableConfigs: effectiveTableConfigs,
   ordersByTable,
   reservationsToday: reservationsForModel,
 });
+const filteredTablesByNumberSearch = React.useMemo(() => {
+  const allTables = Array.isArray(tables) ? tables : [];
+  const normalizedNeedle = String(tableNumberFilterFromUrl || "").trim();
+  if (!normalizedNeedle) return allTables;
+  const queryNumber = Number.parseInt(normalizedNeedle, 10);
+  if (!Number.isFinite(queryNumber)) return allTables;
+  return allTables.filter((table) => Number.parseInt(String(table?.tableNumber ?? ""), 10) === queryNumber);
+}, [tableNumberFilterFromUrl, tables]);
+const filteredGroupedTablesByNumberSearch = React.useMemo(() => {
+  const grouped = {};
+  (Array.isArray(filteredTablesByNumberSearch) ? filteredTablesByNumberSearch : []).forEach(
+    (table) => {
+      const area = table?.area || "Main Hall";
+      if (!grouped[area]) grouped[area] = [];
+      grouped[area].push(table);
+    }
+  );
+  return grouped;
+}, [filteredTablesByNumberSearch]);
 
 const freeTablesCount = React.useMemo(() => {
   if (!Array.isArray(tables)) return 0;
@@ -4893,6 +4972,21 @@ const blockedConcertTableNumbers = React.useMemo(() => {
   return blocked;
 }, [concertBookings]);
 
+const handleTableDensityChange = useCallback(
+  (nextDensity) => {
+    const normalized = normalizeTableDensity(nextDensity);
+    if (typeof saveAppearance === "function") {
+      void saveAppearance({ table_density: normalized }, { merge: true, silent: true });
+      return;
+    }
+    setAppearance((prev) => ({
+      ...(prev || {}),
+      table_density: normalized,
+    }));
+  },
+  [saveAppearance, setAppearance]
+);
+
 useEffect(() => {
   const titlesByTab = {
     takeaway: t("Tickets/Orders"),
@@ -4904,15 +4998,31 @@ useEffect(() => {
     register: t("Register"),
   };
   const headerTitle = isDedicatedViewBookingPage ? t("View Booking") : titlesByTab[activeTab] || t("Orders");
+  const showDensityQuickToggle = activeTab === "tables" && !isDedicatedViewBookingPage;
   setHeader((prev) => ({
     ...prev,
     title: headerTitle,
     subtitle: undefined,
-    tableNav: null,
+    tableNav: showDensityQuickToggle ? (
+      <TableDensityToggle
+        value={tableDensity}
+        onChange={handleTableDensityChange}
+        t={t}
+        size="sm"
+      />
+    ) : null,
     tableStats:
       activeTab === "tables" && !isDedicatedViewBookingPage ? { freeTables: freeTablesCount } : undefined,
   }));
-}, [activeTab, isDedicatedViewBookingPage, t, setHeader, freeTablesCount]);
+}, [
+  activeTab,
+  freeTablesCount,
+  handleTableDensityChange,
+  isDedicatedViewBookingPage,
+  setHeader,
+  t,
+  tableDensity,
+]);
 
 
 
@@ -5099,7 +5209,10 @@ const handleTableClick = useCallback(async (table) => {
   // Remove duplicate groupedByTable (already have ordersByTable memoized above)
   // const groupedByTable = orders.reduce(...) // ❌ REMOVED DUPLICATE
 
-const areaKeys = React.useMemo(() => Object.keys(groupedTables), [groupedTables]);
+const areaKeys = React.useMemo(
+  () => Object.keys(filteredGroupedTablesByNumberSearch),
+  [filteredGroupedTablesByNumberSearch]
+);
 const showStandardAreaTabs =
   !isDedicatedViewBookingPage &&
   canSeeTablesGrid &&
@@ -5170,6 +5283,7 @@ const tableCardProps = React.useMemo(
     handleAcknowledgeWaiterCall,
     handleResolveWaiterCall,
     showManualTableLock: transactionSettings.enableManualTableLock !== false,
+    showGuestCount: (transactionSettings.requireGuestsBeforeOpen ?? true) === true,
   }),
   [
     tableLabelText,
@@ -5189,6 +5303,7 @@ const tableCardProps = React.useMemo(
     handleAcknowledgeWaiterCall,
     handleResolveWaiterCall,
     transactionSettings.enableManualTableLock,
+    transactionSettings.requireGuestsBeforeOpen,
   ]
 );
 
@@ -5300,8 +5415,8 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
       showStandardAreaTabs={showStandardAreaTabs}
       activeArea={activeArea}
       setActiveArea={handleAreaSelect}
-      groupedTables={groupedTables}
-      tables={tables}
+      tables={filteredTablesByNumberSearch}
+      groupedTables={filteredGroupedTablesByNumberSearch}
       ordersByTable={effectiveOrdersByTableRaw}
       productPrepById={effectiveProductPrepById}
       formatAreaLabel={formatAreaLabel}
@@ -5324,6 +5439,7 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
       onApproveSongRequest={(request) => updateSongRequestStatus(request, "approved")}
       onCompleteSongRequest={(request) => updateSongRequestStatus(request, "completed")}
       onCancelSongRequest={(request) => updateSongRequestStatus(request, "cancelled")}
+      tableDensity={tableDensity}
     />
   )}
 

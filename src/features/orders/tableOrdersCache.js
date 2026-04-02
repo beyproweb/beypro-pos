@@ -11,6 +11,10 @@ const getReservationShadowsCacheKey = () =>
   getRestaurantScopedCacheKey("tableOverview.reservationShadows.v1");
 const getReservationsTodayCacheKey = () =>
   getRestaurantScopedCacheKey("tableOverview.reservationsToday.v1");
+const getConcertBookingsOverviewCacheKey = () =>
+  getRestaurantScopedCacheKey("tableOverview.viewBooking.concert.v1");
+const getReservationBookingsOverviewCacheKey = () =>
+  getRestaurantScopedCacheKey("tableOverview.viewBooking.reservations.v1");
 
 const TERMINAL_RESERVATION_STATUSES = new Set([
   "checked_out",
@@ -361,4 +365,88 @@ export const removeReservationShadow = ({ reservationId, orderId, tableNumber } 
     return !(sameReservationId || sameOrderId || sameTable);
   });
   writeReservationShadows(next);
+};
+
+const readViewBookingOverviewCachePayload = (kind = "concert") => {
+  try {
+    if (typeof window === "undefined") return { savedAt: 0, rows: [] };
+    const key =
+      kind === "reservation"
+        ? getReservationBookingsOverviewCacheKey()
+        : getConcertBookingsOverviewCacheKey();
+    const parsed = safeParseJson(window?.localStorage?.getItem(key));
+    const rows = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed?.rows)
+      ? parsed.rows
+      : [];
+    return {
+      savedAt: Number(parsed?.savedAt || 0) || 0,
+      rows: rows.filter((row) => row && typeof row === "object"),
+    };
+  } catch {
+    return { savedAt: 0, rows: [] };
+  }
+};
+
+const writeViewBookingOverviewCache = (kind = "concert", rows = []) => {
+  try {
+    if (typeof window === "undefined") return;
+    if (!Array.isArray(rows)) return;
+    const key =
+      kind === "reservation"
+        ? getReservationBookingsOverviewCacheKey()
+        : getConcertBookingsOverviewCacheKey();
+    window?.localStorage?.setItem(
+      key,
+      JSON.stringify({
+        savedAt: Date.now(),
+        rows,
+      })
+    );
+  } catch {
+    // ignore cache errors
+  }
+};
+
+export const removeBookingFromViewBookingCache = ({ tableNumber, reservationId, orderId } = {}) => {
+  const normalizedTableNumber = Number(tableNumber);
+  const normalizedReservationId = Number(reservationId);
+  const normalizedOrderId = Number(orderId);
+
+  const concertCache = readViewBookingOverviewCachePayload("concert");
+  const nextConcertRows = (Array.isArray(concertCache.rows) ? concertCache.rows : []).filter((row) => {
+    const rowTableNumber = Number(
+      row?.reserved_table_number ?? row?.reservedTableNumber ?? row?.table_number ?? row?.tableNumber
+    );
+    const rowReservationId = Number(row?.id ?? row?.booking_id ?? row?.bookingId);
+    const rowOrderId = Number(
+      row?.reservation_order_id ?? row?.reservationOrderId ?? row?.order_id ?? row?.orderId
+    );
+    if (Number.isFinite(normalizedReservationId) && rowReservationId === normalizedReservationId) {
+      return false;
+    }
+    if (Number.isFinite(normalizedOrderId) && rowOrderId === normalizedOrderId) return false;
+    if (Number.isFinite(normalizedTableNumber) && rowTableNumber === normalizedTableNumber) {
+      return false;
+    }
+    return true;
+  });
+  writeViewBookingOverviewCache("concert", nextConcertRows);
+
+  const reservationCache = readViewBookingOverviewCachePayload("reservation");
+  const nextReservationRows = (Array.isArray(reservationCache.rows) ? reservationCache.rows : []).filter((row) => {
+    const rowTableNumber = Number(row?.table_number ?? row?.tableNumber ?? row?.table);
+    const rowReservationId = Number(row?.id ?? row?.reservation_id ?? row?.reservationId);
+    const rowOrderId = Number(row?.order_id ?? row?.orderId);
+    if (Number.isFinite(normalizedReservationId) && rowReservationId === normalizedReservationId) {
+      return false;
+    }
+    if (Number.isFinite(normalizedOrderId) && rowOrderId === normalizedOrderId) return false;
+    if (Number.isFinite(normalizedTableNumber) && rowTableNumber === normalizedTableNumber) {
+      return false;
+    }
+    return true;
+  });
+  writeViewBookingOverviewCache("reservation", nextReservationRows);
 };

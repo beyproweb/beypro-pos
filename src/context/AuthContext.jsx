@@ -3,7 +3,106 @@ import { useSetting } from "../components/hooks/useSetting";
 import { normalizeUser } from "../utils/normalizeUser";
 import { getAuthToken, BASE_URL as API_BASE } from "../utils/secureFetch";
 import { safeNavigate } from "../utils/navigation";
+import { isPublicQrPath } from "../utils/routeScope";
+import { API_ORIGIN } from "../utils/api";
 export const AuthContext = createContext();
+
+const toDisplayNameFromIdentifier = (value) =>
+  String(value || "")
+    .replace(/[-_]+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
+
+const resolveBrandingAsset = (raw) => {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith("/uploads/")) return `${API_ORIGIN}${value}`;
+  if (value.startsWith("uploads/")) return `${API_ORIGIN}/${value}`;
+  if (value.startsWith("/")) return value;
+  return `${API_ORIGIN}/uploads/${value.replace(/^\/?uploads\//, "")}`;
+};
+
+const readQrSplashBranding = () => {
+  if (typeof window === "undefined") {
+    return {
+      label: "Beypro",
+      logo: "",
+      primary: "#4F46E5",
+      background: "#6D28D9",
+    };
+  }
+
+  const pathname = String(window.location.pathname || "");
+  const params = new URLSearchParams(window.location.search || "");
+  const segments = pathname.split("/").filter(Boolean);
+
+  const candidates = [];
+  const pushCandidate = (value) => {
+    const normalized = String(value || "").trim();
+    if (!normalized) return;
+    if (!candidates.includes(normalized)) candidates.push(normalized);
+  };
+
+  pushCandidate(params.get("identifier"));
+  pushCandidate(params.get("slug"));
+  pushCandidate(params.get("id"));
+
+  if (segments[0] === "qr-menu") {
+    pushCandidate(segments[2]);
+    pushCandidate(segments[1]);
+  } else if (segments.length === 1 && segments[0] !== "qr" && segments[0] !== "menu") {
+    pushCandidate(segments[0]);
+  }
+
+  try {
+    pushCandidate(window.localStorage.getItem("qr_last_identifier"));
+    pushCandidate(window.localStorage.getItem("restaurant_slug"));
+  } catch {}
+
+  const tryKeys = [];
+  candidates.forEach((id) => {
+    tryKeys.push(id, id.toLowerCase(), encodeURIComponent(id));
+  });
+
+  let customization = null;
+  let matchedIdentifier = "";
+  for (const key of tryKeys) {
+    if (!key) continue;
+    try {
+      const raw = window.localStorage.getItem(`qr-menu-branding-cache:${key}`);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        customization = parsed;
+        matchedIdentifier = key;
+        break;
+      }
+    } catch {}
+  }
+
+  const fallbackIdentifier = candidates[0] || matchedIdentifier;
+  const label =
+    String(
+      customization?.app_display_name ||
+        customization?.main_title ||
+        toDisplayNameFromIdentifier(fallbackIdentifier) ||
+        "Beypro"
+    ).trim() || "Beypro";
+  const logo = resolveBrandingAsset(
+    customization?.splash_logo ||
+      customization?.main_title_logo ||
+      customization?.apple_touch_icon ||
+      customization?.app_icon_192 ||
+      customization?.app_icon_512 ||
+      customization?.app_icon
+  );
+  const primary = String(customization?.pwa_primary_color || "#4F46E5").trim() || "#4F46E5";
+  const background =
+    String(customization?.pwa_background_color || "#6D28D9").trim() || "#6D28D9";
+
+  return { label, logo, primary, background };
+};
 
 export function useAuth() {
   return useContext(AuthContext);
@@ -14,6 +113,7 @@ export const AuthProvider = ({ children }) => {
   const [userSettings, setUserSettings] = useState({ roles: {} });
   const [loading, setLoading] = useState(true);
   const [initializing, setInitializing] = useState(true);
+  const [qrSplashBranding] = useState(() => readQrSplashBranding());
 
   useSetting("users", setUserSettings, { roles: {} });
 
@@ -196,8 +296,32 @@ useEffect(() => {
   return () => clearTimeout(timer);
 }, [userSettings]);
 
+  const shouldShowStartupSplash = initializing && !currentUser;
+  const isQrPublicRoute =
+    typeof window !== "undefined" && isPublicQrPath(window.location.pathname || "");
 
-  if (initializing && !currentUser) {
+  if (shouldShowStartupSplash) {
+    if (isQrPublicRoute) {
+      return (
+        <div
+          className="flex flex-col items-center justify-center h-screen text-white"
+          style={{
+            background: `linear-gradient(160deg, ${qrSplashBranding.primary} 0%, ${qrSplashBranding.background} 100%)`,
+          }}
+        >
+          {qrSplashBranding.logo ? (
+            <img
+              src={qrSplashBranding.logo}
+              alt={qrSplashBranding.label}
+              className="mb-4 h-24 w-24 rounded-2xl object-contain bg-white/20 p-2"
+            />
+          ) : null}
+          <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-white border-opacity-70"></div>
+          <p className="mt-4 text-sm opacity-80">Loading menu...</p>
+        </div>
+      );
+    }
+
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-br from-indigo-600 to-purple-700 text-white">
         <div className="text-4xl font-extrabold tracking-tight mb-4">Beypro</div>

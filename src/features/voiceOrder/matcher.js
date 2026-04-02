@@ -29,14 +29,14 @@ const SYNONYM_GROUPS = {
   fr: [["frites", "fries"], ["eau", "water"]],
 };
 
-const LANG_FALLBACK = "en";
+const LANG_FALLBACK = "tr";
 
 const normalizeLang = (lang) => {
   const raw = String(lang || "").toLowerCase().trim();
   if (raw.startsWith("tr")) return "tr";
   if (raw.startsWith("de")) return "de";
   if (raw.startsWith("fr")) return "fr";
-  return "en";
+  return "tr";
 };
 
 export const normalizeTR = (value) =>
@@ -223,7 +223,7 @@ function scoreAgainstTokens(normalizedQuery, queryTokens, targetName, targetToke
   return score;
 }
 
-export function scoreTextMatch(query, target, lang = "en") {
+export function scoreTextMatch(query, target, lang = "tr") {
   const normalizedQuery = normalizeSearchText(query);
   const normalizedTarget = normalizeSearchText(target);
   if (!normalizedQuery || !normalizedTarget) return 0;
@@ -240,7 +240,7 @@ export function scoreTextMatch(query, target, lang = "en") {
   );
 }
 
-export function buildProductSearchIndex(products = [], lang = "en") {
+export function buildProductSearchIndex(products = [], lang = "tr") {
   const synonymLookup = buildSynonymLookup(lang);
   const safeProducts = Array.isArray(products) ? products : [];
 
@@ -311,7 +311,7 @@ function collectCandidateIndexes(index, queryTokens) {
   return candidateIndexes;
 }
 
-export function createProductMatcher(products = [], lang = "en") {
+export function createProductMatcher(products = [], lang = "tr") {
   const index = buildProductSearchIndex(products, lang);
 
   const topCandidates = (queryName, options = {}) => {

@@ -10,6 +10,21 @@ import { useSetting } from "../components/hooks/useSetting";
 import { DEFAULT_TRANSACTION_SETTINGS } from "../constants/transactionSettingsDefaults";
 
 const KITCHEN_ORDER_TIMERS_KEY = "kitchenOrderTimers.v2";
+const TABLE_LIKE_ORDER_TYPES = new Set([
+  "table",
+  "reservation",
+  "dinein",
+  "dine_in",
+  "dine-in",
+]);
+const READY_LIKE_ORDER_TYPES = new Set(["packet", "phone", "online", "delivery"]);
+const VISIBLE_KITCHEN_ORDER_TYPES = new Set([
+  ...TABLE_LIKE_ORDER_TYPES,
+  ...READY_LIKE_ORDER_TYPES,
+  "takeaway",
+]);
+
+const normalizeOrderType = (value) => String(value || "").trim().toLowerCase();
 
 const getRestaurantScopedCacheKey = (suffix) => {
   const restaurantId =
@@ -108,19 +123,21 @@ export default function KitchenNew() {
 
       // Include table, packet, phone, takeaway and exclude delivered/null/empty
       const active = data.filter(
-        (item) =>
-          item.kitchen_status !== "delivered" &&
-          item.kitchen_status !== null &&
-          item.kitchen_status !== "" &&
-          ["table", "reservation", "packet", "phone", "takeaway"].includes(
-            String(item.order_type || "").toLowerCase()
-          )
+        (item) => {
+          const type = normalizeOrderType(item.order_type);
+          return (
+            item.kitchen_status !== "delivered" &&
+            item.kitchen_status !== null &&
+            item.kitchen_status !== "" &&
+            VISIBLE_KITCHEN_ORDER_TYPES.has(type)
+          );
+        }
       );
 
       // Fetch reservation info for table orders
       const withReservations = await Promise.all(
         active.map(async (item) => {
-          if (["table", "reservation"].includes(String(item.order_type).toLowerCase()) && item.order_id) {
+          if (TABLE_LIKE_ORDER_TYPES.has(normalizeOrderType(item.order_type)) && item.order_id) {
             try {
               const resData = await secureFetch(`/orders/reservations/${item.order_id}`);
               if (resData?.success && resData?.reservation) {
@@ -328,8 +345,7 @@ export default function KitchenNew() {
     if (activeTab === "new") {
       // Filter for Table orders only
       return groupedOrders.filter((order) => {
-        const type = String(order.order_type || "").toLowerCase();
-        return type === "table" || type === "reservation";
+        return TABLE_LIKE_ORDER_TYPES.has(normalizeOrderType(order.order_type));
       });
     }
     if (activeTab === "cooking") {
@@ -340,8 +356,7 @@ export default function KitchenNew() {
     if (activeTab === "ready") {
       // Filter for Packet (online) orders and Phone orders
       return groupedOrders.filter((order) => {
-        const type = String(order.order_type || "").toLowerCase();
-        return type === "packet" || type === "phone";
+        return READY_LIKE_ORDER_TYPES.has(normalizeOrderType(order.order_type));
       });
     }
     return groupedOrders;
@@ -418,8 +433,8 @@ export default function KitchenNew() {
       });
 
       for (const order of uniqueOrders.values()) {
-        const orderType = String(order?.order_type || "").trim().toLowerCase();
-        if (!["table", "reservation"].includes(orderType)) continue;
+        const orderType = normalizeOrderType(order?.order_type);
+        if (!TABLE_LIKE_ORDER_TYPES.has(orderType)) continue;
 
         const orderId = Number(order?.order_id);
         const tableNumber = Number(order?.table_number);
@@ -752,7 +767,8 @@ function OrderCard({
   safeParse,
   t,
 }) {
-  const type = String(order.order_type || "").toLowerCase();
+  const type = normalizeOrderType(order.order_type);
+  const isTableLikeOrder = TABLE_LIKE_ORDER_TYPES.has(type);
   const headerCheckboxRef = useRef(null);
   const ONLINE_SOURCE_DISPLAY_NAMES = {
     yemeksepeti: "Yemeksepeti",
@@ -802,7 +818,7 @@ function OrderCard({
   };
 
   const orderLabel = (() => {
-    if (type === "table" || type === "reservation") return `${t("Table")} ${order.table_number}`;
+    if (isTableLikeOrder) return `${t("Table")} ${order.table_number}`;
     if (type === "packet") {
       const onlineLabel = resolveOnlineSourceLabelFromOrder(order);
       return onlineLabel || t("Packet");
@@ -843,7 +859,7 @@ function OrderCard({
       </div>
 
       {/* Client Info (delivery / takeaway / phone) */}
-      {!["table", "reservation"].includes(type) && (order.customer_name || order.customer_phone || order.customer_address) && (
+      {!isTableLikeOrder && (order.customer_name || order.customer_phone || order.customer_address) && (
         <div className="mb-3 text-xs text-gray-700 dark:text-gray-200 space-y-1">
           {order.customer_name && (
             <div className="font-semibold truncate">👤 {order.customer_name}</div>

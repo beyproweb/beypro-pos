@@ -17,6 +17,10 @@ import {
   isReservationConfirmedForCheckin,
 } from "../../utils/reservationStatus";
 import { normalizeOrderStatus } from "./tableVisuals";
+import {
+  getTableDensityLayout,
+  normalizeTableDensity,
+} from "./tableDensity";
 
 const AREA_FILTER_ALL = "ALL";
 const AREA_FILTER_RESERVED = "__RESERVED__";
@@ -282,6 +286,7 @@ function TablesView({
   onApproveSongRequest,
   onCompleteSongRequest,
   onCancelSongRequest,
+  tableDensity = "comfortable",
 }) {
   const renderCount = useRenderCount("TableList", { logEvery: 1 });
   const onTableListProfileRender = React.useMemo(() => createProfilerOnRender("TableList"), []);
@@ -293,6 +298,14 @@ function TablesView({
   const [bookingDateFrom, setBookingDateFrom] = React.useState(() => formatDateInputValue(new Date()));
   const [bookingDateTo, setBookingDateTo] = React.useState(() => formatDateInputValue(new Date()));
   const [bookingActionSubmittingKey, setBookingActionSubmittingKey] = React.useState("");
+  const normalizedTableDensity = React.useMemo(
+    () => normalizeTableDensity(tableDensity),
+    [tableDensity]
+  );
+  const tableDensityLayout = React.useMemo(
+    () => getTableDensityLayout(normalizedTableDensity),
+    [normalizedTableDensity]
+  );
   const isActiveReservationFallback = React.useCallback((table) => {
     const fallback = table?.reservationFallback;
     if (!fallback || typeof fallback !== "object") return false;
@@ -646,9 +659,10 @@ function TablesView({
   const mergedCardProps = React.useMemo(
     () => ({
       ...cardProps,
+      tableDensity: normalizedTableDensity,
       getTablePrepMeta: tableTimers.getTablePrepMeta,
     }),
-    [cardProps, tableTimers.getTablePrepMeta]
+    [cardProps, normalizedTableDensity, tableTimers.getTablePrepMeta]
   );
 
   const handleAreaSelect = React.useCallback(
@@ -677,7 +691,7 @@ function TablesView({
   const handleAreaTabClick = React.useCallback(
     (area) => {
       handleAreaSelect(area);
-      requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
         scrollAreaTabIntoView(area);
       });
     },
@@ -1277,9 +1291,14 @@ function TablesView({
           items={visibleTables}
           renderItem={renderTable}
           itemKey={getTableKey}
-          estimatedItemHeight={345}
+          estimatedItemHeight={tableDensityLayout.estimatedItemHeight}
           overscan={6}
-          className="w-full flex justify-center px-4 sm:px-8"
+          className={tableDensityLayout.gridWrapperClassName}
+          minColumnWidth={tableDensityLayout.minColumnWidth}
+          maxColumns={tableDensityLayout.maxColumns}
+          columnGap={tableDensityLayout.columnGap}
+          rowGap={tableDensityLayout.rowGap}
+          containerMaxWidth={tableDensityLayout.containerMaxWidth}
         />
       ) : null}
       </div>
@@ -1316,7 +1335,8 @@ const areTablesViewPropsEqual = (prevProps, nextProps) => {
     prevProps.songRequestUpdatingId === nextProps.songRequestUpdatingId &&
     prevProps.onApproveSongRequest === nextProps.onApproveSongRequest &&
     prevProps.onCompleteSongRequest === nextProps.onCompleteSongRequest &&
-    prevProps.onCancelSongRequest === nextProps.onCancelSongRequest;
+    prevProps.onCancelSongRequest === nextProps.onCancelSongRequest &&
+    prevProps.tableDensity === nextProps.tableDensity;
 
   if (!isEqual) {
     logMemoDiff({
@@ -1352,6 +1372,7 @@ const areTablesViewPropsEqual = (prevProps, nextProps) => {
         "onApproveSongRequest",
         "onCompleteSongRequest",
         "onCancelSongRequest",
+        "tableDensity",
       ],
     });
   }

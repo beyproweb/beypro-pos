@@ -41,9 +41,19 @@ function HeaderDrawer({
   languageControl = null,
   hasOrderStatus = false,
   onOpenOrderStatus = null,
+  onRequestAuthView = null,
 }) {
   const storage = typeof window !== "undefined" ? window.localStorage : null;
-  const { customer, isLoggedIn, login, register, logout, updateProfile } = useCustomerAuth(storage);
+  const fetcher = React.useCallback(
+    async (path, options = undefined) => {
+      const withIdentifier = typeof appendIdentifier === "function" ? appendIdentifier(path) : path;
+      return secureFetch(withIdentifier, options);
+    },
+    [appendIdentifier]
+  );
+  const { customer, isLoggedIn, login, register, logout, updateProfile } = useCustomerAuth(storage, {
+    fetcher,
+  });
 
   const [view, setView] = React.useState(VIEW_MENU);
   const [orders, setOrders] = React.useState([]);
@@ -68,12 +78,15 @@ function HeaderDrawer({
     }
   }, [view]);
 
-  const fetcher = React.useCallback(
-    async (path) => {
-      const withIdentifier = typeof appendIdentifier === "function" ? appendIdentifier(path) : path;
-      return secureFetch(withIdentifier);
+  const openAuthView = React.useCallback(
+    (nextView = VIEW_LOGIN) => {
+      if (typeof onRequestAuthView === "function") {
+        onRequestAuthView(nextView);
+        return;
+      }
+      setView(nextView);
     },
-    [appendIdentifier]
+    [onRequestAuthView]
   );
 
   const loadOrders = React.useCallback(async () => {
@@ -103,7 +116,7 @@ function HeaderDrawer({
 
   const onOpenOrders = () => {
     if (!isLoggedIn) {
-      setView(VIEW_LOGIN);
+      openAuthView(VIEW_LOGIN);
       return;
     }
     setView(VIEW_ORDERS);
@@ -123,12 +136,12 @@ function HeaderDrawer({
       return;
     }
 
-    setView(VIEW_LOGIN);
+    openAuthView(VIEW_LOGIN);
   };
 
   const onOpenProfile = () => {
     if (!isLoggedIn) {
-      setView(VIEW_LOGIN);
+      openAuthView(VIEW_LOGIN);
       return;
     }
     setView(VIEW_PROFILE);
@@ -137,6 +150,7 @@ function HeaderDrawer({
   const onLogin = async (payload) => {
     await login(payload);
     setView(VIEW_MENU);
+    onClose?.();
   };
 
   const onRegister = async (payload) => {
@@ -175,7 +189,7 @@ function HeaderDrawer({
               {isLoggedIn ? customer?.username || customer?.email : t("Guest")}
             </div>
             <div className="text-xs text-gray-500 dark:text-neutral-400 truncate">
-              {isLoggedIn ? customer?.email : t("Login to sync profile and orders")}
+              {isLoggedIn ? customer?.phone || customer?.email : t("Login to sync profile and orders")}
             </div>
           </div>
 
@@ -285,7 +299,7 @@ function HeaderDrawer({
             icon={LogIn}
             label={t("Login / Register")}
             description={t("Access your account")}
-            onClick={() => setView(VIEW_LOGIN)}
+            onClick={() => openAuthView(VIEW_LOGIN)}
           />
         )}
 

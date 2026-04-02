@@ -8,6 +8,7 @@ import useQrMenuCart from "./useQrMenuCart";
 import useQrMenuCheckout from "./useQrMenuCheckout";
 import useQrMenuStorage from "./useQrMenuStorage";
 import { hasConcertBookingContext } from "../../../utils/reservationStatus";
+import { DEFAULT_LANGUAGE, resolvePreferredLanguage } from "../../../utils/language";
 
 const QR_MENU_BRANDING_CACHE_PREFIX = "qr-menu-branding-cache:";
 const QR_MENU_BRANDING_UPDATED_EVENT = "qr:branding-cache-updated";
@@ -610,6 +611,8 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
     setShowHelp,
     platform,
     setPlatform,
+    isIosSafariBrowser,
+    isIosInAppBrowser,
     showQrPrompt,
     setShowQrPrompt,
     qrPromptMode,
@@ -896,12 +899,11 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
   const [qrVoiceLogId, setQrVoiceLogId] = useState(null);
   const qrVoiceRecognitionRef = useRef(null);
   const qrVoiceLanguage = useMemo(() => {
-    const stored =
-      storage.getItem("beyproGuestLanguage") ||
-      storage.getItem("beyproLanguage") ||
-      lang ||
-      "en";
-    return String(stored).split("-")[0] || "en";
+    return resolvePreferredLanguage({
+      storage,
+      preferred: lang,
+      fallback: DEFAULT_LANGUAGE,
+    });
   }, [lang]);
   const getQrSpeechRecognition = useCallback(() => {
     if (qrVoiceRecognitionRef.current !== null) return qrVoiceRecognitionRef.current;
@@ -3310,6 +3312,8 @@ function handleReset(options = null) {
     setShowHelp,
     platform,
     setPlatform,
+    isIosSafariBrowser,
+    isIosInAppBrowser,
     brandName,
     setBrandName,
     table,

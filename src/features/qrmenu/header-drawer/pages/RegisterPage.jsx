@@ -122,16 +122,16 @@ function RegisterPage({ t, onRegister, onGoLogin, onBack, accentColor = "#111827
               type="email"
               value={form.email}
               onChange={(e) => onChange("email", e.target.value)}
-              placeholder={t("Email")}
+              placeholder={t("Email (optional)")}
               className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:border-neutral-600"
               autoComplete="email"
             />
             <input
               value={form.username}
               onChange={(e) => onChange("username", e.target.value)}
-              placeholder={t("Username")}
+              placeholder={t("Full name")}
               className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:border-neutral-600"
-              autoComplete="username"
+              autoComplete="name"
             />
             <input
               value={form.phone}
@@ -143,7 +143,7 @@ function RegisterPage({ t, onRegister, onGoLogin, onBack, accentColor = "#111827
             <input
               value={form.address}
               onChange={(e) => onChange("address", e.target.value)}
-              placeholder={t("Address")}
+              placeholder={t("Address (optional)")}
               className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:border-neutral-600"
               autoComplete="street-address"
             />

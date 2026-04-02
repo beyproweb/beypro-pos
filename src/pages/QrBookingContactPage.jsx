@@ -22,17 +22,7 @@ import {
   formatQrPhoneForInput,
   normalizeQrPhone,
 } from "../features/floorPlan/utils/bookingRules";
-
-function getStorage() {
-  if (typeof window !== "undefined" && window.localStorage) {
-    return window.localStorage;
-  }
-  return {
-    getItem: () => null,
-    setItem: () => {},
-    removeItem: () => {},
-  };
-}
+import { createQrScopedStorage } from "../features/qrmenu/utils/createQrScopedStorage";
 
 function Field({ label, error = "", children }) {
   return (
@@ -85,9 +75,6 @@ export default function QrBookingContactPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { slug, id, concertId } = useParams();
-  const storage = React.useMemo(() => getStorage(), []);
-  const { customer, isLoggedIn, login, register, updateProfile } = useCustomerAuth(storage);
-  const savedPrefill = React.useMemo(() => getCheckoutPrefill(storage), [storage]);
   const editRequested = React.useMemo(() => {
     const params = new URLSearchParams(location.search);
     return params.get("edit") === "1";
@@ -96,6 +83,26 @@ export default function QrBookingContactPage() {
     () => resolvePublicBookingIdentifier({ slug, id, search: location.search }),
     [id, location.search, slug]
   );
+  const storage = React.useMemo(() => createQrScopedStorage(identifier), [identifier]);
+  const customerAuthFetcher = React.useCallback(
+    async (path, options = undefined) => {
+      const rawPath = String(path || "");
+      if (!identifier || rawPath.includes("identifier=")) {
+        return secureFetch(rawPath, options);
+      }
+      const separator = rawPath.includes("?") ? "&" : "?";
+      return secureFetch(
+        `${rawPath}${separator}identifier=${encodeURIComponent(identifier)}`,
+        options
+      );
+    },
+    [identifier]
+  );
+  const { customer, isLoggedIn, login, register, updateProfile } = useCustomerAuth(storage, {
+    fetcher: customerAuthFetcher,
+  });
+  const isLoggedInEffective = Boolean(isLoggedIn || customer?.id);
+  const [savedPrefill, setSavedPrefill] = React.useState(() => getCheckoutPrefill(storage));
   const menuPath = React.useMemo(
     () => buildPublicMenuPath({ pathname: location.pathname, slug, id, search: location.search }),
     [id, location.pathname, location.search, slug]
@@ -129,7 +136,7 @@ export default function QrBookingContactPage() {
     password: "",
   });
   const [loginForm, setLoginForm] = React.useState({
-    login: savedPrefill?.email || "",
+    login: savedPrefill?.email || formatQrPhoneForInput(savedPrefill?.phone || ""),
     password: "",
   });
   const [paymentForm, setPaymentForm] = React.useState({
@@ -138,6 +145,20 @@ export default function QrBookingContactPage() {
   });
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
+
+  const translateAuthError = React.useCallback(
+    (nextError) => {
+      const message = String(nextError?.message || "").trim();
+      if (!message) return t("Registration failed");
+
+      const translatableMessages = new Set([
+        "No account found for this phone number or email. Please register.",
+      ]);
+
+      return translatableMessages.has(message) ? t(message) : message;
+    },
+    [t]
+  );
 
   React.useEffect(() => {
     let cancelled = false;
@@ -176,35 +197,93 @@ export default function QrBookingContactPage() {
   };
 
   React.useEffect(() => {
-    if (!isLoggedIn) {
+    setSavedPrefill(getCheckoutPrefill(storage));
+  }, [
+    customer?.address,
+    customer?.email,
+    customer?.id,
+    customer?.phone,
+    customer?.updatedAt,
+    customer?.username,
+    storage,
+  ]);
+
+  React.useEffect(() => {
+    if (!isLoggedInEffective) {
       setIsEditMode(false);
       return;
     }
     if (editRequested) {
       setIsEditMode(true);
     }
-  }, [editRequested, isLoggedIn]);
+  }, [editRequested, isLoggedInEffective]);
 
   React.useEffect(() => {
-    setRegisterForm((prev) => ({
-      ...prev,
-      name: customer?.username || savedPrefill?.name || prev.name,
-      phone:
-        prev.phone || formatQrPhoneForInput(customer?.phone || savedPrefill?.phone || ""),
-      email: customer?.email || savedPrefill?.email || prev.email,
-      address: customer?.address || savedPrefill?.address || prev.address,
-    }));
-  }, [customer?.address, customer?.email, customer?.phone, customer?.username, savedPrefill]);
+    const nextName = customer?.username || savedPrefill?.name || "";
+    const nextPhone = formatQrPhoneForInput(customer?.phone || savedPrefill?.phone || "");
+    const nextEmail = customer?.email || savedPrefill?.email || "";
+    const nextAddress = customer?.address || savedPrefill?.address || "";
+
+    setRegisterForm((prev) =>
+      isLoggedInEffective
+        ? {
+            ...prev,
+            name: nextName,
+            phone: nextPhone,
+            email: nextEmail,
+            address: nextAddress,
+          }
+        : {
+            ...prev,
+            name: prev.name || nextName,
+            phone: prev.phone || nextPhone,
+            email: prev.email || nextEmail,
+            address: prev.address || nextAddress,
+          }
+    );
+  }, [
+    customer?.address,
+    customer?.email,
+    customer?.phone,
+    customer?.username,
+    isLoggedInEffective,
+    savedPrefill?.address,
+    savedPrefill?.email,
+    savedPrefill?.name,
+    savedPrefill?.phone,
+  ]);
+
+  React.useEffect(() => {
+    if (isLoggedInEffective) return;
+    const nextLogin = savedPrefill?.email || formatQrPhoneForInput(savedPrefill?.phone || "");
+    if (!nextLogin) return;
+    setLoginForm((prev) => (prev.login ? prev : { ...prev, login: nextLogin }));
+  }, [isLoggedInEffective, savedPrefill?.email, savedPrefill?.phone]);
+
+  React.useEffect(() => {
+    const nextMethod = savedPrefill?.payment_method || "bank_transfer";
+    const nextReference = savedPrefill?.bank_reference || "";
+    setPaymentForm((prev) =>
+      prev.payment_method === nextMethod && prev.bank_reference === nextReference
+        ? prev
+        : {
+            ...prev,
+            payment_method: nextMethod,
+            bank_reference: nextReference,
+          }
+    );
+  }, [savedPrefill?.bank_reference, savedPrefill?.payment_method]);
 
   const registerPhone = normalizeQrPhone(registerForm.phone);
   const registerErrors = {
     name: registerForm.name.trim() ? "" : t("Please enter your name."),
     phone: QR_PHONE_REGEX.test(registerPhone) ? "" : t("Please enter a valid phone number."),
     email:
-      registerForm.email.trim() && EMAIL_REGEX.test(registerForm.email.trim().toLowerCase())
-        ? ""
-        : t("Please enter a valid email address."),
-    address: registerForm.address.trim() ? "" : t("Please enter your address."),
+      registerForm.email.trim() &&
+      !EMAIL_REGEX.test(registerForm.email.trim().toLowerCase())
+        ? t("Please enter a valid email address.")
+        : "",
+    address: "",
     password: registerForm.password.trim() ? "" : t("Please enter your password."),
   };
   const profileErrors = {
@@ -214,7 +293,10 @@ export default function QrBookingContactPage() {
     address: registerErrors.address,
   };
   const loginErrors = {
-    login: loginForm.login.trim() ? "" : t("Please enter your credentials."),
+    login:
+      normalizeQrPhone(loginForm.login) || EMAIL_REGEX.test(loginForm.login.trim().toLowerCase())
+        ? ""
+        : t("Please enter a valid phone number or email."),
     password: loginForm.password.trim() ? "" : t("Please enter your credentials."),
   };
 
@@ -226,14 +308,14 @@ export default function QrBookingContactPage() {
     setError("");
     setLoading(true);
     try {
-      const account = isLoggedIn && isEditMode
+      const account = isLoggedInEffective && isEditMode
         ? await updateProfile({
             username: registerForm.name,
             phone: registerPhone,
             email: registerForm.email,
             address: registerForm.address,
           })
-        : isLoggedIn
+        : isLoggedInEffective
         ? customer
         : mode === "login"
           ? await login({
@@ -262,7 +344,7 @@ export default function QrBookingContactPage() {
 
       navigate(bookingPath, { replace: true });
     } catch (nextError) {
-      setError(nextError?.message || t("Registration failed"));
+      setError(translateAuthError(nextError));
     } finally {
       setLoading(false);
     }
@@ -277,7 +359,7 @@ export default function QrBookingContactPage() {
     paymentForm.payment_method,
     customer,
     isEditMode,
-    isLoggedIn,
+    isLoggedInEffective,
     register,
     registerForm.address,
     registerForm.email,
@@ -287,12 +369,13 @@ export default function QrBookingContactPage() {
     savedPrefill?.address,
     storage,
     t,
+    translateAuthError,
     updateProfile,
   ]);
 
-  const actionDisabled = isLoggedIn && isEditMode
+  const actionDisabled = isLoggedInEffective && isEditMode
     ? loading || Boolean(profileErrors.name || profileErrors.phone || profileErrors.email || profileErrors.address)
-    : isLoggedIn
+    : isLoggedInEffective
     ? loading
     : loading ||
       (mode === "login"
@@ -316,17 +399,23 @@ export default function QrBookingContactPage() {
       onBack={handleBack}
       accentColor={accentColor}
       showHeaderIndicator={false}
-      actionLabel={loading ? t("Saving...") : isLoggedIn && isEditMode ? t("Save changes") : t("Continue to Booking")}
+      actionLabel={
+        loading
+          ? t("Saving...")
+          : isLoggedInEffective && isEditMode
+          ? t("Save changes")
+          : t("Continue to Booking")
+      }
       actionHelper={t("Secure this booking with your saved profile.")}
       onAction={handleContinue}
       actionDisabled={actionDisabled}
     >
       <BookingSection
         step={1}
-        title={isLoggedIn ? (isEditMode ? t("Profile") : t("Registered User")) : t("Account")}
-        description={isLoggedIn && !isEditMode ? "" : t("Create your booking profile")}
+        title={isLoggedInEffective ? (isEditMode ? t("Profile") : t("Registered User")) : t("Account")}
+        description={isLoggedInEffective && !isEditMode ? "" : t("Create your booking profile")}
       >
-        {isLoggedIn && !isEditMode ? (
+        {isLoggedInEffective && !isEditMode ? (
           <RegisteredCustomerBadge
             customer={{
               username: customer?.username || savedPrefill?.name,
@@ -338,7 +427,7 @@ export default function QrBookingContactPage() {
           />
         ) : (
           <div className="space-y-4">
-            {!isLoggedIn ? (
+            {!isLoggedInEffective ? (
               <div className="inline-flex rounded-full border border-neutral-200 bg-white p-1 dark:border-neutral-800 dark:bg-neutral-950">
                 <button
                   type="button"
@@ -369,15 +458,16 @@ export default function QrBookingContactPage() {
               </div>
             ) : null}
 
-            {!isLoggedIn && mode === "login" ? (
+            {!isLoggedInEffective && mode === "login" ? (
               <div className="grid gap-4">
-                <Field label={t("Email or username")} error={loginErrors.login}>
+                <Field label={t("Phone or Email")} error={loginErrors.login}>
                   <input
                     type="text"
                     value={loginForm.login}
                     onChange={(event) =>
                       setLoginForm((prev) => ({ ...prev, login: event.target.value }))
                     }
+                    placeholder={t("Phone number or email")}
                     className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50"
                   />
                 </Field>
@@ -414,7 +504,7 @@ export default function QrBookingContactPage() {
                     className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50"
                   />
                 </Field>
-                <Field label={t("Email")} error={profileErrors.email}>
+                <Field label={t("Email (optional)")} error={profileErrors.email}>
                   <input
                     type="email"
                     value={registerForm.email}
@@ -424,7 +514,7 @@ export default function QrBookingContactPage() {
                     className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50"
                   />
                 </Field>
-                {!isLoggedIn ? (
+                {!isLoggedInEffective ? (
                   <Field label={t("Password")} error={registerErrors.password}>
                     <input
                       type="password"
@@ -437,7 +527,7 @@ export default function QrBookingContactPage() {
                   </Field>
                 ) : null}
                 <div className="sm:col-span-2">
-                  <Field label={t("Address")} error={profileErrors.address}>
+                  <Field label={t("Address (optional)")} error={profileErrors.address}>
                     <input
                       type="text"
                       value={registerForm.address}

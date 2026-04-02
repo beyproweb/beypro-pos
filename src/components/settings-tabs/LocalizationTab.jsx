@@ -4,6 +4,12 @@ import { useTranslation } from "react-i18next";
 import secureFetch from "../../utils/secureFetch";
 import { CURRENCY_KEYS } from "../../utils/currency";
 import { useCurrency } from "../../context/CurrencyContext";
+import {
+  DEFAULT_LANGUAGE,
+  normalizeLanguageCode,
+  persistLanguage,
+  resolvePreferredLanguage,
+} from "../../utils/language";
 const languageOptions = [
   { label: "English", code: "en" },
   { label: "Turkish", code: "tr" },
@@ -11,46 +17,26 @@ const languageOptions = [
   { label: "French", code: "fr" },
 ];
 
-function normalizeLanguageCode(raw) {
-  if (!raw) return null;
-  const normalized = String(raw).trim();
-  if (!normalized) return null;
-  const lower = normalized.toLowerCase();
-  const mapped =
-    lower === "english"
-      ? "en"
-      : lower === "turkish"
-        ? "tr"
-        : lower === "german"
-          ? "de"
-          : lower === "french"
-            ? "fr"
-            : lower.split("-")[0];
-  return languageOptions.some((opt) => opt.code === mapped) ? mapped : null;
-}
-
 export default function LocalizationTab() {
   const { t, i18n } = useTranslation();
   const { currencyKey, setCurrencyKey, config } = useCurrency();
-  const [language, setLanguage] = useState("English");
+  const [language, setLanguage] = useState("Turkish");
   const [currency, setCurrency] = useState(currencyKey || "₺ TRY");
 
   // ✅ Load current localization settings
   useEffect(() => {
     secureFetch("/settings/localization")
       .then((data) => {
-        const nextLangCode = normalizeLanguageCode(data?.language);
-        if (nextLangCode) {
-          const langLabel =
-            languageOptions.find((opt) => opt.code === nextLangCode)?.label ||
-            "English";
-          setLanguage(langLabel);
-          i18n.changeLanguage(nextLangCode);
-          try {
-            localStorage.setItem("beyproLanguage", nextLangCode);
-            localStorage.setItem("beyproGuestLanguage", nextLangCode);
-          } catch {}
-        }
+        const nextLangCode = resolvePreferredLanguage({
+          storage: localStorage,
+          preferred: normalizeLanguageCode(data?.language),
+        });
+        const langLabel =
+          languageOptions.find((opt) => opt.code === nextLangCode)?.label ||
+          "Turkish";
+        setLanguage(langLabel);
+        i18n.changeLanguage(nextLangCode);
+        persistLanguage(nextLangCode, localStorage);
         if (data.currency) {
           setCurrency(data.currency);
           setCurrencyKey(data.currency);
@@ -64,7 +50,7 @@ export default function LocalizationTab() {
   // ✅ Save changes
   const handleSave = async () => {
     const selectedLang =
-      languageOptions.find((opt) => opt.label === language)?.code || "en";
+      languageOptions.find((opt) => opt.label === language)?.code || DEFAULT_LANGUAGE;
 
     try {
       await secureFetch(`/settings/localization`, {
@@ -74,10 +60,7 @@ export default function LocalizationTab() {
 
       i18n.changeLanguage(selectedLang); // apply immediately
       setCurrencyKey(currency); // apply currency immediately
-      try {
-        localStorage.setItem("beyproLanguage", selectedLang);
-        localStorage.setItem("beyproGuestLanguage", selectedLang);
-      } catch {}
+      persistLanguage(selectedLang, localStorage);
       toast.success(`✅ ${t("Localization saved successfully!")}`);
     } catch (err) {
       console.error("❌ Failed to save localization:", err);
@@ -104,13 +87,10 @@ export default function LocalizationTab() {
               const selectedLabel = e.target.value;
               const selectedLang =
                 languageOptions.find((opt) => opt.label === selectedLabel)?.code ||
-                "en";
+                DEFAULT_LANGUAGE;
               setLanguage(selectedLabel);
               i18n.changeLanguage(selectedLang);
-              try {
-                localStorage.setItem("beyproLanguage", selectedLang);
-                localStorage.setItem("beyproGuestLanguage", selectedLang);
-              } catch {}
+              persistLanguage(selectedLang, localStorage);
             }}
             className="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-400 focus:outline-none"
           >

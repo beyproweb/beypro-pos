@@ -59,7 +59,10 @@ import StandaloneStaffApp from "./pages/standalone/StandaloneStaffApp";
 import { setNavigator } from "./utils/navigation";
 import { NotificationsProvider, useNotifications } from "./context/NotificationsContext";
 import { PlanModulesProvider } from "./context/PlanModulesContext";
-import { isPublicShellPath, isStandalonePath } from "./utils/routeScope";
+import { isPublicQrPath, isPublicShellPath, isStandalonePath } from "./utils/routeScope";
+import IosInstallPrompt from "./components/pwa/IosInstallPrompt";
+import useIosInstallPrompt from "./hooks/useIosInstallPrompt";
+import { isInStandaloneMode, isIos } from "./utils/pwaMode";
 
 
 const SETTINGS_TAB_PERMISSIONS = {
@@ -194,6 +197,13 @@ function AppShell() {
   } = useNotifications();
   const location = useLocation();
   const hideBell = ["/login"].includes(location.pathname);
+  const {
+    shouldShow: shouldShowIosInstallPrompt,
+    isInAppBrowser,
+    dismiss: dismissIosInstallPrompt,
+    dontShowAgain: neverShowIosInstallPrompt,
+  } = useIosInstallPrompt();
+  const hideIosPromptForPath = isPublicQrPath(location.pathname);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -225,9 +235,48 @@ function AppShell() {
     return () => window.removeEventListener("click", unlock);
   }, []);
 
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+
+    const applyDisplayModeClasses = () => {
+      const iosDevice = isIos();
+      const standalone = isInStandaloneMode();
+      document.documentElement.classList.toggle("ios-device", iosDevice);
+      document.documentElement.classList.toggle("ios-standalone", iosDevice && standalone);
+      document.documentElement.classList.toggle("ios-browser", iosDevice && !standalone);
+      document.documentElement.classList.toggle("app-display-standalone", standalone);
+    };
+
+    applyDisplayModeClasses();
+    const mediaQuery =
+      typeof window.matchMedia === "function"
+        ? window.matchMedia("(display-mode: standalone)")
+        : null;
+
+    if (mediaQuery) {
+      if (typeof mediaQuery.addEventListener === "function") {
+        mediaQuery.addEventListener("change", applyDisplayModeClasses);
+      } else if (typeof mediaQuery.addListener === "function") {
+        mediaQuery.addListener(applyDisplayModeClasses);
+      }
+    }
+    window.addEventListener("pageshow", applyDisplayModeClasses);
+
+    return () => {
+      if (mediaQuery) {
+        if (typeof mediaQuery.removeEventListener === "function") {
+          mediaQuery.removeEventListener("change", applyDisplayModeClasses);
+        } else if (typeof mediaQuery.removeListener === "function") {
+          mediaQuery.removeListener(applyDisplayModeClasses);
+        }
+      }
+      window.removeEventListener("pageshow", applyDisplayModeClasses);
+    };
+  }, []);
+
   return (
-    <div className="h-screen w-full">
-      <div className="h-full w-full">
+    <div className="app-shell-root">
+      <div className="app-shell-content">
         <Routes>
             {/* STANDALONE: QR Menu + Kitchen */}
             <Route path="/standalone" element={<Navigate to="/standalone/app" replace />} />
@@ -465,6 +514,12 @@ function AppShell() {
               <Route path="unauthorized" element={<div className="p-10 text-red-600 text-xl">❌ Access Denied</div>} />
             </Route>
         </Routes>
+        <IosInstallPrompt
+          open={shouldShowIosInstallPrompt && !hideIosPromptForPath}
+          isInAppBrowser={isInAppBrowser}
+          onDismiss={dismissIosInstallPrompt}
+          onDontShowAgain={neverShowIosInstallPrompt}
+        />
       </div>
     </div>
   );

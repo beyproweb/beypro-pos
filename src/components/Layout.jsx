@@ -426,7 +426,7 @@ export default function Layout({
   }, [isSidebarOpen]);
 
   return (
-    <div className="w-screen h-screen overflow-hidden flex bg-slate-50 dark:bg-zinc-950 transition-colors">
+    <div className="w-full h-full overflow-hidden flex bg-slate-50 dark:bg-zinc-950 transition-colors">
       {isSidebarOpen && (
         <>
           <div
@@ -440,7 +440,7 @@ export default function Layout({
 
       {/* Main content area */}
       <div
-        className="flex-1 flex flex-col h-screen transition-all duration-300 ease-in-out w-full min-w-0"
+        className="flex-1 flex flex-col h-full transition-all duration-300 ease-in-out w-full min-w-0"
       >
         {/* ModernHeader with notification bell in rightContent */}
         <ModernHeader
@@ -461,11 +461,11 @@ export default function Layout({
         {/* Page content */}
         <main
           ref={contentRef}
-          className={`flex-1 min-h-0 w-full px-0 sm:px-0 py-4 bg-slate-50 dark:bg-zinc-950 transition-colors ${
+          className={`ios-safe-main flex-1 min-h-0 w-full px-0 sm:px-0 py-4 bg-slate-50 dark:bg-zinc-950 transition-colors ${
             location.pathname.includes("/transaction") ? "overflow-hidden" : "overflow-y-auto"
           }`}
         >
-          <div className="max-w-full min-h-[calc(100vh-70px)]">
+          <div className="max-w-full min-h-full">
             <Outlet
               key={`${location.pathname}${location.search}`}
               context={{ isSidebarOpen }}
@@ -493,7 +493,7 @@ export default function Layout({
       </div>
 {bellOpen && (
   <div className="
-    fixed top-0 right-0 z-[9999] h-full w-full sm:w-[390px]
+    ios-safe-fixed-panel fixed top-0 right-0 z-[9999] h-full w-full sm:w-[390px]
     bg-gradient-to-br from-blue-950/90 via-blue-900/80 to-slate-900/95
     shadow-2xl border-l-4 border-blue-500/40 flex flex-col
     backdrop-blur-lg animate-in slide-in-from-right-8 duration-200

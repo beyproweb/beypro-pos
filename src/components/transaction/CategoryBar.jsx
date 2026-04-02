@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { normalizeTableDensity, TABLE_DENSITY } from "../../features/tables/tableDensity";
 
 const CategoryBar = ({
   categoryColumns,
@@ -9,10 +10,15 @@ const CategoryBar = ({
   onScrollRight,
   disabled,
   placement = "top",
+  tableDensity = TABLE_DENSITY.COMFORTABLE,
 }) => {
   if (!categoryColumns?.top?.length) return null;
 
   const isRight = placement === "right";
+  const normalizedDensity = normalizeTableDensity(tableDensity);
+  const isCompactMode =
+    normalizedDensity === TABLE_DENSITY.COMPACT ||
+    normalizedDensity === TABLE_DENSITY.DENSE;
   const scrollElRef = useRef(null);
 
   // Keep parent ref working while also retaining an internal ref.
@@ -61,8 +67,11 @@ const CategoryBar = ({
     const el = scrollElRef.current;
     let resizeObserver = null;
     
-    if (el && typeof ResizeObserver !== 'undefined') {
-      resizeObserver = new ResizeObserver(() => {
+    const ResizeObserverCtor =
+      typeof window !== "undefined" ? window.ResizeObserver : undefined;
+
+    if (el && typeof ResizeObserverCtor !== "undefined") {
+      resizeObserver = new ResizeObserverCtor(() => {
         syncScrollMetrics();
       });
       resizeObserver.observe(el);
@@ -118,9 +127,11 @@ const CategoryBar = ({
   );
 
   const containerClasses = isRight
-    ? `group relative flex h-full min-h-0 w-full flex-col rounded-[26px] border border-slate-200/60 bg-gradient-to-b from-white/90 to-slate-50/70 p-2 shadow-[0_18px_45px_rgba(15,23,42,0.10)] dark:border-slate-700/40 dark:from-slate-900/60 dark:to-slate-950/40 transition-opacity duration-200 ${
-        disabled ? "opacity-50 pointer-events-none" : "opacity-100"
-      }`
+    ? `group relative flex h-full min-h-0 w-full flex-col transition-opacity duration-200 ${
+        isCompactMode
+          ? "rounded-xl border border-slate-200/70 bg-white/80 p-2 shadow-none dark:border-slate-700/60 dark:bg-slate-950/40"
+          : "rounded-[26px] border border-slate-200/60 bg-gradient-to-b from-white/90 to-slate-50/70 p-2 shadow-[0_18px_45px_rgba(15,23,42,0.10)] dark:border-slate-700/40 dark:from-slate-900/60 dark:to-slate-950/40"
+      } ${disabled ? "opacity-50 pointer-events-none" : "opacity-100"}`
     : `relative mx-3 mt-2 mb-2 flex flex-none rounded-lg border border-slate-200/50 bg-slate-50/70 p-1 shadow-xs dark:border-slate-700/30 dark:bg-slate-900/30 dark:shadow-none transition-opacity duration-200 ${
         disabled ? "opacity-50 pointer-events-none" : "opacity-100"
       }`;
@@ -132,17 +143,35 @@ const CategoryBar = ({
   if (isRight) {
     return (
       <div className={containerClasses}>
-        <div className="flex flex-none items-center justify-between px-1 pb-1.5">
-          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
+        <div
+          className={
+            isCompactMode
+              ? "flex flex-none items-center justify-between px-1 pb-1.5"
+              : "flex flex-none items-center justify-between px-1 pb-1.5"
+          }
+        >
+          <div
+            className={
+              isCompactMode
+                ? "text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400"
+                : "text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500"
+            }
+          >
             Categories
           </div>
-          <div className="h-1.5 w-8 rounded-full bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-400 opacity-60" />
+          {!isCompactMode && (
+            <div className="h-1.5 w-8 rounded-full bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-400 opacity-60" />
+          )}
         </div>
         <div
           ref={setScrollRef}
           data-category-scroll
           onScroll={scheduleSync}
-          className="grid flex-1 min-h-0 max-h-full grid-cols-1 gap-2 px-0.5 pt-0.5 pr-3 pb-[calc(200px+env(safe-area-inset-bottom))] overflow-y-auto scroll-smooth xl:grid-cols-2 scrollbar-hide overscroll-contain touch-pan-y"
+          className={
+            isCompactMode
+              ? "grid flex-1 min-h-0 max-h-full grid-cols-2 gap-1.5 px-0.5 pt-0.5 pr-2 pb-[calc(200px+env(safe-area-inset-bottom))] overflow-y-auto scroll-smooth scrollbar-hide overscroll-contain touch-pan-y"
+              : "grid flex-1 min-h-0 max-h-full grid-cols-1 gap-2 px-0.5 pt-0.5 pr-3 pb-[calc(200px+env(safe-area-inset-bottom))] overflow-y-auto scroll-smooth xl:grid-cols-2 scrollbar-hide overscroll-contain touch-pan-y"
+          }
           style={{ scrollBehavior: "smooth", maxHeight: '100%' }}
         >
           {categoryColumns.top.map((entry) => (
@@ -194,7 +223,9 @@ const CategoryBar = ({
                   };
                   try {
                     e.currentTarget.setPointerCapture(e.pointerId);
-                  } catch {}
+                  } catch (err) {
+                    void err;
+                  }
                 }}
                 onPointerMove={(e) => {
                   if (!dragRef.current.dragging) return;

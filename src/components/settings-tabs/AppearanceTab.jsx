@@ -1,19 +1,16 @@
 import { useTranslation } from "react-i18next";
 import { useAppearance } from "../../context/AppearanceContext";
-import { useAuth } from "../../context/AuthContext";
-import React, { useEffect } from "react";
-import secureFetch from "../../utils/secureFetch"; // ✅ Add this import
+import TableDensityToggle from "../../features/tables/components/TableDensityToggle";
+import { normalizeTableDensity } from "../../features/tables/tableDensity";
 
-// Theme options
 const themes = [
   { key: "light", label: "Light", icon: "🌞" },
   { key: "dark", label: "Dark", icon: "🌚" },
   { key: "system", label: "Auto", icon: "🌓" },
 ];
 
-// Accent previews (solid + gradients)
 const accentOptions = [
-  { label: "Default", value: "default", preview: "#4f46e5" }, // indigo-600
+  { label: "Default", value: "default", preview: "#4f46e5" },
   { label: "Black", value: "black", preview: "#000000" },
   { label: "Emerald", value: "emerald-500", preview: "#10b981" },
   { label: "Rose", value: "rose-500", preview: "#f43f5e" },
@@ -23,8 +20,6 @@ const accentOptions = [
   { label: "Lime", value: "lime-500", preview: "#84cc16" },
   { label: "Sky", value: "sky-500", preview: "#0ea5e9" },
   { label: "White", value: "white", preview: "#ffffff", ring: "#e2e8f0" },
-
-  // Gradient accents (new)
   { label: "Sunset", value: "sunset", preview: "linear-gradient(135deg, #f43f5e, #f59e0b)" },
   { label: "Ocean", value: "ocean", preview: "linear-gradient(135deg, #06b6d4, #3b82f6)" },
   { label: "Grape", value: "grape", preview: "linear-gradient(135deg, #8b5cf6, #ec4899)" },
@@ -33,39 +28,25 @@ const accentOptions = [
   { label: "Fire", value: "fire", preview: "linear-gradient(135deg, #ef4444, #f97316)" },
 ];
 
-// ✅ Helpers
-async function fetchUserAppearance() {
-  return await secureFetch(`/settings/appearance`);
-}
-
-async function saveUserAppearance(appearance) {
-  await secureFetch(`/settings/appearance`, {
-    method: "POST",
-    body: JSON.stringify(appearance),
-  });
-}
-
-
 export default function AppearanceTab() {
   const { t } = useTranslation();
-  const { appearance, setAppearance } = useAppearance();
-  const { currentUser } = useAuth();
+  const { appearance, setAppearance, saveAppearance } = useAppearance();
 
-useEffect(() => {
-  fetchUserAppearance()
-    .then((appr) => appr && setAppearance(appr))
-    .catch((err) => console.error("❌ Failed to fetch appearance settings:", err));
-}, []);
+  const tableDensity = normalizeTableDensity(appearance?.table_density);
 
-const handleSave = async () => {
-  try {
-    await saveUserAppearance(appearance);
-    alert("💾 " + t("Settings saved"));
-  } catch (err) {
-    console.error("❌ Failed to save appearance settings:", err);
-    alert(t("Failed to save settings"));
-  }
-};
+  const handleSave = async () => {
+    const saved =
+      typeof saveAppearance === "function"
+        ? await saveAppearance(appearance, { merge: false })
+        : null;
+
+    if (saved) {
+      window.alert("💾 " + t("Settings saved"));
+      return;
+    }
+
+    window.alert(t("Failed to save settings"));
+  };
 
   return (
     <div className="bg-white dark:bg-gray-800 text-gray-800 dark:text-white rounded-xl shadow p-6 max-w-4xl mx-auto transition-colors">
@@ -73,7 +54,6 @@ const handleSave = async () => {
         🎨 {t("Appearance & UI Settings")}
       </h2>
 
-      {/* Theme Selector */}
       <div className="mb-10">
         <label className="block text-lg font-semibold mb-3">{t("App Theme")}</label>
         <div className="flex gap-3">
@@ -103,7 +83,6 @@ const handleSave = async () => {
         </div>
       </div>
 
-      {/* Font Size */}
       <div className="mb-10">
         <label className="block text-lg font-semibold mb-3">{t("Font Size")}</label>
         <div className="flex justify-between px-2 text-sm text-gray-600 dark:text-gray-300 mb-1">
@@ -122,14 +101,13 @@ const handleSave = async () => {
           onChange={(e) =>
             setAppearance((prev) => ({
               ...prev,
-              fontSize: ["small", "medium", "large"][parseInt(e.target.value)],
+              fontSize: ["small", "medium", "large"][parseInt(e.target.value, 10)],
             }))
           }
           className="w-full accent-accent"
         />
       </div>
 
-      {/* Accent Color */}
       <div className="mb-10">
         <label className="block text-lg font-semibold mb-3">{t("Accent Color")}</label>
         <div className="flex flex-wrap gap-4">
@@ -150,7 +128,10 @@ const handleSave = async () => {
                   className={`h-10 w-10 rounded-full shadow-md transition-all duration-300 border-2 ${
                     isSelected ? "ring-2 ring-offset-2 ring-accent" : "border-white"
                   }`}
-                  style={{ background: c.preview, boxShadow: isSelected ? undefined : `0 0 0 1px ${c.ring || "transparent"}` }}
+                  style={{
+                    background: c.preview,
+                    boxShadow: isSelected ? undefined : `0 0 0 1px ${c.ring || "transparent"}`,
+                  }}
                   title={c.label}
                 />
                 {c.value === "default" && (
@@ -162,7 +143,20 @@ const handleSave = async () => {
         </div>
       </div>
 
-      {/* High Contrast Toggle */}
+      <div className="mb-10">
+        <label className="block text-lg font-semibold mb-3">{t("Table Layout Density")}</label>
+        <TableDensityToggle
+          value={tableDensity}
+          onChange={(nextDensity) =>
+            setAppearance((prev) => ({
+              ...prev,
+              table_density: normalizeTableDensity(nextDensity),
+            }))
+          }
+          t={t}
+        />
+      </div>
+
       <div className="flex items-center justify-between mt-8">
         <span className="text-lg font-medium">{t("Enable High Contrast Mode")}</span>
         <label className="relative inline-flex items-center cursor-pointer">
@@ -178,7 +172,6 @@ const handleSave = async () => {
         </label>
       </div>
 
-      {/* Save Button */}
       <div className="flex justify-end mt-10">
         <button
           onClick={handleSave}

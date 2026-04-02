@@ -8,49 +8,31 @@ import i18n from 'i18next';
 import { StockProvider } from './context/StockContext';
 import AppearanceProvider from './components/AppearanceProvider';
 import secureFetch from "./utils/secureFetch";
+import {
+  DEFAULT_LANGUAGE,
+  ensureDefaultLanguage,
+  normalizeLanguageCode,
+  persistLanguage,
+  resolvePreferredLanguage,
+} from "./utils/language";
+
+ensureDefaultLanguage();
 
 secureFetch('/settings/localization')
   .then(data => {
-    const raw = data?.language || null;
-    const fromStorage = (() => {
-      try {
-        return (
-          localStorage.getItem("qr_lang") ||
-          localStorage.getItem("beyproGuestLanguage") ||
-          localStorage.getItem("beyproLanguage")
-        );
-      } catch {
-        return null;
-      }
-    })();
-
-    const mapped =
-      raw === "English"
-        ? "en"
-        : raw === "Turkish"
-        ? "tr"
-        : raw === "German"
-        ? "de"
-        : raw === "French"
-        ? "fr"
-        : raw;
-
-    const lang = fromStorage || mapped || "en";
+    const lang = resolvePreferredLanguage({
+      storage: localStorage,
+      preferred: normalizeLanguageCode(data?.language),
+    });
+    persistLanguage(lang, localStorage);
     return i18n.changeLanguage(lang);
   })
   .catch(err => {
-    const fallback = (() => {
-      try {
-        return (
-          localStorage.getItem("qr_lang") ||
-          localStorage.getItem("beyproGuestLanguage") ||
-          localStorage.getItem("beyproLanguage") ||
-          "en"
-        );
-      } catch {
-        return "en";
-      }
-    })();
+    const fallback = resolvePreferredLanguage({
+      storage: localStorage,
+      fallback: DEFAULT_LANGUAGE,
+    });
+    persistLanguage(fallback, localStorage);
     i18n.changeLanguage(fallback);
     console.warn("⚠️ Could not load language, defaulting:", err);
   })

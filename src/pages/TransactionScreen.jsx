@@ -28,11 +28,13 @@ import { useHeader } from "../context/HeaderContext";
 import { useRegisterGuard } from "../hooks/useRegisterGuard";
 import { toCategorySlug } from "../utils/slugCategory"; 
 import { useAuth } from "../context/AuthContext";
+import { useAppearance } from "../context/AppearanceContext";
 import { usePaymentMethods } from "../hooks/usePaymentMethods";
 import { getPaymentMethodLabel } from "../utils/paymentMethods";
 import { getPaymentItemKey } from "../utils/getPaymentItemKey";
 import { useCurrency } from "../context/CurrencyContext";
 import { DEFAULT_TRANSACTION_SETTINGS } from "../constants/transactionSettingsDefaults";
+import { normalizeTableDensity } from "../features/tables/tableDensity";
 import { getReservationSchedule, isEarlyReservationClose } from "../utils/reservationSchedule";
 import { loadRegisterSummary, clearRegisterSummaryCache } from "../utils/registerSummaryCache";
 import { clearRegisterDataCache } from "../utils/registerDataCache";
@@ -148,6 +150,8 @@ export default function TransactionScreen() {
   const location = useLocation();
   const { t, i18n } = useTranslation(); // ✅ Enable translations
   const { currentUser } = useAuth();
+  const appearanceContext = useAppearance();
+  const appearance = appearanceContext?.appearance;
   const [subOrders, setSubOrders] = useState([]);
   const suborderItems = useMemo(() => {
     if (!Array.isArray(subOrders)) return [];
@@ -373,6 +377,10 @@ const virtualizationCartOverscan = useMemo(() => {
   const value = Number(transactionSettings.virtualizationCartOverscan);
   return Number.isFinite(value) ? Math.max(0, value) : 8;
 }, [transactionSettings.virtualizationCartOverscan]);
+const tableDensity = useMemo(
+  () => normalizeTableDensity(appearance?.table_density),
+  [appearance?.table_density]
+);
 useEffect(() => {
   if (!import.meta.env.DEV) return;
   if (!enableProductGridVirtualization && !enableCartVirtualization) return;
@@ -600,9 +608,9 @@ const renderCategoryButton = useCallback(
       setDraggingCategoryKey={setDraggingCategoryKey}
       reorderCategoryByKeyToIndex={reorderCategoryByKeyToIndex}
       categoryImages={categoryImages}
+      tableDensity={tableDensity}
       t={t}
       CATEGORY_FALLBACK_IMAGE={CATEGORY_FALLBACK_IMAGE}
-      setIsReorderingCategories={setIsReorderingCategories}
     />
   ),
   [
@@ -613,10 +621,10 @@ const renderCategoryButton = useCallback(
     draggingCategoryKey,
     isReorderingCategories,
     reorderCategoryByKeyToIndex,
+    tableDensity,
     setCatalogSearch,
     setCurrentCategoryIndex,
     setDraggingCategoryKey,
-    setIsReorderingCategories,
     t,
   ]
 );
@@ -640,6 +648,7 @@ const [drinksList, setDrinksList] = useState([]);
   const [isFloatingCartOpen, setIsFloatingCartOpen] = useState(false);
 const latestOrderRef = useRef(null);
 const latestCartItemsRef = useRef([]);
+const transactionSettingsRef = useRef(transactionSettings);
 const phoneOrderCreatePromiseRef = useRef(null);
 useEffect(() => {
   return () => {
@@ -647,6 +656,9 @@ useEffect(() => {
     phoneOrderCreatePromiseRef.current = null;
   };
 }, []);
+useEffect(() => {
+  transactionSettingsRef.current = transactionSettings;
+}, [transactionSettings]);
 const clearCartState = useCallback(() => {
   setCartItems([]);
   setReceiptItems([]);
@@ -945,11 +957,11 @@ const getSpeechRecognition = useCallback(() => {
 }, []);
 
 const preferredLanguage = useMemo(() => {
-  if (typeof window === "undefined") return i18n.language || "en";
+  if (typeof window === "undefined") return i18n.language || "tr";
   const stored =
     window.localStorage.getItem("beyproLanguage") ||
     window.localStorage.getItem("beyproGuestLanguage");
-  return (stored || i18n.language || "en").split("-")[0];
+  return (stored || i18n.language || "tr").split("-")[0];
 }, [i18n.language]);
 
 const handleVoiceStart = useCallback(() => {
@@ -1587,7 +1599,14 @@ const handleReservationStateSync = useCallback(
       return;
     }
 
-    const normalizedStatus = source?.status || (hasReservationPayload ? "reserved" : "confirmed");
+    const reservationLifecycleStatus = hasReservationPayload
+      ? reservationSource?.status ??
+        reservationSource?.reservation_status ??
+        reservationSource?.reservationStatus ??
+        null
+      : null;
+    const normalizedStatus =
+      reservationLifecycleStatus || source?.status || (hasReservationPayload ? "reserved" : "confirmed");
     const normalizedStatusLower = String(normalizedStatus || "").toLowerCase();
 
     const patch = {
@@ -1681,6 +1700,8 @@ const handleReservationStateSync = useCallback(
       reservationNotes: hasReservationPayload
         ? reservationSource?.reservationNotes ?? reservationSource?.reservation_notes ?? ""
         : null,
+      reservation_order_status: hasReservationPayload ? normalizedStatus : null,
+      reservationOrderStatus: hasReservationPayload ? normalizedStatus : null,
       items: Array.isArray(source?.items) ? source.items : undefined,
       suborders: Array.isArray(source?.suborders) ? source.suborders : undefined,
     };
@@ -1792,6 +1813,7 @@ const confirmFlow = useMemo(
       discountType,
       fetchOrderItems,
       transactionSettings,
+      transactionSettingsRef,
       setIsFloatingCartOpen,
       scheduleNavigate,
       setHeader,
@@ -1845,6 +1867,7 @@ const confirmFlow = useMemo(
     showToast,
     t,
     transactionSettings,
+    transactionSettingsRef,
     txApiRequest,
     updateOrderStatus,
   ]
@@ -2608,12 +2631,14 @@ const productGridProps = useMemo(
     renderCategoryButton,
     enableProductGridVirtualization,
     virtualizationProductOverscan,
+    tableDensity,
   }),
   [
     addToCart,
     categoryColumns,
     enableProductGridVirtualization,
     renderCategoryButton,
+    tableDensity,
     tx.vm.productGridProps,
     visibleProducts,
     virtualizationProductOverscan,

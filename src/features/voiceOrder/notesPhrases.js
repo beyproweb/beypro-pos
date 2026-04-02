@@ -5,7 +5,7 @@ const normalizeLang = (lang) => {
   if (raw.startsWith("tr")) return "tr";
   if (raw.startsWith("de")) return "de";
   if (raw.startsWith("fr")) return "fr";
-  return "en";
+  return "tr";
 };
 
 const NOTE_PHRASES = {

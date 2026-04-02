@@ -1,23 +1,38 @@
 {
-  "name": "Beypro QR Menu",
-  "short_name": "Beypro Menu",
-  "description": "Beypro QR Menu",
-  "start_url": "/menu",
+  "id": "/",
+  "name": "Beypro POS",
+  "short_name": "Beypro",
+  "description": "Beypro POS progressive web app",
+  "start_url": "/",
   "scope": "/",
+  "display_override": ["standalone", "minimal-ui"],
   "display": "standalone",
   "theme_color": "#0f172a",
   "background_color": "#0f172a",
+  "orientation": "portrait",
   "icons": [
     {
-      "src": "/Beylogo.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/Beylogo.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "maskable"
     }
   ]

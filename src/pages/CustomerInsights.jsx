@@ -411,7 +411,7 @@ async function handleDeleteCustomer(id) {
             <tr key={c.id}>
               <td className="p-2 border">{c.name}</td>
               <td className="p-2 border">{c.phone}</td>
-              <td className="p-2 border">{new Date(c.birthday).toLocaleDateString(i18n.language || "en")}</td>
+              <td className="p-2 border">{new Date(c.birthday).toLocaleDateString(i18n.language || "tr")}</td>
               <td className="p-2 border text-center">{c.visit_count}</td>
               <td className="p-2 border">₺{parseFloat(c.lifetime_value).toFixed(2)}</td>
               <td className="p-2 border">{c.last_visit ? new Date(c.last_visit).toLocaleString() : "-"}</td>
@@ -438,7 +438,7 @@ async function handleDeleteCustomer(id) {
               const debtValue = Number.isFinite(Number(c.debt)) ? Number(c.debt) : 0;
               const debtPositive = debtValue > 0;
               const lastVisitText = c.last_visit ? new Date(c.last_visit).toLocaleDateString() : t("Not yet");
-              const birthdayText = c.birthday ? new Date(c.birthday).toLocaleDateString(i18n.language || "en") : t("Unknown");
+              const birthdayText = c.birthday ? new Date(c.birthday).toLocaleDateString(i18n.language || "tr") : t("Unknown");
 
               return (
                 <article

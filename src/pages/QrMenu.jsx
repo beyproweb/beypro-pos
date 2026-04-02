@@ -65,6 +65,8 @@ import {
   buildReservationBookingPath,
 } from "../features/qrmenu/publicBookingRoutes";
 import QuantityStepperCard from "../features/floorPlan/components/QuantityStepperCard";
+import { isInStandaloneMode, isIos } from "../utils/pwaMode";
+import { DEFAULT_LANGUAGE, resolvePreferredLanguage } from "../utils/language";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const QR_PHONE_REGEX = /^(5\d{9}|[578]\d{7})$/;
@@ -582,6 +584,25 @@ function resolveBrandingAsset(raw, fallback = "") {
   }
   if (value.startsWith("/")) return value;
   return `${API_BASE || ""}/uploads/${value.replace(/^\/?uploads\//, "")}`;
+}
+
+function toAbsolutePublicUrl(raw) {
+  const value = String(raw || "").trim();
+  if (!value || /^https?:\/\//i.test(value)) return value;
+  if (typeof window === "undefined") return value;
+  try {
+    return new URL(value, window.location.origin).toString();
+  } catch {
+    return value;
+  }
+}
+
+function appendCacheVersion(rawUrl, version) {
+  const url = String(rawUrl || "").trim();
+  const normalizedVersion = String(version || "").trim();
+  if (!url || !normalizedVersion) return url;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}v=${encodeURIComponent(normalizedVersion)}`;
 }
 
 function formatConcertDisplayDateWithoutYear(value, locale) {
@@ -1242,7 +1263,7 @@ function saveSelectedTable(tableNo) {
 function getPlatform() {
   const ua = navigator.userAgent || navigator.vendor || window.opera;
   if (/android/i.test(ua)) return "android";
-  if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) return "ios";
+  if (isIos()) return "ios";
   return "other";
 }
 
@@ -1722,6 +1743,9 @@ const DICT = {
     "Contact support for help": "Contact support for help",
     "Support section will be available soon.": "Support section will be available soon.",
     "Email or username": "Email or username",
+    "Email (optional)": "Email (optional)",
+    "Full name": "Full name",
+    "Address (optional)": "Address (optional)",
     "Create Account": "Create Account",
     "Login instead": "Login instead",
     "Registration failed": "Registration failed",
@@ -1733,9 +1757,11 @@ const DICT = {
     Past: "Past",
     "Failed to load orders": "Failed to load orders",
     "Please fill all required fields.": "Please fill all required fields.",
+    "Please enter your phone number or email and password.": "Please enter your phone number or email and password.",
     "Email already registered.": "Email already registered.",
     "Username already in use.": "Username already in use.",
     "Please enter your credentials.": "Please enter your credentials.",
+    "No account found for this phone number or email. Please register.": "No account found for this phone number or email. Please register.",
     "Invalid credentials.": "Invalid credentials.",
     "Please login first.": "Please login first.",
     "Profile not found.": "Profile not found.",
@@ -2071,6 +2097,9 @@ const DICT = {
     "Contact support for help": "Yardım için destekle iletişime geçin",
     "Support section will be available soon.": "Destek bölümü yakında kullanıma açılacak.",
     "Email or username": "E-posta veya kullanıcı adı",
+    "Email (optional)": "E-posta (isteğe bağlı)",
+    "Full name": "Ad soyad",
+    "Address (optional)": "Adres (isteğe bağlı)",
     "Create Account": "Hesap Oluştur",
     "Login instead": "Bunun yerine giriş yap",
     "Registration failed": "Kayıt başarısız",
@@ -2086,9 +2115,11 @@ const DICT = {
     Past: "Geçmiş",
     "Failed to load orders": "Siparişler yüklenemedi",
     "Please fill all required fields.": "Lütfen tüm gerekli alanları doldurun.",
+    "Please enter your phone number or email and password.": "Lütfen telefon numaranızı veya e-posta adresinizi ve şifrenizi girin.",
     "Email already registered.": "E-posta zaten kayıtlı.",
     "Username already in use.": "Kullanıcı adı zaten kullanılıyor.",
     "Please enter your credentials.": "Lütfen giriş bilgilerinizi girin.",
+    "No account found for this phone number or email. Please register.": "Bu telefon numarası veya e-posta için hesap bulunamadı. Lütfen kayıt olun.",
     "Invalid credentials.": "Geçersiz giriş bilgileri.",
     "Please login first.": "Lütfen önce giriş yapın.",
     "Profile not found.": "Profil bulunamadı.",
@@ -2323,9 +2354,14 @@ const DICT = {
     Past: "Vergangen",
     "Failed to load orders": "Bestellungen konnten nicht geladen werden",
     "Please fill all required fields.": "Bitte alle Pflichtfelder ausfüllen.",
+    "Please enter your phone number or email and password.": "Bitte geben Sie Ihre Telefonnummer oder E-Mail-Adresse und Ihr Passwort ein.",
     "Email already registered.": "E-Mail ist bereits registriert.",
     "Username already in use.": "Benutzername wird bereits verwendet.",
+    "Email (optional)": "E-Mail (optional)",
+    "Full name": "Vollständiger Name",
+    "Address (optional)": "Adresse (optional)",
     "Please enter your credentials.": "Bitte Zugangsdaten eingeben.",
+    "No account found for this phone number or email. Please register.": "Für diese Telefonnummer oder E-Mail wurde kein Konto gefunden. Bitte registrieren Sie sich.",
     "Invalid credentials.": "Ungültige Zugangsdaten.",
     "Please login first.": "Bitte zuerst anmelden.",
     "Profile not found.": "Profil nicht gefunden.",
@@ -2570,9 +2606,14 @@ const DICT = {
     Past: "Passées",
     "Failed to load orders": "Impossible de charger les commandes",
     "Please fill all required fields.": "Veuillez remplir tous les champs obligatoires.",
+    "Please enter your phone number or email and password.": "Veuillez saisir votre numéro de téléphone ou votre e-mail ainsi que votre mot de passe.",
     "Email already registered.": "L'e-mail est déjà enregistré.",
     "Username already in use.": "Le nom d'utilisateur est déjà utilisé.",
+    "Email (optional)": "E-mail (facultatif)",
+    "Full name": "Nom complet",
+    "Address (optional)": "Adresse (facultatif)",
     "Please enter your credentials.": "Veuillez saisir vos identifiants.",
+    "No account found for this phone number or email. Please register.": "Aucun compte n’a été trouvé pour ce numéro de téléphone ou cet e-mail. Veuillez vous inscrire.",
     "Invalid credentials.": "Identifiants invalides.",
     "Please login first.": "Veuillez vous connecter d'abord.",
     "Profile not found.": "Profil introuvable.",
@@ -2869,10 +2910,15 @@ function InstallHelpModal({ open, onClose, t, platform, onShare, onCopy }) {
 
         <div className="p-5 space-y-3 text-sm text-gray-700 dark:text-neutral-200">
           {isIos ? (
-            <ol className="list-decimal pl-5 space-y-1">
-              <li>{t("Share QR Menu")}</li>
-              <li>{t("Add to Home Screen")}</li>
-            </ol>
+            <>
+              <p className="text-xs text-gray-500 dark:text-neutral-400">
+                Open this page in Safari, then install from the Share menu.
+              </p>
+              <ol className="list-decimal pl-5 space-y-1">
+                <li>{t("Share QR Menu")}</li>
+                <li>{t("Add to Home Screen")}</li>
+              </ol>
+            </>
           ) : (
             <ol className="list-decimal pl-5 space-y-1">
               <li>{t("Share QR Menu")}</li>
@@ -2961,29 +3007,64 @@ function ShareMenuModal({ open, onClose, t, onShare, onCopy }) {
   );
 }
 
-function DownloadQrModal({ open, onClose, t, onInstall, onDownloadImage }) {
+function DownloadQrModal({
+  open,
+  onClose,
+  t,
+  onInstall,
+  onDownloadImage,
+  platform,
+  canInstall,
+  isIosSafariBrowser,
+  isIosInAppBrowser,
+}) {
   if (!open) return null;
+  const isIosManualInstall = platform === "ios" && !canInstall;
+  const installLabel = isIosManualInstall
+    ? `${t("Share")} > ${t("Add to Home Screen")}`
+    : t("Install App");
+  const title = isIosManualInstall ? t("Add to Home Screen") : t("Download Qr");
+  const subtitle = isIosManualInstall
+    ? isIosInAppBrowser
+      ? "Open this page in Safari, then tap Share and Add to Home Screen."
+      : "Use Safari Share to add this QR menu to your Home Screen."
+    : t("Choose what to do with this QR menu.");
+
   return createPortal(
     <div className="fixed inset-0 z-[999] bg-black/60 flex items-center justify-center p-4">
       <div className="w-full max-w-md rounded-3xl bg-white dark:bg-neutral-900 shadow-2xl border border-gray-200 dark:border-neutral-800 overflow-hidden">
         <div className="p-5 border-b border-gray-100 dark:border-neutral-800">
           <div className="text-lg font-semibold text-gray-900 dark:text-neutral-100">
-            {t("Download Qr")}
+            {title}
           </div>
           <div className="text-sm text-gray-600 dark:text-neutral-300 mt-1">
-            {t("Choose what to do with this QR menu.")}
+            {subtitle}
           </div>
         </div>
 
         <div className="p-5 space-y-3 text-sm text-gray-700 dark:text-neutral-200">
+          {isIosManualInstall ? (
+            <ol className="list-decimal pl-5 space-y-1">
+              {isIosInAppBrowser ? (
+                <li>Open this QR menu in Safari.</li>
+              ) : null}
+              <li>{t("Share QR Menu")}</li>
+              <li>{t("Add to Home Screen")}</li>
+            </ol>
+          ) : null}
           <div className="flex flex-col gap-3">
             <button
               type="button"
               onClick={onInstall}
               className="w-full py-3 rounded-2xl bg-neutral-900 text-white font-semibold shadow-sm hover:bg-neutral-800 transition"
             >
-              {t("Install App")}
+              {installLabel}
             </button>
+            {isIosManualInstall && !isIosSafariBrowser ? (
+              <div className="rounded-2xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700/70 dark:bg-amber-950/30 dark:text-amber-200">
+                Add to Home Screen is available in Safari on iPhone.
+              </div>
+            ) : null}
             <button
               type="button"
               onClick={onDownloadImage}
@@ -3549,12 +3630,11 @@ async function load() {
   }, [homeSearch]);
 
   const qrLang = React.useMemo(() => {
-    if (typeof window === "undefined") return "en";
-    return (
-      storage.getItem("beyproGuestLanguage") ||
-      storage.getItem("beyproLanguage") ||
-      "en"
-    ).split("-")[0];
+    if (typeof window === "undefined") return DEFAULT_LANGUAGE;
+    return resolvePreferredLanguage({
+      storage,
+      fallback: DEFAULT_LANGUAGE,
+    });
   }, []);
 
   const getSpeechRecognition = React.useCallback(() => {
@@ -7568,6 +7648,8 @@ export default function QrMenu() {
     qrPromptMode,
     setQrPromptMode,
     canInstall,
+    isIosSafariBrowser,
+    isIosInAppBrowser,
     isDesktopLayout,
     appendIdentifier,
     triggerOrderType,
@@ -7639,44 +7721,71 @@ export default function QrMenu() {
   const [showStandaloneSplash, setShowStandaloneSplash] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [downloadQrModalOpen, setDownloadQrModalOpen] = useState(false);
+  const isIosManualInstall = platform === "ios" && !canInstall;
   const {
     isOpen: isAppHeaderDrawerOpen,
     openDrawer: openAppHeaderDrawer,
     closeDrawer: closeAppHeaderDrawer,
   } = useHeaderDrawer();
+  const customerAuthFetcher = useCallback(
+    async (path, options = undefined) => secureFetch(appendIdentifier(path), options),
+    [appendIdentifier]
+  );
   const {
+    customer: qrCustomerSession,
     isLoggedIn: isCustomerLoggedIn,
+    isRestoring: isCustomerAuthRestoring,
     login: loginCustomerSession,
     register: registerCustomerSession,
-  } = useCustomerAuth(storage);
+  } = useCustomerAuth(storage, { fetcher: customerAuthFetcher });
+  const isCustomerLoggedInEffective = Boolean(
+    isCustomerLoggedIn || qrCustomerSession?.id
+  );
   const [appHeaderDrawerInitialView, setAppHeaderDrawerInitialView] = useState("menu");
+  const [isManualAuthModalOpen, setIsManualAuthModalOpen] = useState(false);
   const [isAuthWelcomeDismissed, setIsAuthWelcomeDismissed] = useState(false);
   const [authWelcomeView, setAuthWelcomeView] = useState("login");
   const callWaiterFeedbackTimeoutRef = useRef(null);
-  const authPromptWasLoggedInRef = useRef(isCustomerLoggedIn);
-
-  useEffect(() => {
-    if (isCustomerLoggedIn) {
-      setIsAuthWelcomeDismissed(false);
-      setAuthWelcomeView("login");
-    } else if (authPromptWasLoggedInRef.current) {
-      setIsAuthWelcomeDismissed(false);
-      setAuthWelcomeView("login");
-    }
-    authPromptWasLoggedInRef.current = isCustomerLoggedIn;
-  }, [isCustomerLoggedIn]);
-
-  const openMenuHeaderDrawer = useCallback(() => {
-    setAppHeaderDrawerInitialView("menu");
-    openAppHeaderDrawer();
-  }, [openAppHeaderDrawer]);
+  const authPromptWasLoggedInRef = useRef(isCustomerLoggedInEffective);
 
   const handleCloseAppHeaderDrawer = useCallback(() => {
     closeAppHeaderDrawer();
     setAppHeaderDrawerInitialView("menu");
   }, [closeAppHeaderDrawer]);
 
+  useEffect(() => {
+    const wasLoggedIn = authPromptWasLoggedInRef.current;
+
+    if (isCustomerLoggedInEffective) {
+      setIsAuthWelcomeDismissed(false);
+      setAuthWelcomeView("login");
+      setIsManualAuthModalOpen(false);
+      if (!wasLoggedIn) {
+        handleCloseAppHeaderDrawer();
+      }
+    } else if (wasLoggedIn) {
+      setIsAuthWelcomeDismissed(false);
+      setAuthWelcomeView("login");
+    }
+    authPromptWasLoggedInRef.current = isCustomerLoggedInEffective;
+  }, [handleCloseAppHeaderDrawer, isCustomerLoggedInEffective]);
+
+  const openMenuHeaderDrawer = useCallback(() => {
+    setAppHeaderDrawerInitialView("menu");
+    openAppHeaderDrawer();
+  }, [openAppHeaderDrawer]);
+
+  const openFullScreenAuth = useCallback(
+    (nextView = "login") => {
+      setAuthWelcomeView(nextView === "register" ? "register" : "login");
+      setIsManualAuthModalOpen(true);
+      handleCloseAppHeaderDrawer();
+    },
+    [handleCloseAppHeaderDrawer]
+  );
+
   const handleCloseAuthWelcomeModal = useCallback(() => {
+    setIsManualAuthModalOpen(false);
     setIsAuthWelcomeDismissed(true);
   }, []);
 
@@ -7730,19 +7839,35 @@ export default function QrMenu() {
       orderSelectCustomization?.pwa_background_color,
       "#FFFFFF"
     );
-    const manifestVersion = encodeURIComponent(
-      String(orderSelectCustomization?.branding_updated_at || "default")
-    );
-    const manifestHref = `/api/public/manifest.json?identifier=${encodeURIComponent(
-      identifier
-    )}&v=${manifestVersion}`;
-    const appleTouchIconHref = resolveBrandingAsset(
+    const brandingVersion = String(orderSelectCustomization?.branding_updated_at || "").trim();
+    const manifestPath = `/api/public/manifest.json?identifier=${encodeURIComponent(identifier)}${
+      brandingVersion ? `&v=${encodeURIComponent(brandingVersion)}` : ""
+    }`;
+    const manifestHref = toAbsolutePublicUrl(manifestPath);
+    const appleTouchIconBase = resolveBrandingAsset(
       orderSelectCustomization?.apple_touch_icon ||
         orderSelectCustomization?.app_icon_192 ||
         orderSelectCustomization?.app_icon_512 ||
         orderSelectCustomization?.app_icon,
-      "/Beylogo.svg"
+      "/apple-touch-icon.png"
     );
+    const appleTouchIconHref = appendCacheVersion(
+      toAbsolutePublicUrl(appleTouchIconBase),
+      brandingVersion
+    );
+    const faviconPngBase = resolveBrandingAsset(
+      orderSelectCustomization?.app_icon_192 ||
+        orderSelectCustomization?.app_icon_512 ||
+        orderSelectCustomization?.app_icon,
+      "/icon-192.png"
+    );
+    const faviconPngHref = appendCacheVersion(
+      toAbsolutePublicUrl(faviconPngBase),
+      brandingVersion
+    );
+    const webAppTitle =
+      String(orderSelectCustomization?.app_display_name || brandName || "").trim() ||
+      "Beypro";
 
     const touched = [];
     const upsertMeta = (selector, attrs, content) => {
@@ -7794,9 +7919,34 @@ export default function QrMenu() {
       { name: "apple-mobile-web-app-status-bar-style" },
       "default"
     );
+    upsertMeta(
+      'meta[name="apple-mobile-web-app-title"]',
+      { name: "apple-mobile-web-app-title" },
+      webAppTitle
+    );
     upsertMeta('meta[name="background-color"]', { name: "background-color" }, backgroundColor);
     upsertLink('link[rel="manifest"]', { rel: "manifest" }, manifestHref);
+    upsertLink(
+      'link[rel="apple-touch-icon"][sizes="180x180"]',
+      { rel: "apple-touch-icon", sizes: "180x180" },
+      appleTouchIconHref
+    );
+    upsertLink(
+      'link[rel="apple-touch-icon"][sizes="167x167"]',
+      { rel: "apple-touch-icon", sizes: "167x167" },
+      appleTouchIconHref
+    );
+    upsertLink(
+      'link[rel="apple-touch-icon"][sizes="152x152"]',
+      { rel: "apple-touch-icon", sizes: "152x152" },
+      appleTouchIconHref
+    );
     upsertLink('link[rel="apple-touch-icon"]', { rel: "apple-touch-icon" }, appleTouchIconHref);
+    upsertLink(
+      'link[rel="icon"][type="image/png"][sizes="192x192"]',
+      { rel: "icon", type: "image/png", sizes: "192x192" },
+      faviconPngHref
+    );
 
     return () => {
       touched.forEach(({ node, created, attr, previous }) => {
@@ -7815,6 +7965,8 @@ export default function QrMenu() {
     id,
     restaurantIdentifier,
     slug,
+    brandName,
+    orderSelectCustomization?.app_display_name,
     orderSelectCustomization?.app_icon,
     orderSelectCustomization?.app_icon_192,
     orderSelectCustomization?.app_icon_512,
@@ -7827,8 +7979,7 @@ export default function QrMenu() {
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
-    const standalone =
-      window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator?.standalone;
+    const standalone = isInStandaloneMode();
     const splashLogo = resolveBrandingAsset(
       orderSelectCustomization?.splash_logo ||
         orderSelectCustomization?.main_title_logo ||
@@ -7961,13 +8112,16 @@ export default function QrMenu() {
     (!showHome || showStatus) &&
     !isCartDrawerOpen;
   const showCustomerAuthWelcomeModal =
+    isManualAuthModalOpen ||
+    (
     !showStatus &&
     !showDeliveryForm &&
     !showTakeawayForm &&
     !showTableScanner &&
-    !isCustomerLoggedIn &&
+    !isCustomerLoggedInEffective &&
     !isAppHeaderDrawerOpen &&
-    !isAuthWelcomeDismissed;
+    !isAuthWelcomeDismissed
+    );
   const shouldLockReorderForNonTableConcert = (() => {
     const concertBookingType = String(
       activeOrder?.concert_booking_type ?? activeOrder?.concertBookingType ?? ""
@@ -8063,7 +8217,15 @@ export default function QrMenu() {
   const handleBookingOrderTypeSelect = useCallback(
     (nextType) => {
       if (!nextType) return;
+      if (nextType === "table") {
+        if (isCustomerAuthRestoring) return;
+        if (!isCustomerLoggedInEffective) {
+          openFullScreenAuth("login");
+          return;
+        }
+      }
       if (nextType === "takeaway") {
+        if (isCustomerAuthRestoring && !isCustomerLoggedInEffective) return;
         const bookingPath = buildReservationBookingPath({
           pathname: location.pathname,
           slug,
@@ -8071,13 +8233,25 @@ export default function QrMenu() {
           search: location.search,
         });
         navigate(
-          isCustomerLoggedIn ? bookingPath : appendPublicBookingSubPath(bookingPath, "contact")
+          isCustomerLoggedInEffective
+            ? bookingPath
+            : appendPublicBookingSubPath(bookingPath, "contact")
         );
         return;
       }
       triggerOrderType(nextType);
     },
-    [id, isCustomerLoggedIn, location.pathname, location.search, navigate, slug, triggerOrderType]
+    [
+      id,
+      isCustomerAuthRestoring,
+      isCustomerLoggedInEffective,
+      location.pathname,
+      location.search,
+      navigate,
+      openFullScreenAuth,
+      slug,
+      triggerOrderType,
+    ]
   );
   const handleSharedHeaderOrderTypeSelect = useCallback(
     (nextType) => {
@@ -8493,9 +8667,42 @@ export default function QrMenu() {
   const disableVoiceAction =
     !canStartVoiceFromNav || disableBottomNavForCancelledStatus || hideAllQrProducts;
   const shouldAnimateCartNavButton = cartNewItemsCount > 0 && !disableCartAction;
+  const loggedInCustomerPrefill = useMemo(
+    () => ({
+      name: qrCustomerSession?.username || "",
+      phone: qrCustomerSession?.phone || "",
+      email: qrCustomerSession?.email || "",
+      address: qrCustomerSession?.address || "",
+    }),
+    [
+      qrCustomerSession?.address,
+      qrCustomerSession?.email,
+      qrCustomerSession?.phone,
+      qrCustomerSession?.username,
+    ]
+  );
   const savedCustomerPrefill = useMemo(
-    () => getCheckoutPrefill(storage),
-    [showTakeawayForm, showDeliveryForm, orderType]
+    () => {
+      const fromStorage = getCheckoutPrefill(storage) || {};
+      return {
+        name: fromStorage?.name || loggedInCustomerPrefill?.name || "",
+        phone: fromStorage?.phone || loggedInCustomerPrefill?.phone || "",
+        email: fromStorage?.email || loggedInCustomerPrefill?.email || "",
+        address: fromStorage?.address || loggedInCustomerPrefill?.address || "",
+        payment_method: fromStorage?.payment_method || "",
+        bank_reference: fromStorage?.bank_reference || "",
+      };
+    },
+    [
+      loggedInCustomerPrefill?.address,
+      loggedInCustomerPrefill?.email,
+      loggedInCustomerPrefill?.name,
+      loggedInCustomerPrefill?.phone,
+      orderType,
+      showDeliveryForm,
+      showTakeawayForm,
+      storage,
+    ]
   );
   const takeawayInitialValues = useMemo(
     () => ({
@@ -8767,6 +8974,7 @@ export default function QrMenu() {
   const handleConcertBookingRequest = useCallback(
     (event, defaults = {}) => {
       if (!event?.id) return;
+      if (isCustomerAuthRestoring && !isCustomerLoggedInEffective) return;
       const bookingPath = buildConcertBookingPath({
         pathname: location.pathname,
         slug,
@@ -8786,14 +8994,25 @@ export default function QrMenu() {
       }
       const resolvedPath = params.toString() ? `${pathname}?${params.toString()}` : pathname;
       navigate(
-        isCustomerLoggedIn ? resolvedPath : appendPublicBookingSubPath(resolvedPath, "contact")
+        isCustomerLoggedInEffective
+          ? resolvedPath
+          : appendPublicBookingSubPath(resolvedPath, "contact")
       );
     },
-    [id, isCustomerLoggedIn, location.pathname, location.search, navigate, slug]
+    [
+      id,
+      isCustomerAuthRestoring,
+      isCustomerLoggedInEffective,
+      location.pathname,
+      location.search,
+      navigate,
+      slug,
+    ]
   );
 
   const handleFreeConcertReservationStart = useCallback(
     (event) => {
+      if (isCustomerAuthRestoring && !isCustomerLoggedInEffective) return;
       if (event?.id) {
         const bookingPath = buildConcertBookingPath({
           pathname: location.pathname,
@@ -8803,7 +9022,9 @@ export default function QrMenu() {
           concertId: event.id,
         });
         navigate(
-          isCustomerLoggedIn ? bookingPath : appendPublicBookingSubPath(bookingPath, "contact")
+          isCustomerLoggedInEffective
+            ? bookingPath
+            : appendPublicBookingSubPath(bookingPath, "contact")
         );
         return;
       }
@@ -8814,10 +9035,20 @@ export default function QrMenu() {
         search: location.search,
       });
       navigate(
-        isCustomerLoggedIn ? bookingPath : appendPublicBookingSubPath(bookingPath, "contact")
+        isCustomerLoggedInEffective
+          ? bookingPath
+          : appendPublicBookingSubPath(bookingPath, "contact")
       );
     },
-    [id, isCustomerLoggedIn, location.pathname, location.search, navigate, slug]
+    [
+      id,
+      isCustomerAuthRestoring,
+      isCustomerLoggedInEffective,
+      location.pathname,
+      location.search,
+      navigate,
+      slug,
+    ]
   );
 
   const handleVoiceDraftAddToCart = useCallback(
@@ -9019,9 +9250,13 @@ export default function QrMenu() {
   }, [copyCurrentMenuLink]);
 
   const handleInstallFromModal = useCallback(() => {
+    if (isIosManualInstall) {
+      setDownloadQrModalOpen(false);
+      return;
+    }
     handleDownloadQr();
     setDownloadQrModalOpen(false);
-  }, [handleDownloadQr]);
+  }, [handleDownloadQr, isIosManualInstall]);
 
   const handleDownloadImageFromModal = useCallback(async () => {
     await handleDownloadQrImage();
@@ -9241,6 +9476,10 @@ export default function QrMenu() {
         t={t}
         onInstall={handleInstallFromModal}
         onDownloadImage={handleDownloadImageFromModal}
+        platform={platform}
+        canInstall={canInstall}
+        isIosSafariBrowser={isIosSafariBrowser}
+        isIosInAppBrowser={isIosInAppBrowser}
       />
       {showQrPrompt && (
         <div className="fixed bottom-5 left-1/2 z-[999] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 px-2">
@@ -9271,11 +9510,17 @@ export default function QrMenu() {
 
               <button
                 type="button"
-                onClick={handleDownloadQr}
+                onClick={() => {
+                  if (isIosManualInstall) {
+                    setDownloadQrModalOpen(true);
+                    return;
+                  }
+                  handleDownloadQr();
+                }}
                 className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-neutral-900 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-neutral-800 transition dark:border-neutral-800"
               >
                 <Download className="h-5 w-5" />
-                {t("Download Qr")}
+                {platform === "ios" && !canInstall ? t("Add to Home Screen") : t("Download Qr")}
               </button>
             </div>
           </div>
@@ -9400,6 +9645,7 @@ export default function QrMenu() {
                   initialView={appHeaderDrawerInitialView}
                   hasOrderStatus={hasStatusShortcutOrder}
                   onOpenOrderStatus={() => openOrderStatus()}
+                  onRequestAuthView={openFullScreenAuth}
                 />
               </>
             ) : null}

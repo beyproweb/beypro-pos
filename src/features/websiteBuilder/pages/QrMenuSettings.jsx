@@ -126,6 +126,25 @@ const getAssetFileName = (value) => {
   return parts[parts.length - 1] || "";
 };
 
+const toAbsolutePublicUrl = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw || /^https?:\/\//i.test(raw)) return raw;
+  if (typeof window === "undefined") return raw;
+  try {
+    return new URL(raw, window.location.origin).toString();
+  } catch {
+    return raw;
+  }
+};
+
+const appendVersionParam = (value, version) => {
+  const raw = String(value || "").trim();
+  const normalizedVersion = String(version || "").trim();
+  if (!raw || !normalizedVersion) return raw;
+  const separator = raw.includes("?") ? "&" : "?";
+  return `${raw}${separator}v=${encodeURIComponent(normalizedVersion)}`;
+};
+
 const resolveYouTubeEmbedUrl = (value) => {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -534,6 +553,36 @@ export default function QrMenuSettings() {
     (!customDomainPreview.isBlank && !customDomainPreview.isValid
       ? t("Please enter a valid domain like menu.myrestaurant.com")
       : "");
+  const iosPwaIconSource = useMemo(
+    () =>
+      normalizeAssetValue(
+        settings.apple_touch_icon ||
+          settings.app_icon_192 ||
+          settings.app_icon_512 ||
+          settings.app_icon
+      ),
+    [
+      settings.apple_touch_icon,
+      settings.app_icon,
+      settings.app_icon_192,
+      settings.app_icon_512,
+    ]
+  );
+  const iosPwaIconHref = useMemo(() => {
+    if (!iosPwaIconSource) return toAbsolutePublicUrl("/apple-touch-icon.png");
+
+    const resolved = iosPwaIconSource.startsWith("http")
+      ? iosPwaIconSource
+      : `${uploadsBaseUrl}/uploads/${iosPwaIconSource.replace(/^\/?uploads\//, "")}`;
+    return appendVersionParam(
+      toAbsolutePublicUrl(resolved),
+      normalizeAssetValue(settings.branding_updated_at)
+    );
+  }, [iosPwaIconSource, settings.branding_updated_at, uploadsBaseUrl]);
+  const iosPwaTitle = useMemo(
+    () => String(settings.app_display_name || settings.main_title || "Beypro").trim() || "Beypro",
+    [settings.app_display_name, settings.main_title]
+  );
 
   const generatedVenueFloorPlan = useMemo(() => buildGeneratedFloorPlan(tables), [tables]);
   const effectiveVenueFloorPlan =
@@ -2077,6 +2126,85 @@ async function saveAllCustomization() {
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+
+    const touched = [];
+    const upsertLink = (selector, attrs, href) => {
+      let node = document.head.querySelector(selector);
+      const created = !node;
+      if (!node) {
+        node = document.createElement("link");
+        Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, value));
+        document.head.appendChild(node);
+      }
+      touched.push({
+        node,
+        created,
+        attr: "href",
+        previous: node.getAttribute("href"),
+      });
+      node.setAttribute("href", href);
+    };
+    const upsertMeta = (selector, attrs, content) => {
+      let node = document.head.querySelector(selector);
+      const created = !node;
+      if (!node) {
+        node = document.createElement("meta");
+        Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, value));
+        document.head.appendChild(node);
+      }
+      touched.push({
+        node,
+        created,
+        attr: "content",
+        previous: node.getAttribute("content"),
+      });
+      node.setAttribute("content", content);
+    };
+
+    upsertLink(
+      'link[rel="apple-touch-icon"][sizes="180x180"]',
+      { rel: "apple-touch-icon", sizes: "180x180" },
+      iosPwaIconHref
+    );
+    upsertLink(
+      'link[rel="apple-touch-icon"][sizes="167x167"]',
+      { rel: "apple-touch-icon", sizes: "167x167" },
+      iosPwaIconHref
+    );
+    upsertLink(
+      'link[rel="apple-touch-icon"][sizes="152x152"]',
+      { rel: "apple-touch-icon", sizes: "152x152" },
+      iosPwaIconHref
+    );
+    upsertLink('link[rel="apple-touch-icon"]', { rel: "apple-touch-icon" }, iosPwaIconHref);
+    upsertLink(
+      'link[rel="icon"][type="image/png"][sizes="192x192"]',
+      { rel: "icon", type: "image/png", sizes: "192x192" },
+      iosPwaIconHref
+    );
+    upsertMeta(
+      'meta[name="apple-mobile-web-app-title"]',
+      { name: "apple-mobile-web-app-title" },
+      iosPwaTitle
+    );
+
+    return () => {
+      touched.forEach(({ node, created, attr, previous }) => {
+        if (created) {
+          node.remove();
+          return;
+        }
+        if (previous == null) {
+          node.removeAttribute(attr);
+        } else {
+          node.setAttribute(attr, previous);
+        }
+      });
+    };
+  }, [iosPwaIconHref, iosPwaTitle]);
 
   return (
   <div className="mx-auto max-w-[1400px] px-4 py-8 sm:px-6 lg:px-8">

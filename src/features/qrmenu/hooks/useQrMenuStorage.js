@@ -1,6 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { getCheckoutPrefill } from "../header-drawer/services/customerService";
 import i18n from "../../../i18n";
+import { isInStandaloneMode, isLikelyInAppBrowser, isIosSafari } from "../../../utils/pwaMode";
+import {
+  persistLanguage,
+  resolvePreferredLanguage,
+} from "../../../utils/language";
 
 export function useQrMenuStorage({
   slug,
@@ -62,11 +67,9 @@ export function useQrMenuStorage({
     })();
   }, [tokenResolveIdentifier, API_URL, QR_TOKEN_KEY, getStoredToken, storage]);
 
-  const [lang, setLang] = useState(() => storage.getItem("qr_lang") || "en");
+  const [lang, setLang] = useState(() => resolvePreferredLanguage({ storage }));
   useEffect(() => {
-    storage.setItem("qr_lang", lang);
-    storage.setItem("beyproGuestLanguage", lang);
-    storage.setItem("beyproLanguage", lang);
+    persistLanguage(lang, storage);
     if (i18n.language !== lang) {
       i18n.changeLanguage(lang).catch(() => {});
     }
@@ -75,7 +78,25 @@ export function useQrMenuStorage({
 
   const [showIosHelp, setShowIosHelp] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [platform, setPlatform] = useState(getPlatform());
+  const resolveInstallSurface = useCallback(() => {
+    const detectedPlatform =
+      typeof getPlatform === "function" ? getPlatform() : "other";
+    const iosSafari = isIosSafari();
+    const iosInApp = detectedPlatform === "ios" && isLikelyInAppBrowser();
+    return {
+      platform: detectedPlatform,
+      isIosSafari: iosSafari,
+      isIosInAppBrowser: iosInApp,
+    };
+  }, [getPlatform]);
+
+  const [platform, setPlatform] = useState(() => resolveInstallSurface().platform);
+  const [isIosSafariBrowser, setIsIosSafariBrowser] = useState(
+    () => resolveInstallSurface().isIosSafari
+  );
+  const [isIosInAppBrowser, setIsIosInAppBrowser] = useState(
+    () => resolveInstallSurface().isIosInAppBrowser
+  );
   const qrSavedKey = useMemo(() => {
     const raw =
       restaurantIdentifierResolved ||
@@ -101,6 +122,31 @@ export function useQrMenuStorage({
     setShowQrPrompt(!storage.getItem(qrSavedKey));
   }, [qrSavedKey, storage]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const refreshInstallSurface = () => {
+      const next = resolveInstallSurface();
+      setPlatform(next.platform);
+      setIsIosSafariBrowser(next.isIosSafari);
+      setIsIosInAppBrowser(next.isIosInAppBrowser);
+    };
+
+    refreshInstallSurface();
+
+    const onPageShow = () => refreshInstallSurface();
+    const onVisibilityChange = () => {
+      if (!document.hidden) refreshInstallSurface();
+    };
+    window.addEventListener("pageshow", onPageShow);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.removeEventListener("pageshow", onPageShow);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [resolveInstallSurface]);
+
   const getSavedDeliveryInfo = useCallback(() => {
     try {
       const profilePrefill = getCheckoutPrefill(storage);
@@ -111,20 +157,22 @@ export function useQrMenuStorage({
 
   useEffect(() => {
     const handler = (e) => {
+      const installSurface = resolveInstallSurface();
+      if (installSurface.platform === "ios") {
+        setDeferredPrompt(null);
+        setCanInstall(false);
+        return;
+      }
       e.preventDefault();
       setDeferredPrompt(e);
       setCanInstall(true);
     };
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, [appendIdentifier]);
+  }, [appendIdentifier, resolveInstallSurface]);
 
   useEffect(() => {
-    const isStandalone =
-      (typeof window !== "undefined" &&
-        (window.matchMedia?.("(display-mode: standalone)")?.matches ||
-          window.navigator?.standalone)) ||
-      false;
+    const isStandalone = isInStandaloneMode();
     if (!isStandalone) return;
     markQrSaved();
     setShowQrPrompt(false);
@@ -157,15 +205,20 @@ export function useQrMenuStorage({
   }, [deferredPrompt, markQrSaved]);
 
   const handleDownloadQr = useCallback(() => {
-    const isStandalone =
-      (typeof window !== "undefined" &&
-        (window.matchMedia?.("(display-mode: standalone)")?.matches ||
-          window.navigator?.standalone)) ||
-      false;
+    const isStandalone = isInStandaloneMode();
+    const installSurface = resolveInstallSurface();
+    const isIosManualInstall = installSurface.platform === "ios";
 
     if (isStandalone) {
       markQrSaved();
       setShowQrPrompt(false);
+      return;
+    }
+
+    if (isIosManualInstall) {
+      // iOS install is manual in Safari; keep users in a single guided modal flow.
+      setShowQrPrompt(true);
+      setShowHelp(false);
       return;
     }
 
@@ -188,7 +241,7 @@ export function useQrMenuStorage({
     // Keep prompt persistent until an actual install happens.
     setShowQrPrompt(true);
     setShowHelp(true);
-  }, [deferredPrompt, markQrSaved]);
+  }, [deferredPrompt, markQrSaved, resolveInstallSurface]);
 
   return {
     lang,
@@ -200,6 +253,8 @@ export function useQrMenuStorage({
     setShowHelp,
     platform,
     setPlatform,
+    isIosSafariBrowser,
+    isIosInAppBrowser,
     showQrPrompt,
     setShowQrPrompt,
     qrPromptMode,

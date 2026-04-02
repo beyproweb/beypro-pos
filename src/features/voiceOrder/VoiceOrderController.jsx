@@ -61,7 +61,7 @@ const normalizeLang = (lang) => {
   if (raw.startsWith("tr")) return "tr";
   if (raw.startsWith("de")) return "de";
   if (raw.startsWith("fr")) return "fr";
-  return "en";
+  return "tr";
 };
 
 const normalizeScopeSegment = (value, fallbackValue) => {
@@ -157,7 +157,7 @@ function includesOne(text, words = []) {
 function formatTryCurrency(value, lang) {
   const amount = Number(value) || 0;
   try {
-    return new Intl.NumberFormat(lang || "en", {
+    return new Intl.NumberFormat(lang || "tr", {
       style: "currency",
       currency: "TRY",
       maximumFractionDigits: 2,
@@ -240,7 +240,7 @@ export default function VoiceOrderController({
     [location.pathname, location.search]
   );
   const activeLang = useMemo(
-    () => normalizeLang(language || i18n?.resolvedLanguage || i18n?.language || "en"),
+    () => normalizeLang(language || i18n?.resolvedLanguage || i18n?.language || "tr"),
     [language, i18n?.language, i18n?.resolvedLanguage]
   );
   const noisyModeKey = useMemo(

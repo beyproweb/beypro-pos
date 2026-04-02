@@ -578,6 +578,17 @@ export default function ModernHeader({
     isTableOverviewRoute,
     isTransactionRoute,
   ]);
+  const isTableNumberFilterMode = React.useMemo(() => {
+    if (!isTableOverviewRoute) return false;
+    const params = new window.URLSearchParams(location.search);
+    const tab = String(params.get("tab") || "tables").toLowerCase();
+    return tab === "tables";
+  }, [isTableOverviewRoute, location.search]);
+  const tableNumberFilterParam = React.useMemo(() => {
+    if (!isTableNumberFilterMode) return "";
+    const params = new window.URLSearchParams(location.search);
+    return String(params.get("table") || "").replace(/[^\d]/g, "");
+  }, [isTableNumberFilterMode, location.search]);
 
   const handleHeaderTabClick = React.useCallback(
     async (tabId) => {
@@ -1111,9 +1122,13 @@ export default function ModernHeader({
 
   React.useEffect(() => {
     setSearchOpen(false);
-    setSearchQuery("");
     setActiveSearchIndex(0);
-  }, [location.pathname, location.search]);
+    if (isTableNumberFilterMode) {
+      setSearchQuery(tableNumberFilterParam);
+      return;
+    }
+    setSearchQuery("");
+  }, [isTableNumberFilterMode, location.pathname, location.search, tableNumberFilterParam]);
 
   React.useEffect(() => {
     const handleClickOutside = (event) => {
@@ -1418,6 +1433,27 @@ export default function ModernHeader({
                 data-form-type="other"
                 value={searchQuery}
                 onChange={(e) => {
+                  if (isTableNumberFilterMode) {
+                    const nextValue = String(e.target.value || "");
+                    const numericQuery = nextValue.replace(/[^\d]/g, "").slice(0, 6);
+                    setSearchQuery(numericQuery);
+                    const params = new window.URLSearchParams(location.search);
+                    if (numericQuery) params.set("table", numericQuery);
+                    else params.delete("table");
+                    if (!params.get("tab")) params.set("tab", "tables");
+                    const nextSearch = params.toString();
+                    const currentSearch = location.search.startsWith("?")
+                      ? location.search.slice(1)
+                      : location.search;
+                    if (nextSearch !== currentSearch) {
+                      navigate(
+                        `${location.pathname}${nextSearch ? `?${nextSearch}` : ""}`,
+                        { replace: true }
+                      );
+                    }
+                    setSearchOpen(false);
+                    return;
+                  }
                   setSearchQuery(e.target.value);
                   setSearchOpen(true);
                 }}
