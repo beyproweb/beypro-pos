@@ -67,6 +67,10 @@ import {
 import QuantityStepperCard from "../features/floorPlan/components/QuantityStepperCard";
 import { isInStandaloneMode, isIos } from "../utils/pwaMode";
 import { DEFAULT_LANGUAGE, resolvePreferredLanguage } from "../utils/language";
+import {
+  PUBLIC_RESTAURANT_BASE_URL,
+  buildPublicRestaurantUrl,
+} from "../utils/publicRestaurantUrl";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const QR_PHONE_REGEX = /^(5\d{9}|[578]\d{7})$/;
@@ -1392,7 +1396,7 @@ function extractTableNumberFromQrText(raw) {
   } catch {
     // maybe missing scheme; try using current origin
     try {
-      const base = typeof window !== "undefined" ? window.location.origin : "https://pos.beypro.com";
+      const base = typeof window !== "undefined" ? window.location.origin : PUBLIC_RESTAURANT_BASE_URL;
       const fromRelativeUrl = parseFromUrlLike(new URL(text, base).toString());
       if (fromRelativeUrl) return fromRelativeUrl;
     } catch {
@@ -1612,6 +1616,8 @@ const DICT = {
     "Loyalty Card": "Loyalty Card",
     "Concert Tickets": "Concert Tickets",
     "Free concert": "Free concert",
+    "Deactivated": "Deactivated",
+    "Concert date is over. Booking is disabled.": "Concert date is over. Booking is disabled.",
     "Buy Ticket": "Buy Ticket",
     "Reserve Table": "Reserve Table",
     "Ticket Types / Packages": "Ticket Types / Packages",
@@ -1966,6 +1972,8 @@ const DICT = {
     "Loyalty Card": "Abone Kartı",
     "Concert Tickets": "Konser Biletleri",
     "Free concert": "Ucretsiz konser",
+    "Deactivated": "Deaktif",
+    "Concert date is over. Booking is disabled.": "Konser tarihi geçtiği için rezervasyon devre dışı bırakıldı.",
     "Buy Ticket": "Bilet Al",
     "Reserve Table": "Masa Rezerve Et",
     "Ticket Types / Packages": "Bilet Türleri / Paketler",
@@ -2192,6 +2200,8 @@ const DICT = {
     "Loyalty Card": "Treuekarte",
     "Concert Tickets": "Konzerttickets",
     "Free concert": "Kostenloses Konzert",
+    "Deactivated": "Deaktiviert",
+    "Concert date is over. Booking is disabled.": "Das Konzertdatum ist vorbei. Buchung ist deaktiviert.",
     "Buy Ticket": "Ticket kaufen",
     "Reserve Table": "Tisch reservieren",
     "Ticket Types / Packages": "Ticketarten / Pakete",
@@ -2448,6 +2458,8 @@ const DICT = {
     "Loyalty Card": "Carte fidélité",
     "Concert Tickets": "Billets de concert",
     "Free concert": "Concert gratuit",
+    "Deactivated": "Désactivé",
+    "Concert date is over. Booking is disabled.": "La date du concert est passée. La réservation est désactivée.",
     "Buy Ticket": "Acheter un billet",
     "Reserve Table": "Réserver une table",
     "Ticket Types / Packages": "Types de billets / Forfaits",
@@ -4887,6 +4899,46 @@ async function load() {
                       const forcedSoldOut =
                         String(event?.status || "").toLowerCase() === "sold_out" ||
                         (event?.auto_sold_out === true);
+                      const computedEventSlot = computeConcertSlot({
+                        eventDate: event?.event_date,
+                        eventTime: event?.event_time,
+                        settings: qrBookingSettings,
+                      });
+                      const eventSlotEndRaw =
+                        event?.slot_end_datetime ||
+                        computedEventSlot?.slot_end_datetime ||
+                        "";
+                      const eventSlotEndDate = parseLocalDateTime(eventSlotEndRaw);
+                      let fallbackEventEndDate = null;
+                      if (!eventSlotEndDate) {
+                        const fallbackDate = String(event?.event_date || "").slice(0, 10);
+                        const fallbackTimeRaw = String(event?.event_time || "").trim();
+                        const fallbackTime = /^\d{2}:\d{2}(:\d{2})?$/.test(fallbackTimeRaw)
+                          ? fallbackTimeRaw
+                          : "00:00:00";
+                        if (fallbackDate) {
+                          const fallbackStartDate = parseLocalDateTime(`${fallbackDate} ${fallbackTime}`);
+                          if (fallbackStartDate) {
+                            const fallbackDurationMinutes = Math.max(
+                              15,
+                              Number(event?.event_duration_minutes) ||
+                                Number(qrBookingSettings?.concert_event_duration_minutes) ||
+                                150
+                            );
+                            fallbackStartDate.setMinutes(
+                              fallbackStartDate.getMinutes() + fallbackDurationMinutes
+                            );
+                            fallbackEventEndDate = fallbackStartDate;
+                          }
+                        }
+                      }
+                      const eventDateIsOver =
+                        ((eventSlotEndDate instanceof Date &&
+                          Number.isFinite(eventSlotEndDate.getTime()) &&
+                          eventSlotEndDate.getTime() < Date.now()) ||
+                          (fallbackEventEndDate instanceof Date &&
+                            Number.isFinite(fallbackEventEndDate.getTime()) &&
+                            fallbackEventEndDate.getTime() < Date.now()));
                       const eventImage = resolveUploadedAsset(event?.event_image);
                       const artistName = String(event?.artist_name || "").trim();
                       const eventTitle = String(event?.event_title || "").trim();
@@ -4909,6 +4961,7 @@ async function load() {
                         forcedSoldOut ||
                         (!isFreeConcert && !ticketAvailable && !tableAvailable);
                       const fullySoldOut = badgeSoldOut;
+                      const concertBookingDeactivated = eventDateIsOver;
                       const tableTicketType = (event?.ticket_types || []).find(
                         (row) => row?.is_table_package && Number(row?.available_count || 0) > 0
                       );
@@ -4957,12 +5010,18 @@ async function load() {
                             </div>
                             <span
                               className={`text-xs px-2.5 py-1 rounded-full border ${
-                                badgeSoldOut
+                                concertBookingDeactivated
+                                  ? "border-neutral-300 bg-neutral-100 text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                                  : badgeSoldOut
                                   ? "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200"
                                   : "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
                               }`}
                             >
-                              {badgeSoldOut ? t("Sold Out") : t("Available")}
+                              {concertBookingDeactivated
+                                ? t("Deactivated")
+                                : badgeSoldOut
+                                ? t("Sold Out")
+                                : t("Available")}
                             </span>
                           </div>
 
@@ -4994,7 +5053,7 @@ async function load() {
                           <div className="mt-3 grid grid-cols-1 gap-2">
                             <button
                               type="button"
-                              disabled={fullySoldOut}
+                              disabled={fullySoldOut || concertBookingDeactivated}
                               onClick={() => {
                                 if (isFreeConcert) {
                                   openFreeConcertReservationModal(event);
@@ -5016,6 +5075,11 @@ async function load() {
                             >
                               {isFreeConcert ? t("Reservation") : t("Buy Ticket")}
                             </button>
+                            {concertBookingDeactivated ? (
+                              <p className="text-xs text-neutral-600 dark:text-neutral-300">
+                                {t("Concert date is over. Booking is disabled.")}
+                              </p>
+                            ) : null}
                           </div>
                         </div>
                       );
@@ -9158,7 +9222,7 @@ export default function QrMenu() {
     if (typeof window === "undefined") return "";
     const identifier = String(restaurantIdentifier || slug || id || "").trim();
     if (!identifier) return window.location.href;
-    return `${window.location.origin}/${encodeURIComponent(identifier)}`;
+    return buildPublicRestaurantUrl(identifier);
   }, [
     id,
     restaurantIdentifier,

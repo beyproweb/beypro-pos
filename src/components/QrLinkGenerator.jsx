@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { QRCode } from "react-qrcode-logo";
 import { Copy, Download } from "lucide-react";
 import secureFetch from "../utils/secureFetch";
+import { normalizePublicRestaurantUrl } from "../utils/publicRestaurantUrl";
 
 export default function QrLinkGenerator() {
   const [link, setLink] = useState("");
@@ -12,7 +13,7 @@ export default function QrLinkGenerator() {
     setLoading(true);
     const data = await secureFetch("/settings/qr-link");
     if (data.success && data.link) {
-      setLink(data.link);
+      setLink(normalizePublicRestaurantUrl(data.link));
     } else {
       alert(data.error || "Failed to generate QR link");
     }

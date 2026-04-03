@@ -1,4 +1,5 @@
 import secureFetch from "./secureFetch";
+import { PUBLIC_RESTAURANT_BASE_URL } from "./publicRestaurantUrl";
 
 const TOKEN_QUERY_KEYS = ["token", "qr_token", "jwt", "table_token"];
 const JWT_TOKEN_REGEX = /([A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+)/;
@@ -60,7 +61,7 @@ export function extractGuestQrToken(rawValue) {
     if (fromUrl) return fromUrl;
   } catch {
     try {
-      const base = typeof window !== "undefined" ? window.location.origin : "https://pos.beypro.com";
+      const base = typeof window !== "undefined" ? window.location.origin : PUBLIC_RESTAURANT_BASE_URL;
       const fromRelativeUrl = extractTokenFromUrlLike(new URL(raw, base).toString());
       if (fromRelativeUrl) return fromRelativeUrl;
     } catch {

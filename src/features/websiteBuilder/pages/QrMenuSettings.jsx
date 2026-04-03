@@ -9,7 +9,16 @@ import { API_ORIGIN } from "../../../utils/api";
 import { useHasPermission } from "../../../components/hooks/useHasPermission";
 import { useNavigate } from "react-router-dom";
 import { getCustomDomainPreview } from "../../../utils/customDomain";
-import { QR_BOOKING_DEFAULTS, normalizeQrBookingSettings } from "../../../utils/qrBooking";
+import {
+  PUBLIC_RESTAURANT_BASE_HOST,
+  normalizePublicRestaurantUrl,
+} from "../../../utils/publicRestaurantUrl";
+import {
+  QR_BOOKING_DEFAULTS,
+  normalizeQrBookingSettings,
+  computeConcertSlot,
+  parseLocalDateTime,
+} from "../../../utils/qrBooking";
 import FloorPlanDesigner from "../../floorPlan/components/FloorPlanDesigner";
 import {
   buildGeneratedFloorPlan,
@@ -546,7 +555,7 @@ export default function QrMenuSettings() {
     ? fallbackRestaurantSlug || "-"
     : customDomainPreview.generatedSlug || "-";
   const domainPreviewValue = customDomainPreview.isBlank
-    ? "pos.beypro.com"
+    ? PUBLIC_RESTAURANT_BASE_HOST
     : customDomainPreview.normalizedDomain || "-";
   const customDomainInlineError =
     customDomainError ||
@@ -948,7 +957,7 @@ async function saveAllCustomization() {
     try {
       const linkRes = await secureFetch("/settings/qr-link");
       if (linkRes?.success && linkRes.link) {
-        setQrUrl(linkRes.link);
+        setQrUrl(normalizePublicRestaurantUrl(linkRes.link));
       }
       if (linkRes?.slug) {
         setCurrentRestaurantSlug(String(linkRes.slug || "").trim());
@@ -993,7 +1002,7 @@ async function saveAllCustomization() {
       // 4) Load short QR link
       setLoadingLink(true);
       const linkRes = await secureFetch("/settings/qr-link");
-      if (linkRes?.success && linkRes.link) setQrUrl(linkRes.link);
+      if (linkRes?.success && linkRes.link) setQrUrl(normalizePublicRestaurantUrl(linkRes.link));
       if (linkRes?.slug) {
         const normalizedSlug = String(linkRes.slug || "").trim();
         setCurrentRestaurantSlug(normalizedSlug);
@@ -1732,6 +1741,21 @@ async function saveAllCustomization() {
     return [dateValue, timeValue].filter(Boolean).join(" ");
   };
 
+  const resolveConcertEndDate = (event) => {
+    const directEnd = parseLocalDateTime(event?.slot_end_datetime);
+    if (directEnd) return directEnd;
+
+    const computedSlot = computeConcertSlot({
+      eventDate: event?.event_date,
+      eventTime: event?.event_time,
+      settings,
+    });
+    const computedEnd = parseLocalDateTime(computedSlot?.slot_end_datetime);
+    if (computedEnd) return computedEnd;
+
+    return null;
+  };
+
   const copyLink = () => {
     if (!qrUrl) return;
     navigator.clipboard.writeText(qrUrl);
@@ -1854,7 +1878,7 @@ async function saveAllCustomization() {
       if (res?.url) {
         setTableQr((prev) => ({
           ...prev,
-          [number]: { ...prev[number], url: res.url, loading: false },
+          [number]: { ...prev[number], url: normalizePublicRestaurantUrl(res.url), loading: false },
         }));
       } else {
         setTableQr((prev) => ({
@@ -4596,6 +4620,12 @@ async function saveAllCustomization() {
                   const bookings = concertBookingsByEvent[event.id];
                   const isBookingOpen = Array.isArray(bookings);
                   const eventImage = resolveUploadSrc(event.event_image);
+                  const concertEndDate = resolveConcertEndDate(event);
+                  const isPastConcert =
+                    concertEndDate instanceof Date &&
+                    Number.isFinite(concertEndDate.getTime()) &&
+                    concertEndDate.getTime() < Date.now();
+                  const effectiveStatus = isPastConcert ? "deactivated" : String(event.status || "active");
                   return (
                     <div key={event.id} className="rounded-2xl border border-gray-200 bg-white dark:bg-zinc-900 p-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -4621,13 +4651,15 @@ async function saveAllCustomization() {
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                           <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                            event.status === "sold_out"
+                            effectiveStatus === "deactivated"
+                              ? "bg-slate-200 text-slate-700 border border-slate-300"
+                              : event.status === "sold_out"
                               ? "bg-rose-100 text-rose-700 border border-rose-200"
                               : event.status === "hidden"
                               ? "bg-slate-100 text-slate-700 border border-slate-200"
                               : "bg-emerald-100 text-emerald-700 border border-emerald-200"
                           }`}>
-                            {event.status}
+                            {effectiveStatus}
                           </span>
                           {event.free_concert ? (
                             <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">
@@ -4668,6 +4700,13 @@ async function saveAllCustomization() {
                           </button>
                         </div>
                       </div>
+                      {isPastConcert ? (
+                        <div className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                          {t("Concert date is over. Booking is disabled.", {
+                            defaultValue: "Concert date is over. Booking is disabled.",
+                          })}
+                        </div>
+                      ) : null}
 
                       {Array.isArray(event.ticket_types) && event.ticket_types.length > 0 ? (
                         <div className="mt-3 text-xs text-gray-600 dark:text-gray-300">

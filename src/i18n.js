@@ -8422,7 +8422,9 @@ i18n
         ? resolved
         : DEFAULT_LANGUAGE;
     })(),
-    fallbackLng: DEFAULT_LANGUAGE,
+    // Keep Turkish as default startup language, but use English fallback
+    // so missing EN keys don't render as Turkish in mixed-language screens.
+    fallbackLng: "en",
     interpolation: { escapeValue: false }
   });
 
