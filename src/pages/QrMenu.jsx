@@ -68,7 +68,9 @@ import QuantityStepperCard from "../features/floorPlan/components/QuantitySteppe
 import { isInStandaloneMode, isIos } from "../utils/pwaMode";
 import { DEFAULT_LANGUAGE, resolvePreferredLanguage } from "../utils/language";
 import {
+  APP_RESTAURANT_BASE_URL,
   PUBLIC_RESTAURANT_BASE_URL,
+  buildAppRestaurantUrl,
   buildPublicRestaurantUrl,
 } from "../utils/publicRestaurantUrl";
 
@@ -3025,22 +3027,11 @@ function DownloadQrModal({
   t,
   onInstall,
   onDownloadImage,
-  platform,
-  canInstall,
-  isIosSafariBrowser,
-  isIosInAppBrowser,
 }) {
   if (!open) return null;
-  const isIosManualInstall = platform === "ios" && !canInstall;
-  const installLabel = isIosManualInstall
-    ? `${t("Share")} > ${t("Add to Home Screen")}`
-    : t("Install App");
-  const title = isIosManualInstall ? t("Add to Home Screen") : t("Download Qr");
-  const subtitle = isIosManualInstall
-    ? isIosInAppBrowser
-      ? "Open this page in Safari, then tap Share and Add to Home Screen."
-      : "Use Safari Share to add this QR menu to your Home Screen."
-    : t("Choose what to do with this QR menu.");
+  const installLabel = t("Install App");
+  const title = t("Download App");
+  const subtitle = t("Open the Beypro app for the best experience.");
 
   return createPortal(
     <div className="fixed inset-0 z-[999] bg-black/60 flex items-center justify-center p-4">
@@ -3055,15 +3046,6 @@ function DownloadQrModal({
         </div>
 
         <div className="p-5 space-y-3 text-sm text-gray-700 dark:text-neutral-200">
-          {isIosManualInstall ? (
-            <ol className="list-decimal pl-5 space-y-1">
-              {isIosInAppBrowser ? (
-                <li>Open this QR menu in Safari.</li>
-              ) : null}
-              <li>{t("Share QR Menu")}</li>
-              <li>{t("Add to Home Screen")}</li>
-            </ol>
-          ) : null}
           <div className="flex flex-col gap-3">
             <button
               type="button"
@@ -3072,11 +3054,6 @@ function DownloadQrModal({
             >
               {installLabel}
             </button>
-            {isIosManualInstall && !isIosSafariBrowser ? (
-              <div className="rounded-2xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700/70 dark:bg-amber-950/30 dark:text-amber-200">
-                Add to Home Screen is available in Safari on iPhone.
-              </div>
-            ) : null}
             <button
               type="button"
               onClick={onDownloadImage}
@@ -7712,8 +7689,6 @@ export default function QrMenu() {
     qrPromptMode,
     setQrPromptMode,
     canInstall,
-    isIosSafariBrowser,
-    isIosInAppBrowser,
     isDesktopLayout,
     appendIdentifier,
     triggerOrderType,
@@ -7733,7 +7708,6 @@ export default function QrMenu() {
     handleOrderAnother,
     handleSubmitOrder,
     handleReset,
-    handleDownloadQr,
     showHome,
     showTableSelector,
     filteredOccupied,
@@ -7785,7 +7759,6 @@ export default function QrMenu() {
   const [showStandaloneSplash, setShowStandaloneSplash] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [downloadQrModalOpen, setDownloadQrModalOpen] = useState(false);
-  const isIosManualInstall = platform === "ios" && !canInstall;
   const {
     isOpen: isAppHeaderDrawerOpen,
     openDrawer: openAppHeaderDrawer,
@@ -9229,6 +9202,39 @@ export default function QrMenu() {
     slug,
   ]);
 
+  const brandedAppUrl = useMemo(() => {
+    const identifier = String(restaurantIdentifier || slug || id || "").trim();
+    if (!identifier) return APP_RESTAURANT_BASE_URL;
+    return buildAppRestaurantUrl(identifier);
+  }, [id, restaurantIdentifier, slug]);
+
+  const openRealAppLink = useCallback(() => {
+    if (typeof window === "undefined") return;
+
+    const targetUrl = brandedAppUrl || APP_RESTAURANT_BASE_URL;
+    const ua = String(window.navigator?.userAgent || "").toLowerCase();
+    const isAndroid = /android/.test(ua);
+    const isIos = /iphone|ipad|ipod/.test(ua);
+    const appStoreUrl = String(import.meta.env.VITE_APP_STORE_URL || "").trim();
+    const playStoreUrl = String(import.meta.env.VITE_PLAY_STORE_URL || "").trim();
+
+    // Attempt app-link first so installed app opens directly.
+    window.location.href = targetUrl;
+
+    // Optional store fallback if app is not installed.
+    if (isAndroid && playStoreUrl) {
+      window.setTimeout(() => {
+        window.location.href = playStoreUrl;
+      }, 1400);
+      return;
+    }
+    if (isIos && appStoreUrl) {
+      window.setTimeout(() => {
+        window.location.href = appStoreUrl;
+      }, 1400);
+    }
+  }, [brandedAppUrl]);
+
   const copyCurrentMenuLink = useCallback(() => {
     if (typeof window === "undefined") return;
     const url = brandedShareUrl || window.location.href;
@@ -9314,13 +9320,10 @@ export default function QrMenu() {
   }, [copyCurrentMenuLink]);
 
   const handleInstallFromModal = useCallback(() => {
-    if (isIosManualInstall) {
-      setDownloadQrModalOpen(false);
-      return;
-    }
-    handleDownloadQr();
+    openRealAppLink();
     setDownloadQrModalOpen(false);
-  }, [handleDownloadQr, isIosManualInstall]);
+    setShowQrPrompt(false);
+  }, [openRealAppLink, setShowQrPrompt]);
 
   const handleDownloadImageFromModal = useCallback(async () => {
     await handleDownloadQrImage();
@@ -9540,10 +9543,6 @@ export default function QrMenu() {
         t={t}
         onInstall={handleInstallFromModal}
         onDownloadImage={handleDownloadImageFromModal}
-        platform={platform}
-        canInstall={canInstall}
-        isIosSafariBrowser={isIosSafariBrowser}
-        isIosInAppBrowser={isIosInAppBrowser}
       />
       {showQrPrompt && (
         <div className="fixed bottom-5 left-1/2 z-[999] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 px-2">
@@ -9555,9 +9554,9 @@ export default function QrMenu() {
                     {t("Save QR Menu to Phone")}
                   </div>
                   <div className="mt-1 text-xs text-neutral-600 dark:text-neutral-300">
-                    {qrPromptMode === "hint"
-                      ? t("Add to Home Screen")
-                      : t("Tap here to install the menu as an app")}
+                  {qrPromptMode === "hint"
+                      ? t("Install App")
+                      : t("Tap here to open the Beypro app")}
                   </div>
                 </div>
                 <button
@@ -9575,16 +9574,12 @@ export default function QrMenu() {
               <button
                 type="button"
                 onClick={() => {
-                  if (isIosManualInstall) {
-                    setDownloadQrModalOpen(true);
-                    return;
-                  }
-                  handleDownloadQr();
+                  setDownloadQrModalOpen(true);
                 }}
                 className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-neutral-900 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-neutral-800 transition dark:border-neutral-800"
               >
                 <Download className="h-5 w-5" />
-                {platform === "ios" && !canInstall ? t("Add to Home Screen") : t("Download Qr")}
+                {t("Download App")}
               </button>
             </div>
           </div>

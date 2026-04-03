@@ -1,4 +1,5 @@
 const DEFAULT_PUBLIC_RESTAURANT_BASE_URL = "https://beypro.com";
+const DEFAULT_APP_RESTAURANT_BASE_URL = "https://app.beypro.com";
 const LEGACY_PUBLIC_RESTAURANT_HOSTS = new Set(["pos.beypro.com", "www.pos.beypro.com"]);
 
 const sanitizeBaseUrl = (value) => {
@@ -14,6 +15,9 @@ const sanitizeBaseUrl = (value) => {
 export const PUBLIC_RESTAURANT_BASE_URL = sanitizeBaseUrl(
   import.meta.env.VITE_PUBLIC_RESTAURANT_BASE_URL || DEFAULT_PUBLIC_RESTAURANT_BASE_URL
 );
+export const APP_RESTAURANT_BASE_URL = sanitizeBaseUrl(
+  import.meta.env.VITE_APP_RESTAURANT_BASE_URL || DEFAULT_APP_RESTAURANT_BASE_URL
+);
 export const PUBLIC_RESTAURANT_BASE_HOST = (() => {
   try {
     return new URL(PUBLIC_RESTAURANT_BASE_URL).host;
@@ -26,6 +30,12 @@ export const buildPublicRestaurantUrl = (identifier) => {
   const normalizedIdentifier = String(identifier || "").trim();
   if (!normalizedIdentifier) return PUBLIC_RESTAURANT_BASE_URL;
   return `${PUBLIC_RESTAURANT_BASE_URL}/${encodeURIComponent(normalizedIdentifier)}`;
+};
+
+export const buildAppRestaurantUrl = (identifier) => {
+  const normalizedIdentifier = String(identifier || "").trim();
+  if (!normalizedIdentifier) return APP_RESTAURANT_BASE_URL;
+  return `${APP_RESTAURANT_BASE_URL}/${encodeURIComponent(normalizedIdentifier)}`;
 };
 
 export const normalizePublicRestaurantUrl = (value) => {
