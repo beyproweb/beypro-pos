@@ -20,6 +20,7 @@ function HeaderInfo({
   tagline,
   accentColor = "#111827",
   t,
+  onOpenMarketplace,
 }) {
   const logoSrc = String(mainTitleLogo || "").trim();
 
@@ -68,6 +69,7 @@ function HeaderInfo({
           accentColor={accentColor}
           layout="selector"
           t={t}
+          onOpenMarketplace={onOpenMarketplace}
         />
       </div>
     </div>

@@ -1,5 +1,5 @@
 import React from "react";
-import { Music2, ShoppingCart } from "lucide-react";
+import { House, Music2, ShoppingCart } from "lucide-react";
 import DrawerButton from "./DrawerButton";
 
 function normalizeHexColor(value, fallback) {
@@ -58,6 +58,7 @@ function HeaderTabs({
   layout = "toolbar",
   accentColor = "#111827",
   t,
+  onOpenMarketplace,
 }) {
   const isToolbar = layout === "toolbar";
   const resolvedAccentColor = normalizeHexColor(accentColor, "#111827");
@@ -169,6 +170,21 @@ function HeaderTabs({
       }`}
     >
       <DrawerButton onClick={onOpenDrawer} isDark={isDark} isOpen={isDrawerOpen} />
+
+      {typeof onOpenMarketplace === "function" ? (
+        <button
+          type="button"
+          onClick={onOpenMarketplace}
+          aria-label={t("Marketplace")}
+          className={`h-10 w-10 sm:h-11 sm:w-11 shrink-0 rounded-xl border flex items-center justify-center transition-all duration-200 ${
+            isDark
+              ? "bg-white/[0.06] text-white/90 border-white/12 hover:bg-white/[0.12]"
+              : "bg-white/95 text-gray-700 border-gray-200 hover:bg-white hover:text-gray-900"
+          }`}
+        >
+          <House className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
+        </button>
+      ) : null}
 
       {showCompactBrandSlot ? (
         <div className="min-w-0 flex-1 px-1">

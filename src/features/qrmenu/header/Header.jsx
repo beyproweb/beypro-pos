@@ -32,6 +32,7 @@ function Header({
   shopHoursDropdownRef,
   languageControl,
   showInfo = true,
+  onOpenMarketplace,
 }) {
   const [showCompactBranding, setShowCompactBranding] = React.useState(false);
 
@@ -79,6 +80,7 @@ function Header({
             layout="toolbar"
             accentColor={accentColor}
             t={t}
+            onOpenMarketplace={onOpenMarketplace}
           />
         </div>
       </header>
@@ -115,6 +117,7 @@ function Header({
           loadingShopHours={loadingShopHours}
           shopHoursDropdownRef={shopHoursDropdownRef}
           languageControl={languageControl}
+          onOpenMarketplace={onOpenMarketplace}
         />
       ) : null}
     </>

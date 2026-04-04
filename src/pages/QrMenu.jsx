@@ -89,6 +89,17 @@ function normalizeQrPhone(value) {
   return digits.slice(0, 10);
 }
 
+function navigateToMarketplaceFromQrMenu() {
+  if (typeof window === "undefined") return;
+
+  if (window.ReactNativeWebView) {
+    window.location.href = "beypro://marketplace";
+    return;
+  }
+
+  window.location.href = APP_RESTAURANT_BASE_URL;
+}
+
 function formatQrPhoneForInput(value) {
   const normalized = normalizeQrPhone(value);
   if (!normalized) return "";
@@ -3231,6 +3242,9 @@ function OrderTypeSelect({
      1) Load Custom QR Menu Website Settings from Backend
      ============================================================ */
   const [custom, setCustom] = React.useState(() => readCachedQrMenuBranding(identifier));
+  const handleOpenMarketplace = React.useCallback(() => {
+    navigateToMarketplaceFromQrMenu();
+  }, []);
   const onCustomizationLoadedRef = React.useRef(onCustomizationLoaded);
   React.useEffect(() => {
     onCustomizationLoadedRef.current = onCustomizationLoaded;
@@ -4825,6 +4839,7 @@ async function load() {
         isDark={isDark}
         isDrawerOpen={isReservationHeaderDrawerOpen}
         onOpenDrawer={openReservationHeaderDrawer}
+        onOpenMarketplace={handleOpenMarketplace}
         onSelect={handleHeaderOrderTypeSelect}
         reservationEnabled={reservationEnabled && reservationTabEnabled && openStatus.isOpen}
         tableEnabled={tableEnabled && openStatus.isOpen}
@@ -9208,6 +9223,10 @@ export default function QrMenu() {
     return buildAppRestaurantUrl(identifier);
   }, [id, restaurantIdentifier, slug]);
 
+  const openMarketplaceFromQrMenu = useCallback(() => {
+    navigateToMarketplaceFromQrMenu();
+  }, []);
+
   const openRealAppLink = useCallback(() => {
     if (typeof window === "undefined") return;
 
@@ -9668,6 +9687,7 @@ export default function QrMenu() {
                   isDark={isQrHeaderDark}
                   isDrawerOpen={isAppHeaderDrawerOpen}
                   onOpenDrawer={openMenuHeaderDrawer}
+                  onOpenMarketplace={openMarketplaceFromQrMenu}
                   onSelect={handleSharedHeaderOrderTypeSelect}
                   reservationEnabled={shopIsOpen && !hasActiveDeliveryLock}
                   tableEnabled={shopIsOpen && !hasActiveDeliveryLock && allowTableOrder}
