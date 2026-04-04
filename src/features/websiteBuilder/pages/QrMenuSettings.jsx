@@ -324,12 +324,15 @@ export default function QrMenuSettings() {
   const appIconInputRef = useRef(null);
   const splashLogoInputRef = useRef(null);
   const mainTitleLogoInputRef = useRef(null);
+  const marketplaceBannerInputRef = useRef(null);
   const [appIconFileName, setAppIconFileName] = useState("");
   const [splashLogoFileName, setSplashLogoFileName] = useState("");
   const [mainTitleLogoFileName, setMainTitleLogoFileName] = useState("");
+  const [marketplaceBannerFileName, setMarketplaceBannerFileName] = useState("");
   const [uploadingAppIcon, setUploadingAppIcon] = useState(false);
   const [uploadingSplashLogo, setUploadingSplashLogo] = useState(false);
   const [uploadingMainTitleLogo, setUploadingMainTitleLogo] = useState(false);
+  const [uploadingMarketplaceBanner, setUploadingMarketplaceBanner] = useState(false);
 
   const [savingProduct, setSavingProduct] = useState(false);
   const [deletingProductId, setDeletingProductId] = useState(null);
@@ -403,6 +406,7 @@ export default function QrMenuSettings() {
   apple_touch_icon: "",
   splash_logo: "",
   main_title_logo: "",
+  marketplace_banner: "",
   app_display_name: "",
   pwa_primary_color: "#4F46E5",
   pwa_background_color: "#FFFFFF",
@@ -515,6 +519,7 @@ export default function QrMenuSettings() {
       apple_touch_icon: normalizeAssetValue(customization.apple_touch_icon),
       splash_logo: normalizeAssetValue(customization.splash_logo),
       main_title_logo: normalizeAssetValue(customization.main_title_logo),
+      marketplace_banner: normalizeAssetValue(customization.marketplace_banner),
       branding_updated_at: normalizeAssetValue(customization.branding_updated_at),
       qr_floor_plan_layout: normalizeFloorPlanLayout(customization.qr_floor_plan_layout),
     };
@@ -542,6 +547,7 @@ export default function QrMenuSettings() {
     );
     setSplashLogoFileName(getAssetFileName(normalizedCustomization.splash_logo));
     setMainTitleLogoFileName(getAssetFileName(normalizedCustomization.main_title_logo));
+    setMarketplaceBannerFileName(getAssetFileName(normalizedCustomization.marketplace_banner));
   }, []);
 
   const customDomainPreview = useMemo(
@@ -679,9 +685,11 @@ async function uploadBrandingAsset(field, file) {
   const isAppIcon = field === "app_icon";
   const isSplashLogo = field === "splash_logo";
   const isMainTitleLogo = field === "main_title_logo";
+  const isMarketplaceBanner = field === "marketplace_banner";
   if (isAppIcon) setUploadingAppIcon(true);
   if (isSplashLogo) setUploadingSplashLogo(true);
   if (isMainTitleLogo) setUploadingMainTitleLogo(true);
+  if (isMarketplaceBanner) setUploadingMarketplaceBanner(true);
   try {
     if (isMainTitleLogo) {
       const uploadForm = new FormData();
@@ -732,6 +740,7 @@ async function uploadBrandingAsset(field, file) {
     if (isAppIcon) setUploadingAppIcon(false);
     if (isSplashLogo) setUploadingSplashLogo(false);
     if (isMainTitleLogo) setUploadingMainTitleLogo(false);
+    if (isMarketplaceBanner) setUploadingMarketplaceBanner(false);
   }
 }
 
@@ -3811,6 +3820,56 @@ async function saveAllCustomization() {
                 ) : null}
                 <p className="mt-2 text-xs text-gray-500">
                   {t("Recommended size: 1200 x 320 px (minimum 600 x 160 px), PNG/SVG with transparent background.")}
+                </p>
+              </div>
+
+              <div>
+                <label className="font-semibold block mb-2">{t("Marketplace Banner")}</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={marketplaceBannerInputRef}
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0] || null;
+                      setMarketplaceBannerFileName(file?.name || "");
+                      if (!file) return;
+                      await uploadBrandingAsset("marketplace_banner", file);
+                      try {
+                        e.target.value = "";
+                      } catch {}
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => marketplaceBannerInputRef.current?.click()}
+                    disabled={uploadingMarketplaceBanner}
+                    className="px-4 py-2 rounded-xl border bg-white dark:bg-zinc-900 font-semibold hover:bg-gray-50 dark:hover:bg-zinc-800 transition disabled:opacity-60"
+                  >
+                    {uploadingMarketplaceBanner ? t("Please wait...") : t("Choose file")}
+                  </button>
+                  <span className="min-w-0 flex-1 truncate text-sm text-gray-500 dark:text-gray-300">
+                    {marketplaceBannerFileName ? marketplaceBannerFileName : t("No file chosen")}
+                  </span>
+                </div>
+                {settings.marketplace_banner ? (
+                  <div className="mt-2 flex items-center gap-3">
+                    <img
+                      src={resolveUploadSrc(
+                        settings.marketplace_banner,
+                        settings.branding_updated_at
+                      )}
+                      alt={t("Marketplace Banner")}
+                      className="h-16 w-28 rounded-xl object-cover border bg-white"
+                    />
+                    <span className="text-xs text-gray-500">
+                      {t("Used as marketplace card cover in Beypro Marketplace.")}
+                    </span>
+                  </div>
+                ) : null}
+                <p className="mt-2 text-xs text-gray-500">
+                  {t("Recommended: 1600 x 900 px (16:9), JPG/PNG/WEBP.")}
                 </p>
               </div>
 
