@@ -92,12 +92,26 @@ function normalizeQrPhone(value) {
 function navigateToMarketplaceFromQrMenu() {
   if (typeof window === "undefined") return;
 
+  if (window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === "function") {
+    try {
+      window.ReactNativeWebView.postMessage(
+        JSON.stringify({
+          action: "OPEN_MARKETPLACE",
+          source: "qr-menu",
+        })
+      );
+      return;
+    } catch {
+      // fallback below
+    }
+  }
+
   if (window.ReactNativeWebView) {
     window.location.href = "beypro://marketplace";
     return;
   }
 
-  window.location.href = APP_RESTAURANT_BASE_URL;
+  window.location.href = `${APP_RESTAURANT_BASE_URL}/marketplace`;
 }
 
 function formatQrPhoneForInput(value) {
