@@ -2763,10 +2763,14 @@ function LanguageSwitcher({
   t,
   isDark = false,
   dropdownDirection = "down",
+  compact = false,
 }) {
   const [open, setOpen] = React.useState(false);
   const containerRef = React.useRef(null);
   const current = LANGS.find((item) => item.code === lang) || LANGS[0];
+  const compactLabel = String(current?.code || "en")
+    .slice(0, 2)
+    .toUpperCase();
 
   React.useEffect(() => {
     if (!open) return undefined;
@@ -2790,21 +2794,27 @@ function LanguageSwitcher({
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[12px] sm:text-[13px] font-medium transition focus:outline-none focus:ring-2 ${
+        className={`inline-flex items-center ${
+          compact
+            ? "justify-center w-full h-full rounded-xl text-[11px] sm:text-[12px]"
+            : "gap-2 px-3 py-1.5 rounded-lg text-[12px] sm:text-[13px]"
+        } border font-medium transition focus:outline-none focus:ring-2 ${
           isDark
             ? "border-neutral-800 bg-transparent text-neutral-200 hover:bg-neutral-900/70 focus:ring-white/15"
-            : "border-gray-200/90 bg-transparent text-gray-700 hover:bg-gray-50 focus:ring-slate-200"
+            : "border-gray-200/90 bg-white/95 text-gray-700 hover:bg-white focus:ring-slate-200"
         }`}
         aria-label={t("Language")}
         aria-expanded={open}
       >
-        <span>{current.label}</span>
-        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+        <span>{compact ? compactLabel : current.label}</span>
+        {!compact ? (
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+        ) : null}
       </button>
 
       {open ? (
         <div
-          className={`absolute ${dropdownDirection === "up" ? "bottom-[calc(100%+10px)]" : "top-[calc(100%+10px)]"} right-0 z-[180] w-[180px] rounded-2xl border p-2 shadow-lg ${
+          className={`absolute ${dropdownDirection === "up" ? "bottom-[calc(100%+10px)]" : "top-[calc(100%+10px)]"} right-0 z-[180] ${compact ? "w-[150px]" : "w-[180px]"} rounded-2xl border p-2 shadow-lg ${
             isDark
               ? "border-gray-200/20 bg-neutral-950/90 text-white backdrop-blur"
               : "border-gray-200 bg-white/95 text-gray-900 backdrop-blur"
@@ -4868,6 +4878,15 @@ async function load() {
         tagline={subtitle || tagline || "Fresh • Local • Crafted"}
         accentColor={primaryAccentColor}
         t={t}
+        languageControl={
+          <LanguageSwitcher
+            lang={lang}
+            setLang={setLang}
+            t={t}
+            isDark={isDark}
+            compact
+          />
+        }
       />
       <HeaderDrawer
         isOpen={isReservationHeaderDrawerOpen}
@@ -9725,7 +9744,15 @@ export default function QrMenu() {
                   shopHours={{}}
                   loadingShopHours={false}
                   shopHoursDropdownRef={null}
-                  languageControl={null}
+                  languageControl={
+                    <LanguageSwitcher
+                      lang={lang}
+                      setLang={setLang}
+                      t={t}
+                      isDark={isQrHeaderDark}
+                      compact
+                    />
+                  }
                   showInfo={false}
                 />
                 <HeaderDrawer

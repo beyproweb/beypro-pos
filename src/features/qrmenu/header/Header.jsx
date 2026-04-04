@@ -81,6 +81,7 @@ function Header({
             accentColor={accentColor}
             t={t}
             onOpenMarketplace={onOpenMarketplace}
+            languageControl={languageControl}
           />
         </div>
       </header>

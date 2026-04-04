@@ -59,6 +59,7 @@ function HeaderTabs({
   accentColor = "#111827",
   t,
   onOpenMarketplace,
+  languageControl = null,
 }) {
   const isToolbar = layout === "toolbar";
   const resolvedAccentColor = normalizeHexColor(accentColor, "#111827");
@@ -88,6 +89,11 @@ function HeaderTabs({
       : "bg-transparent text-slate-500 border border-transparent hover:bg-white hover:text-slate-900";
 
   const normalizedCount = Math.max(0, Number(statusShortcutCount) || 0);
+  const hasMarketplaceShortcut = typeof onOpenMarketplace === "function";
+  const hasLanguageControl = Boolean(languageControl);
+  const iconSlotClass = "h-10 w-10 sm:h-11 sm:w-11 shrink-0";
+  const needsRightBalanceSlot = hasMarketplaceShortcut && !hasLanguageControl;
+  const needsLeftBalanceSlot = !hasMarketplaceShortcut && hasLanguageControl;
 
   const segments = [
     {
@@ -166,34 +172,40 @@ function HeaderTabs({
   return (
     <div
       className={`flex w-full min-w-0 items-center ${
-        hasVisibleSegments ? "gap-6" : "gap-3"
+        hasVisibleSegments ? "gap-4" : "gap-2"
       }`}
     >
-      <DrawerButton onClick={onOpenDrawer} isDark={isDark} isOpen={isDrawerOpen} />
+      <div className="flex items-center gap-1.5 sm:gap-2">
+        <DrawerButton onClick={onOpenDrawer} isDark={isDark} isOpen={isDrawerOpen} />
 
-      {typeof onOpenMarketplace === "function" ? (
-        <button
-          type="button"
-          onClick={onOpenMarketplace}
-          aria-label={t("Marketplace")}
-          className={`h-10 w-10 sm:h-11 sm:w-11 shrink-0 rounded-xl border flex items-center justify-center transition-all duration-200 ${
-            isDark
-              ? "bg-white/[0.06] text-white/90 border-white/12 hover:bg-white/[0.12]"
-              : "bg-white/95 text-gray-700 border-gray-200 hover:bg-white hover:text-gray-900"
-          }`}
-        >
-          <House className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
-        </button>
-      ) : null}
+        {hasMarketplaceShortcut ? (
+          <button
+            type="button"
+            onClick={onOpenMarketplace}
+            aria-label={t("Marketplace")}
+            className={`${iconSlotClass} rounded-xl border flex items-center justify-center transition-all duration-200 ${
+              isDark
+                ? "bg-white/[0.06] text-white/90 border-white/12 hover:bg-white/[0.12]"
+                : "bg-white/95 text-gray-700 border-gray-200 hover:bg-white hover:text-gray-900"
+            }`}
+          >
+            <House className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
+          </button>
+        ) : null}
+
+        {needsLeftBalanceSlot ? (
+          <div aria-hidden className={`${iconSlotClass} pointer-events-none opacity-0`} />
+        ) : null}
+      </div>
 
       {showCompactBrandSlot ? (
-        <div className="min-w-0 flex-1 px-1">
-          <div className="flex h-10 sm:h-11 items-center justify-center overflow-hidden">
+        <div className="min-w-0 flex-1 px-0.5">
+          <div className="flex h-10 sm:h-11 items-center justify-center">
             {compactLogoSrc ? (
               <img
                 src={compactLogoSrc}
                 alt={restaurantName || t("Restaurant")}
-                className="block h-auto max-h-[39px] sm:max-h-[41px] w-auto max-w-[293px] sm:max-w-[380px] object-contain"
+                className="block h-auto max-h-[39px] sm:max-h-[41px] w-auto max-w-full object-contain"
                 loading="lazy"
               />
             ) : (
@@ -211,36 +223,50 @@ function HeaderTabs({
         <div className="flex-1" />
       )}
 
-      {statusShortcutEnabled ? (
-        <button
-          type="button"
-          onClick={onStatusShortcutClick}
-          aria-label={statusShortcutOpen ? "Close order status" : "Open order status"}
-          aria-pressed={statusShortcutOpen}
-          className={`relative h-10 w-10 sm:h-11 sm:w-11 shrink-0 rounded-xl border flex items-center justify-center transition-all duration-200 ${
-            statusShortcutOpen
-              ? isDark
-                ? "bg-white text-neutral-950 border-white/85 shadow-sm"
-                : "bg-slate-900 text-white border-slate-900 shadow-sm"
-              : isDark
-                ? "bg-white/[0.06] text-white/90 border-white/12 hover:bg-white/[0.12]"
-                : "bg-white/95 text-gray-700 border-gray-200 hover:bg-white hover:text-gray-900"
-          }`}
-        >
-          <ShoppingCart className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
-          {normalizedCount > 0 ? (
-            <span
-              className={`absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] leading-none font-semibold flex items-center justify-center ${
-                isDark
-                  ? "bg-emerald-500 text-white"
-                  : "bg-emerald-600 text-white"
-              }`}
-            >
-              {normalizedCount > 99 ? "99+" : normalizedCount}
-            </span>
-          ) : null}
-        </button>
-      ) : null}
+      <div className="flex items-center gap-1.5 sm:gap-2">
+        {statusShortcutEnabled ? (
+          <button
+            type="button"
+            onClick={onStatusShortcutClick}
+            aria-label={statusShortcutOpen ? "Close order status" : "Open order status"}
+            aria-pressed={statusShortcutOpen}
+            className={`relative ${iconSlotClass} rounded-xl border flex items-center justify-center transition-all duration-200 ${
+              statusShortcutOpen
+                ? isDark
+                  ? "bg-white text-neutral-950 border-white/85 shadow-sm"
+                  : "bg-slate-900 text-white border-slate-900 shadow-sm"
+                : isDark
+                  ? "bg-white/[0.06] text-white/90 border-white/12 hover:bg-white/[0.12]"
+                  : "bg-white/95 text-gray-700 border-gray-200 hover:bg-white hover:text-gray-900"
+            }`}
+          >
+            <ShoppingCart className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
+            {normalizedCount > 0 ? (
+              <span
+                className={`absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] leading-none font-semibold flex items-center justify-center ${
+                  isDark
+                    ? "bg-emerald-500 text-white"
+                    : "bg-emerald-600 text-white"
+                }`}
+              >
+                {normalizedCount > 99 ? "99+" : normalizedCount}
+              </span>
+            ) : null}
+          </button>
+        ) : (
+          <div aria-hidden className={`${iconSlotClass} pointer-events-none opacity-0`} />
+        )}
+
+        {hasLanguageControl ? (
+          <div className={`${iconSlotClass} relative z-[170] flex items-center justify-center`}>
+            {languageControl}
+          </div>
+        ) : null}
+
+        {needsRightBalanceSlot ? (
+          <div aria-hidden className={`${iconSlotClass} pointer-events-none opacity-0`} />
+        ) : null}
+      </div>
 
     </div>
   );
