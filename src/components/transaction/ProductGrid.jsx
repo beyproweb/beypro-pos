@@ -185,8 +185,8 @@ const ProductGrid = ({
                   <div
                     className={
                       isDense
-                        ? "relative flex h-full w-full flex-col items-center justify-between px-1.5 py-1.5"
-                        : "relative flex h-full w-full flex-col items-center justify-between px-2 py-2"
+                        ? "relative flex h-full w-full flex-col items-center justify-center px-1.5 pb-8 pt-1.5"
+                        : "relative flex h-full w-full flex-col items-center justify-center px-2 pb-9 pt-2"
                     }
                   >
                     <p
@@ -207,7 +207,7 @@ const ProductGrid = ({
                       </span>
                     </p>
                     <span
-                      className={`${theme.price} inline-flex min-w-[62px] items-center justify-center rounded-full px-2 py-1 text-[11px] font-bold leading-none shadow-sm`}
+                      className={`${theme.price} absolute bottom-2 inline-flex min-w-[62px] items-center justify-center rounded-full px-2 py-1 text-[11px] font-bold leading-none shadow-sm`}
                     >
                       {formattedPrice}
                     </span>
