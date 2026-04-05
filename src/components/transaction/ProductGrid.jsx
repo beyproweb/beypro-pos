@@ -190,17 +190,13 @@ const ProductGrid = ({
                     }
                   >
                     <p
-                      className={
-                        isDense
-                          ? "flex h-[2.4em] w-full items-center justify-center"
-                          : "flex h-[2.5em] w-full items-center justify-center"
-                      }
+                      className="flex h-[1.25em] w-full items-center justify-center"
                     >
                       <span
                         className={
                           isDense
-                            ? "line-clamp-2 text-center text-[12px] font-semibold leading-tight text-slate-800 dark:text-slate-100"
-                            : "line-clamp-2 text-center text-[13px] font-semibold leading-tight text-slate-800 dark:text-slate-100"
+                            ? "block w-full truncate text-center text-[12px] font-semibold leading-tight text-slate-800 dark:text-slate-100"
+                            : "block w-full truncate text-center text-[13px] font-semibold leading-tight text-slate-800 dark:text-slate-100"
                         }
                       >
                         {productName}
@@ -239,8 +235,8 @@ const ProductGrid = ({
                       </div>
                     </div>
                     <div className="flex w-full flex-none flex-col items-center justify-center gap-1 px-2 pb-2 pt-1.5">
-                      <p className="flex h-[2.45em] w-full items-center justify-center">
-                        <span className="line-clamp-2 text-center text-[11px] font-semibold leading-tight tracking-[0.01em] text-slate-800 dark:text-slate-50">
+                      <p className="flex h-[1.25em] w-full items-center justify-center">
+                        <span className="block w-full truncate text-center text-[11px] font-semibold leading-tight tracking-[0.01em] text-slate-800 dark:text-slate-50">
                           {productName}
                         </span>
                       </p>
