@@ -1,54 +1,31 @@
 import React from "react";
+import { QrCode } from "lucide-react";
 
-function normalizeHexColor(value, fallback = "#111827") {
-  const raw = String(value || "").trim();
-  const match = raw.match(/^#([0-9a-f]{6}|[0-9a-f]{3})$/i);
-  if (!match) return fallback;
-  if (match[1].length === 6) return `#${match[1].toUpperCase()}`;
-  return `#${match[1]
-    .split("")
-    .map((ch) => `${ch}${ch}`)
-    .join("")
-    .toUpperCase()}`;
-}
+const BEYALL_PRIMARY = "#5B2EFF";
+const BEYALL_SECONDARY = "#7C3AED";
 
-function hexToRgb(value) {
-  const normalized = normalizeHexColor(value, "");
-  if (!normalized) return null;
-  const hex = normalized.slice(1);
-  return {
-    r: parseInt(hex.slice(0, 2), 16),
-    g: parseInt(hex.slice(2, 4), 16),
-    b: parseInt(hex.slice(4, 6), 16),
-  };
-}
-
-function getReadableTextColor(value) {
-  const rgb = hexToRgb(value);
-  if (!rgb) return "#FFFFFF";
-  const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
-  return brightness >= 160 ? "#0F172A" : "#FFFFFF";
-}
-
-function toRgba(value, alpha) {
-  const rgb = hexToRgb(value);
-  if (!rgb) return undefined;
-  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
-}
-
-function LoginPage({ t, onLogin, onGoRegister, onBack, accentColor = "#111827" }) {
-  const resolvedAccentColor = normalizeHexColor(accentColor, "#111827");
-  const accentTextColor = getReadableTextColor(resolvedAccentColor);
-  const pageBackground = `radial-gradient(circle at top left, ${
-    toRgba(resolvedAccentColor, 0.12) || "rgba(17,24,39,0.12)"
-  }, transparent 46%), linear-gradient(180deg, #f8fafc 0%, #ffffff 100%)`;
+function LoginPage({
+  t,
+  onLogin,
+  onGoogleLogin,
+  onAppleLogin,
+  onQrLogin,
+  onGoRegister,
+  onBack,
+}) {
   const [login, setLogin] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
+  const [socialLoading, setSocialLoading] = React.useState("");
   const [error, setError] = React.useState("");
 
   const submit = async (event) => {
     event.preventDefault();
+    if (!showPassword) {
+      setShowPassword(true);
+      return;
+    }
     setError("");
     setLoading(true);
     try {
@@ -60,97 +37,164 @@ function LoginPage({ t, onLogin, onGoRegister, onBack, accentColor = "#111827" }
     }
   };
 
+  const runSocialLogin = async (provider) => {
+    setError("");
+    setSocialLoading(provider);
+    try {
+      if (provider === "google") {
+        await onGoogleLogin?.();
+      } else {
+        await onAppleLogin?.();
+      }
+    } catch (err) {
+      setError(err?.message || "Social login failed");
+      setSocialLoading("");
+    }
+  };
+
+  const handleQrLogin = () => {
+    setError("");
+    if (typeof onQrLogin === "function") {
+      onQrLogin();
+      return;
+    }
+    setError("QR login is not available yet.");
+  };
+
   return (
-    <div
-      className="h-full overflow-y-auto dark:bg-[linear-gradient(180deg,_#0f172a_0%,_#020617_100%)]"
-      style={{ backgroundImage: pageBackground }}
-    >
-      <div className="sticky top-0 z-10 border-b border-gray-200/80 bg-white/90 px-4 py-3 backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-950/85 flex items-center gap-2">
+    <div className="relative h-full overflow-y-auto bg-white">
+      <div
+        className="pointer-events-none absolute -left-24 top-24 h-64 w-64 rounded-full blur-3xl"
+        style={{
+          background: `radial-gradient(circle, ${BEYALL_PRIMARY}22 0%, ${BEYALL_SECONDARY}00 72%)`,
+        }}
+      />
+      <div
+        className="pointer-events-none absolute -right-24 bottom-24 h-64 w-64 rounded-full blur-3xl"
+        style={{
+          background: `radial-gradient(circle, ${BEYALL_SECONDARY}20 0%, ${BEYALL_PRIMARY}00 72%)`,
+        }}
+      />
+
+      <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-gray-100 bg-white/90 px-4 py-3 backdrop-blur-sm">
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-600 transition hover:border-gray-300 hover:text-gray-900 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-neutral-700 dark:hover:text-neutral-100"
+          className="inline-flex items-center rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition hover:border-gray-300 hover:text-gray-900"
         >
           {t("Back")}
         </button>
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-neutral-100">{t("Login / Register")}</h3>
+        <h3 className="text-sm font-semibold text-gray-900">{t("Login / Register")}</h3>
       </div>
 
-      <div className="px-4 py-5">
-        <div className="overflow-hidden rounded-[28px] border border-white/70 bg-white/90 p-5 shadow-[0_24px_70px_rgba(15,23,42,0.12)] backdrop-blur-xl dark:border-white/10 dark:bg-neutral-900/75 dark:shadow-[0_28px_80px_rgba(2,6,23,0.45)]">
-          <div
-            className="inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em]"
-            style={{
-              borderColor: toRgba(resolvedAccentColor, 0.24) || resolvedAccentColor,
-              backgroundColor: toRgba(resolvedAccentColor, 0.1) || resolvedAccentColor,
-              color: resolvedAccentColor,
-            }}
-          >
-            {t("Login")}
-          </div>
-          <h3 className="mt-4 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
-            {t("Login / Register")}
-          </h3>
-          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            {t("Login to sync profile and orders")}
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
-              {t("My Orders")}
-            </span>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
-              {t("Saved checkout details")}
-            </span>
-          </div>
-        </div>
-
+      <div className="mx-auto flex min-h-[calc(100%-56px)] w-full max-w-[420px] items-center px-5 py-7">
         <form
-          className="mt-4 rounded-[28px] border border-slate-200/80 bg-white/95 p-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)] dark:border-neutral-800 dark:bg-neutral-950/85"
+          className="w-full rounded-[24px] border border-[#ECECF4] bg-white px-5 py-6 shadow-[0_8px_24px_rgba(15,23,42,0.04)]"
           onSubmit={submit}
         >
-          <div className="space-y-3">
+          <img
+            src="/Beylogo.svg"
+            alt="Beyall"
+            className="mx-auto mb-5 h-10 w-auto"
+            loading="lazy"
+          />
+
+          <h3 className="text-[33px] font-semibold tracking-[-0.02em] text-gray-950">
+            {t("What's your phone number or email?")}
+          </h3>
+
+          <div className="mt-5 space-y-3">
             <input
               value={login}
               onChange={(e) => setLogin(e.target.value)}
-              placeholder={t("Phone number or email")}
-              className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:border-neutral-600"
-              style={{ boxShadow: "none" }}
+              placeholder={t("Enter phone number or email")}
+              className="h-[52px] w-full rounded-[14px] border border-gray-300 bg-white px-4 text-[16px] text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-[#5B2EFF] focus:ring-2 focus:ring-[#5B2EFF]/20"
               autoComplete="username"
             />
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={t("Password")}
-              className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:border-neutral-600"
-              style={{ boxShadow: "none" }}
-              autoComplete="current-password"
-            />
+
+            {showPassword ? (
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={t("Enter password")}
+                className="h-[52px] w-full rounded-[14px] border border-gray-300 bg-white px-4 text-[16px] text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-[#5B2EFF] focus:ring-2 focus:ring-[#5B2EFF]/20"
+                autoComplete="current-password"
+              />
+            ) : null}
           </div>
 
           {error ? <p className="mt-3 text-xs font-medium text-rose-600">{t(error)}</p> : null}
 
-          <div className="mt-4 space-y-2">
+          <div className="mt-4 space-y-3">
             <button
               type="submit"
               disabled={loading}
-              className="h-12 w-full rounded-2xl text-sm font-semibold transition disabled:opacity-60"
+              className="h-[52px] w-full rounded-[14px] bg-black text-[17px] font-semibold text-white transition-transform duration-150 hover:bg-neutral-900 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
               style={{
-                backgroundColor: resolvedAccentColor,
-                color: accentTextColor,
-                boxShadow: `0 16px 30px ${toRgba(resolvedAccentColor, 0.24) || "rgba(15,23,42,0.18)"}`,
+                backgroundColor: BEYALL_PRIMARY,
               }}
             >
-              {loading ? "..." : t("Login")}
+              {loading ? "..." : t("Continue")}
             </button>
+
+            <div className="my-3 flex items-center gap-3 text-sm text-gray-400">
+              <span className="h-px flex-1 bg-gray-200" />
+              <span>{t("or")}</span>
+              <span className="h-px flex-1 bg-gray-200" />
+            </div>
+
+            <div className="space-y-2.5">
+              <button
+                type="button"
+                onClick={() => runSocialLogin("google")}
+                disabled={Boolean(socialLoading)}
+                className="flex h-12 w-full items-center justify-center gap-2.5 rounded-[14px] border border-gray-200 bg-white text-[17px] font-medium text-gray-900 transition-transform duration-150 hover:bg-gray-50 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="text-[17px] font-bold text-[#4285F4]">G</span>
+                <span>{socialLoading === "google" ? "..." : t("Continue with Google")}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => runSocialLogin("apple")}
+                disabled={Boolean(socialLoading)}
+                className="flex h-12 w-full items-center justify-center gap-2.5 rounded-[14px] border border-gray-900 bg-gray-950 text-[17px] font-medium text-white transition-transform duration-150 hover:bg-black active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-white/35 text-[12px] font-semibold">
+                  A
+                </span>
+                <span>{socialLoading === "apple" ? "..." : t("Continue with Apple")}</span>
+              </button>
+            </div>
+
+            <div className="my-3 flex items-center gap-3 text-sm text-gray-400">
+              <span className="h-px flex-1 bg-gray-200" />
+              <span>{t("or")}</span>
+              <span className="h-px flex-1 bg-gray-200" />
+            </div>
 
             <button
               type="button"
-              onClick={onGoRegister}
-              className="h-12 w-full rounded-2xl border border-slate-200 bg-white text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:border-neutral-700 dark:hover:bg-neutral-800"
+              onClick={handleQrLogin}
+              className="flex h-12 w-full items-center justify-center gap-2.5 rounded-[14px] border border-gray-200 bg-white text-[17px] font-medium text-gray-900 transition-transform duration-150 hover:bg-gray-50 active:scale-[0.99]"
             >
-              {t("Register")}
+              <QrCode className="h-4 w-4 text-gray-700" />
+              <span>{t("Log in with QR code")}</span>
             </button>
+
+            <p className="pt-3 text-center text-[12px] leading-5 text-gray-500">
+              {t("By continuing, you agree to Beyall Terms and Privacy Policy.")}
+            </p>
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={onGoRegister}
+                className="text-[12px] font-medium text-gray-500 underline decoration-gray-300 underline-offset-2 hover:text-gray-700"
+              >
+                {t("Need an account? Sign up")}
+              </button>
+            </div>
           </div>
         </form>
       </div>

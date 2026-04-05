@@ -36,7 +36,15 @@ function toRgba(value, alpha) {
   return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
 }
 
-function RegisterPage({ t, onRegister, onGoLogin, onBack, accentColor = "#111827" }) {
+function RegisterPage({
+  t,
+  onRegister,
+  onGoogleLogin,
+  onAppleLogin,
+  onGoLogin,
+  onBack,
+  accentColor = "#111827",
+}) {
   const resolvedAccentColor = normalizeHexColor(accentColor, "#111827");
   const accentTextColor = getReadableTextColor(resolvedAccentColor);
   const pageBackground = `radial-gradient(circle at top left, ${
@@ -50,10 +58,26 @@ function RegisterPage({ t, onRegister, onGoLogin, onBack, accentColor = "#111827
     password: "",
   });
   const [loading, setLoading] = React.useState(false);
+  const [socialLoading, setSocialLoading] = React.useState("");
   const [error, setError] = React.useState("");
 
   const onChange = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const runSocialLogin = async (provider) => {
+    setError("");
+    setSocialLoading(provider);
+    try {
+      if (provider === "google") {
+        await onGoogleLogin?.();
+      } else {
+        await onAppleLogin?.();
+      }
+    } catch (err) {
+      setError(err?.message || "Social login failed");
+      setSocialLoading("");
+    }
   };
 
   const submit = async (event) => {
@@ -180,6 +204,30 @@ function RegisterPage({ t, onRegister, onGoLogin, onBack, accentColor = "#111827
             >
               {t("Login instead")}
             </button>
+
+            <div className="pt-1">
+              <div className="my-2 text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+                {t("or continue with")}
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                <button
+                  type="button"
+                  onClick={() => runSocialLogin("google")}
+                  disabled={Boolean(socialLoading)}
+                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:border-neutral-700 dark:hover:bg-neutral-800"
+                >
+                  {socialLoading === "google" ? "..." : t("Continue with Google")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => runSocialLogin("apple")}
+                  disabled={Boolean(socialLoading)}
+                  className="h-11 w-full rounded-2xl border border-slate-800 bg-slate-900 text-sm font-semibold text-white transition hover:bg-black disabled:opacity-60 dark:border-neutral-700 dark:bg-black dark:text-white dark:hover:bg-neutral-900"
+                >
+                  {socialLoading === "apple" ? "..." : t("Continue with Apple")}
+                </button>
+              </div>
+            </div>
           </div>
         </form>
       </div>

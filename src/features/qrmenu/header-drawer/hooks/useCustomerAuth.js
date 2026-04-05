@@ -1,22 +1,28 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  completeCustomerOAuthFromUrl,
   getCustomerSession,
   loginCustomer,
   logoutCustomer,
   registerCustomer,
   restoreCustomerSession,
+  startAppleOAuthLogin,
+  startGoogleOAuthLogin,
   updateCustomerProfile,
 } from "../services/customerService";
 
 export default function useCustomerAuth(storage, options = {}) {
   const [customer, setCustomer] = useState(() => getCustomerSession(storage));
   const [isRestoring, setIsRestoring] = useState(false);
+  const [oauthError, setOauthError] = useState("");
   const authContext = useMemo(
     () => ({
       storage,
       fetcher: options?.fetcher,
+      identifier: options?.identifier,
+      getIdentifier: options?.getIdentifier,
     }),
-    [options?.fetcher, storage]
+    [options?.fetcher, options?.getIdentifier, options?.identifier, storage]
   );
 
   useEffect(() => {
@@ -61,9 +67,20 @@ export default function useCustomerAuth(storage, options = {}) {
     let cancelled = false;
 
     async function restore() {
-      if (typeof authContext.fetcher !== "function") return;
       setIsRestoring(true);
       try {
+        const oauthResult = await completeCustomerOAuthFromUrl(authContext);
+        if (!cancelled && oauthResult?.handled) {
+          setOauthError(String(oauthResult?.error || "").trim());
+          if (oauthResult?.customer) {
+            setCustomer(oauthResult.customer);
+          }
+          if (oauthResult?.customer && typeof authContext.fetcher === "function") {
+            return;
+          }
+        }
+
+        if (typeof authContext.fetcher !== "function") return;
         const next = await restoreCustomerSession(authContext);
         if (!cancelled) {
           setCustomer(next || null);
@@ -85,6 +102,7 @@ export default function useCustomerAuth(storage, options = {}) {
 
   const login = useCallback(
     async (payload) => {
+      setOauthError("");
       const next = await loginCustomer(payload, authContext);
       setCustomer(next);
       return next;
@@ -94,6 +112,7 @@ export default function useCustomerAuth(storage, options = {}) {
 
   const register = useCallback(
     async (payload) => {
+      setOauthError("");
       const next = await registerCustomer(payload, authContext);
       setCustomer(next);
       return next;
@@ -102,12 +121,14 @@ export default function useCustomerAuth(storage, options = {}) {
   );
 
   const logout = useCallback(() => {
+    setOauthError("");
     logoutCustomer(authContext);
     setCustomer(null);
   }, [authContext]);
 
   const updateProfile = useCallback(
     async (payload) => {
+      setOauthError("");
       const next = await updateCustomerProfile(payload, authContext);
       setCustomer(next);
       return next;
@@ -115,11 +136,35 @@ export default function useCustomerAuth(storage, options = {}) {
     [authContext]
   );
 
+  const loginWithGoogle = useCallback(
+    (optionsArg = {}) => {
+      setOauthError("");
+      return startGoogleOAuthLogin(authContext, optionsArg);
+    },
+    [authContext]
+  );
+
+  const loginWithApple = useCallback(
+    (optionsArg = {}) => {
+      setOauthError("");
+      return startAppleOAuthLogin(authContext, optionsArg);
+    },
+    [authContext]
+  );
+
+  const clearOauthError = useCallback(() => {
+    setOauthError("");
+  }, []);
+
   return {
     customer,
     isLoggedIn,
     isRestoring,
+    oauthError,
+    clearOauthError,
     login,
+    loginWithApple,
+    loginWithGoogle,
     register,
     logout,
     updateProfile,

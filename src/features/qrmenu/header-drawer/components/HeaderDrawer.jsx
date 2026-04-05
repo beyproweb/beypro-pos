@@ -51,7 +51,7 @@ function HeaderDrawer({
     },
     [appendIdentifier]
   );
-  const { customer, isLoggedIn, login, register, logout, updateProfile } = useCustomerAuth(storage, {
+  const { customer, isLoggedIn, login, loginWithApple, loginWithGoogle, register, logout, updateProfile } = useCustomerAuth(storage, {
     fetcher,
   });
 
@@ -156,6 +156,18 @@ function HeaderDrawer({
   const onRegister = async (payload) => {
     await register(payload);
     setView(VIEW_PROFILE);
+  };
+
+  const onGoogleAuth = async () => {
+    await loginWithGoogle({
+      returnTo: typeof window !== "undefined" ? window.location.href : "",
+    });
+  };
+
+  const onAppleAuth = async () => {
+    await loginWithApple({
+      returnTo: typeof window !== "undefined" ? window.location.href : "",
+    });
   };
 
   const onProfileSave = async (payload) => {
@@ -401,6 +413,12 @@ function HeaderDrawer({
             <LoginPage
               t={t}
               onLogin={onLogin}
+              onGoogleLogin={onGoogleAuth}
+              onAppleLogin={onAppleAuth}
+              onQrLogin={() => {
+                setView(VIEW_MENU);
+                onClose?.();
+              }}
               onGoRegister={() => setView(VIEW_REGISTER)}
               onBack={() => setView(VIEW_MENU)}
               accentColor={accentColor}
@@ -410,6 +428,8 @@ function HeaderDrawer({
             <RegisterPage
               t={t}
               onRegister={onRegister}
+              onGoogleLogin={onGoogleAuth}
+              onAppleLogin={onAppleAuth}
               onGoLogin={() => setView(VIEW_LOGIN)}
               onBack={() => setView(VIEW_MENU)}
               accentColor={accentColor}

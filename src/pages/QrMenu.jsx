@@ -470,6 +470,8 @@ function GuestWelcomeAuthModal({
   view,
   onViewChange,
   onClose,
+  onAppleLogin,
+  onGoogleLogin,
   onLogin,
   onRegister,
   t,
@@ -567,6 +569,8 @@ function GuestWelcomeAuthModal({
                     await onRegister?.(payload);
                     onClose?.();
                   }}
+                  onGoogleLogin={onGoogleLogin}
+                  onAppleLogin={onAppleLogin}
                   onGoLogin={() => onViewChange?.("login")}
                   onBack={onClose}
                   accentColor={accentColor}
@@ -578,6 +582,8 @@ function GuestWelcomeAuthModal({
                     await onLogin?.(payload);
                     onClose?.();
                   }}
+                  onGoogleLogin={onGoogleLogin}
+                  onAppleLogin={onAppleLogin}
                   onGoRegister={() => onViewChange?.("register")}
                   onBack={onClose}
                   accentColor={accentColor}
@@ -7821,8 +7827,13 @@ export default function QrMenu() {
     isLoggedIn: isCustomerLoggedIn,
     isRestoring: isCustomerAuthRestoring,
     login: loginCustomerSession,
+    loginWithApple: loginCustomerWithApple,
+    loginWithGoogle: loginCustomerWithGoogle,
     register: registerCustomerSession,
-  } = useCustomerAuth(storage, { fetcher: customerAuthFetcher });
+  } = useCustomerAuth(storage, {
+    fetcher: customerAuthFetcher,
+    identifier: restaurantIdentifier,
+  });
   const isCustomerLoggedInEffective = Boolean(
     isCustomerLoggedIn || qrCustomerSession?.id
   );
@@ -7873,6 +7884,32 @@ export default function QrMenu() {
     setIsManualAuthModalOpen(false);
     setIsAuthWelcomeDismissed(true);
   }, []);
+
+  useEffect(() => {
+    const authParamRaw = String(
+      new URLSearchParams(location.search || "").get("auth") || ""
+    )
+      .trim()
+      .toLowerCase();
+
+    if (!authParamRaw) return;
+
+    const targetView =
+      authParamRaw === "register" ||
+      authParamRaw === "signup" ||
+      authParamRaw === "sign-up"
+        ? "register"
+        : authParamRaw === "login" || authParamRaw === "signin" || authParamRaw === "sign-in"
+        ? "login"
+        : "";
+
+    if (!targetView) return;
+
+    setAuthWelcomeView(targetView);
+    setIsAuthWelcomeDismissed(false);
+    setIsManualAuthModalOpen(true);
+    handleCloseAppHeaderDrawer();
+  }, [handleCloseAppHeaderDrawer, location.search]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -9642,6 +9679,16 @@ export default function QrMenu() {
         view={authWelcomeView}
         onViewChange={setAuthWelcomeView}
         onClose={handleCloseAuthWelcomeModal}
+        onGoogleLogin={() =>
+          loginCustomerWithGoogle({
+            returnTo: typeof window !== "undefined" ? window.location.href : "",
+          })
+        }
+        onAppleLogin={() =>
+          loginCustomerWithApple({
+            returnTo: typeof window !== "undefined" ? window.location.href : "",
+          })
+        }
         onLogin={loginCustomerSession}
         onRegister={registerCustomerSession}
         t={t}

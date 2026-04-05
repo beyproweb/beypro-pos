@@ -1,3 +1,5 @@
+import { API_BASE } from "../../../../utils/api";
+
 const STORAGE_KEYS = {
   session: "qr_customer_session",
   token: "qr_customer_token",
@@ -22,6 +24,9 @@ const AUTH_ERROR_MESSAGES = {
   invalidCredentials: "Incorrect password.",
   missingLoginFields: "Phone number or email and password are required",
 };
+
+const OAUTH_PROVIDER_SET = new Set(["google", "apple"]);
+const OAUTH_QUERY_KEYS = ["qr_oauth_token", "qr_oauth_error", "qr_oauth_provider"];
 
 function parseJSON(raw, fallback) {
   try {
@@ -72,6 +77,121 @@ function resolveLanguage(payload) {
   }
 
   return "";
+}
+
+function normalizeOAuthProvider(value) {
+  const provider = normalizeText(value).toLowerCase();
+  return OAUTH_PROVIDER_SET.has(provider) ? provider : "";
+}
+
+function resolveIdentifierFromPathname(pathname) {
+  const segments = String(pathname || "")
+    .split("/")
+    .map((part) => normalizeText(part))
+    .filter(Boolean);
+  if (!segments.length) return "";
+
+  if (segments[0] === "qr-menu" && segments[1]) return segments[1];
+
+  const reservedRoots = new Set([
+    "menu",
+    "qr",
+    "login",
+    "register",
+    "staff-login",
+    "standalone",
+    "dashboard",
+    "kitchen",
+    "settings",
+  ]);
+
+  return reservedRoots.has(segments[0]) ? "" : segments[0];
+}
+
+function resolveIdentifierFromContext(context = {}) {
+  const explicitIdentifier = normalizeText(context?.identifier);
+  if (explicitIdentifier) return explicitIdentifier;
+
+  if (typeof context?.getIdentifier === "function") {
+    const resolved = normalizeText(context.getIdentifier());
+    if (resolved) return resolved;
+  }
+
+  if (typeof window === "undefined") return "";
+
+  const params = new URLSearchParams(window.location.search || "");
+  const queryKeys = ["identifier", "tenant_id", "tenant", "restaurant_id", "restaurant"];
+  for (const key of queryKeys) {
+    const value = normalizeText(params.get(key));
+    if (value) return value;
+  }
+
+  return resolveIdentifierFromPathname(window.location.pathname);
+}
+
+function buildOAuthStartUrl(provider, context = {}, options = {}) {
+  const normalizedProvider = normalizeOAuthProvider(provider);
+  if (!normalizedProvider) {
+    throw new Error("Unsupported OAuth provider.");
+  }
+
+  const identifier = resolveIdentifierFromContext(context);
+  if (!identifier) {
+    throw new Error("Restaurant identifier is required for social login.");
+  }
+
+  const baseUrl = normalizeText(API_BASE) || "/api";
+  const hasProtocol = /^https?:\/\//i.test(baseUrl);
+  const absoluteBase = hasProtocol
+    ? baseUrl
+    : `${typeof window !== "undefined" ? window.location.origin : ""}${baseUrl}`;
+  const root = absoluteBase.endsWith("/") ? absoluteBase : `${absoluteBase}/`;
+  const startUrl = new URL(`public/customer-auth/oauth/${normalizedProvider}/start`, root);
+
+  startUrl.searchParams.set("identifier", identifier);
+  const returnTo = normalizeText(
+    options?.returnTo || (typeof window !== "undefined" ? window.location.href : "")
+  );
+  if (returnTo) {
+    startUrl.searchParams.set("return_to", returnTo);
+  }
+
+  return startUrl.toString();
+}
+
+function removeOAuthQueryParamsFromLocation() {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  let changed = false;
+  OAUTH_QUERY_KEYS.forEach((key) => {
+    if (url.searchParams.has(key)) {
+      url.searchParams.delete(key);
+      changed = true;
+    }
+  });
+  if (!changed) return;
+
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  window.history.replaceState(window.history.state, "", nextUrl);
+}
+
+function mapOAuthErrorMessage(code) {
+  const normalized = normalizeText(code).toLowerCase();
+  if (!normalized) return "Social login failed.";
+  switch (normalized) {
+    case "unsupported_provider":
+      return "This social login provider is not supported.";
+    case "google_not_configured":
+      return "Google login is not configured yet.";
+    case "apple_not_configured":
+      return "Apple login is not configured yet.";
+    case "invalid_oauth_state":
+      return "Social login session expired. Please try again.";
+    case "missing_oauth_code":
+      return "Social login response was incomplete. Please try again.";
+    default:
+      return "Social login failed. Please try again.";
+  }
 }
 
 function buildCheckoutInfo(payload, existing = {}) {
@@ -353,6 +473,65 @@ export async function restoreCustomerSession(context = {}) {
     clearSessionState(context?.storage);
     return null;
   }
+}
+
+export async function completeCustomerOAuthFromUrl(context = {}) {
+  if (typeof window === "undefined") {
+    return { handled: false, customer: getSession(context?.storage), error: "" };
+  }
+
+  const url = new URL(window.location.href);
+  const token = normalizeText(url.searchParams.get("qr_oauth_token"));
+  const provider = normalizeOAuthProvider(url.searchParams.get("qr_oauth_provider"));
+  const errorCode = normalizeText(url.searchParams.get("qr_oauth_error"));
+
+  if (!token && !errorCode) {
+    return { handled: false, customer: getSession(context?.storage), error: "" };
+  }
+
+  removeOAuthQueryParamsFromLocation();
+
+  if (errorCode) {
+    return {
+      handled: true,
+      customer: getSession(context?.storage),
+      error: mapOAuthErrorMessage(errorCode),
+      provider,
+    };
+  }
+
+  const storage = getStorage(context?.storage);
+  if (storage && token) {
+    storage.setItem(STORAGE_KEYS.token, token);
+  }
+
+  const customer = await restoreCustomerSession(context);
+  if (!customer) {
+    return {
+      handled: true,
+      customer: null,
+      error: "Social login could not be restored. Please try again.",
+      provider,
+    };
+  }
+
+  return { handled: true, customer, error: "", provider };
+}
+
+export function startCustomerOAuth(provider, context = {}, options = {}) {
+  const startUrl = buildOAuthStartUrl(provider, context, options);
+  if (typeof window !== "undefined") {
+    window.location.assign(startUrl);
+  }
+  return startUrl;
+}
+
+export function startGoogleOAuthLogin(context = {}, options = {}) {
+  return startCustomerOAuth("google", context, options);
+}
+
+export function startAppleOAuthLogin(context = {}, options = {}) {
+  return startCustomerOAuth("apple", context, options);
 }
 
 export async function registerCustomer(payload, context = {}) {
