@@ -3,18 +3,55 @@ import { normalizeTableDensity, TABLE_DENSITY } from "../../features/tables/tabl
 
 const PRODUCT_WINDOW_INITIAL_COUNT = 60;
 const PRODUCT_WINDOW_STEP = 60;
+const EMPTY_PRODUCTS = [];
+const PRODUCT_CARD_THEMES = [
+  {
+    card: "border-sky-200/70 bg-gradient-to-br from-white via-sky-50/90 to-cyan-100/50 dark:border-sky-800/50 dark:from-slate-900/80 dark:via-slate-900/75 dark:to-sky-950/35",
+    dot: "bg-sky-500 dark:bg-sky-300",
+    price: "bg-sky-600 text-white dark:bg-sky-500 dark:text-slate-900",
+  },
+  {
+    card: "border-emerald-200/70 bg-gradient-to-br from-white via-emerald-50/90 to-teal-100/50 dark:border-emerald-800/50 dark:from-slate-900/80 dark:via-slate-900/75 dark:to-emerald-950/35",
+    dot: "bg-emerald-500 dark:bg-emerald-300",
+    price: "bg-emerald-600 text-white dark:bg-emerald-500 dark:text-slate-900",
+  },
+  {
+    card: "border-amber-200/80 bg-gradient-to-br from-white via-amber-50/90 to-orange-100/55 dark:border-amber-800/50 dark:from-slate-900/80 dark:via-slate-900/75 dark:to-amber-950/35",
+    dot: "bg-amber-500 dark:bg-amber-300",
+    price: "bg-amber-600 text-white dark:bg-amber-500 dark:text-slate-900",
+  },
+  {
+    card: "border-rose-200/75 bg-gradient-to-br from-white via-rose-50/90 to-pink-100/50 dark:border-rose-800/50 dark:from-slate-900/80 dark:via-slate-900/75 dark:to-rose-950/35",
+    dot: "bg-rose-500 dark:bg-rose-300",
+    price: "bg-rose-600 text-white dark:bg-rose-500 dark:text-slate-900",
+  },
+  {
+    card: "border-indigo-200/75 bg-gradient-to-br from-white via-indigo-50/90 to-blue-100/55 dark:border-indigo-800/50 dark:from-slate-900/80 dark:via-slate-900/75 dark:to-indigo-950/35",
+    dot: "bg-indigo-500 dark:bg-indigo-300",
+    price: "bg-indigo-600 text-white dark:bg-indigo-500 dark:text-slate-900",
+  },
+];
+
+const getProductTheme = (product) => {
+  const seed = String(product?.id ?? product?.name ?? "");
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash << 5) - hash + seed.charCodeAt(i);
+    hash |= 0;
+  }
+  const index = Math.abs(hash) % PRODUCT_CARD_THEMES.length;
+  return PRODUCT_CARD_THEMES[index];
+};
 
 const ProductGrid = ({
   products,
   onAddProduct,
-  onOpenExtras,
-  t,
   formatCurrency,
   enableVirtualization = false,
   virtualizationOverscan = 6,
   tableDensity = TABLE_DENSITY.COMFORTABLE,
 }) => {
-  if (!Array.isArray(products)) return null;
+  const safeProducts = Array.isArray(products) ? products : EMPTY_PRODUCTS;
   const fallbackSrc = "/Productsfallback.jpg";
   const scrollRef = useRef(null);
   const [windowingFallback, setWindowingFallback] = useState(false);
@@ -33,11 +70,11 @@ const ProductGrid = ({
   const shouldWindowProducts =
     enableVirtualization &&
     !windowingFallback &&
-    products.length > PRODUCT_WINDOW_INITIAL_COUNT;
+    safeProducts.length > PRODUCT_WINDOW_INITIAL_COUNT;
   const [renderCount, setRenderCount] = useState(() =>
     shouldWindowProducts
-      ? Math.min(products.length, PRODUCT_WINDOW_INITIAL_COUNT)
-      : products.length
+      ? Math.min(safeProducts.length, PRODUCT_WINDOW_INITIAL_COUNT)
+      : safeProducts.length
   );
 
   useEffect(() => {
@@ -60,11 +97,11 @@ const ProductGrid = ({
 
   useEffect(() => {
     if (!shouldWindowProducts) {
-      setRenderCount(products.length);
+      setRenderCount(safeProducts.length);
       return;
     }
-    setRenderCount(Math.min(products.length, PRODUCT_WINDOW_INITIAL_COUNT));
-  }, [products, products.length, shouldWindowProducts]);
+    setRenderCount(Math.min(safeProducts.length, PRODUCT_WINDOW_INITIAL_COUNT));
+  }, [safeProducts, safeProducts.length, shouldWindowProducts]);
 
   const handleScroll = useCallback(
     (event) => {
@@ -80,17 +117,17 @@ const ProductGrid = ({
       const remaining = node.scrollHeight - node.scrollTop - node.clientHeight;
       if (remaining > thresholdPx) return;
       setRenderCount((prev) => {
-        if (prev >= products.length) return prev;
-        return Math.min(products.length, prev + PRODUCT_WINDOW_STEP + overscan);
+        if (prev >= safeProducts.length) return prev;
+        return Math.min(safeProducts.length, prev + PRODUCT_WINDOW_STEP + overscan);
       });
     },
-    [overscan, products.length, shouldWindowProducts, thresholdPx]
+    [overscan, safeProducts.length, shouldWindowProducts, thresholdPx]
   );
 
   const renderedProducts = useMemo(() => {
-    if (!shouldWindowProducts) return products;
-    return products.slice(0, renderCount);
-  }, [products, renderCount, shouldWindowProducts]);
+    if (!shouldWindowProducts) return safeProducts;
+    return safeProducts.slice(0, renderCount);
+  }, [safeProducts, renderCount, shouldWindowProducts]);
   const gridStyle = useMemo(
     () =>
       compactLike
@@ -108,14 +145,13 @@ const ProductGrid = ({
     ? `grid w-full ${gridGapClass}`
     : "grid w-full grid-cols-3 gap-x-2 gap-y-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
   const cardBaseClass = compactLike
-    ? "relative flex aspect-square w-full flex-col overflow-hidden rounded-[10px] border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/90 text-center shadow-[0_6px_14px_rgba(15,23,42,0.08)] ring-1 ring-white/70 transition-colors active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 dark:border-slate-700/70 dark:from-slate-900/70 dark:to-slate-900/45 dark:ring-slate-800/60"
+    ? "group relative flex aspect-square w-full flex-col overflow-hidden rounded-[12px] border text-center shadow-[0_10px_20px_rgba(15,23,42,0.10)] ring-1 ring-white/70 transition-all duration-150 hover:-translate-y-[1px] hover:shadow-[0_14px_24px_rgba(15,23,42,0.14)] active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 dark:ring-slate-800/60"
     : `
-                relative flex aspect-square w-full flex-col overflow-hidden rounded-[14px] border border-white/50 bg-white/85 text-center shadow-[0_10px_20px_rgba(15,23,42,0.07)]
-                hover:border-indigo-200 hover:shadow-[0_14px_28px_rgba(99,102,241,0.12)] active:scale-[0.97]
-                dark:border-slate-700/50 dark:bg-slate-900/60 dark:shadow-[0_10px_22px_rgba(0,0,0,0.35)]
-                dark:hover:border-indigo-500/30 dark:hover:shadow-[0_14px_28px_rgba(0,0,0,0.4)] dark:active:bg-indigo-950/40
-                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60
-                transition-transform duration-75 active:duration-50
+                group relative flex aspect-square w-full flex-col overflow-hidden rounded-[16px] border text-center
+                shadow-[0_12px_24px_rgba(15,23,42,0.10)] ring-1 ring-white/70 transition-all duration-150
+                hover:-translate-y-[2px] hover:shadow-[0_18px_32px_rgba(15,23,42,0.16)] active:scale-[0.97]
+                dark:shadow-[0_12px_28px_rgba(0,0,0,0.38)] dark:hover:shadow-[0_18px_34px_rgba(0,0,0,0.45)]
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60
               `;
 
   return (
@@ -127,80 +163,98 @@ const ProductGrid = ({
         style={{ scrollbarGutter: "stable" }}
       >
         <div className={gridClassName} style={gridStyle}>
-          {renderedProducts.map((product) => (
-            <button
-              key={product.id}
-              onClick={() => onAddProduct(product)}
-              className={cardBaseClass}
-              title={product.name}
-            >
-              {compactLike ? (
-                <div
-                  className={
-                    isDense
-                      ? "flex h-full w-full flex-col items-center justify-between px-1 py-1"
-                      : "flex h-full w-full flex-col items-center justify-between px-1 py-1.5"
-                  }
-                >
-                  <p
+          {renderedProducts.map((product) => {
+            const theme = getProductTheme(product);
+            const productName = String(product?.name || "").trim() || "Unnamed Product";
+            const formattedPrice = formatCurrency
+              ? formatCurrency(parseFloat(product.price))
+              : product.price;
+            const initial = productName.charAt(0).toUpperCase();
+
+            return (
+              <button
+                key={product.id}
+                onClick={() => onAddProduct(product)}
+                className={`${cardBaseClass} ${theme.card}`}
+                title={productName}
+              >
+                <span
+                  className={`pointer-events-none absolute left-2 top-2 h-2.5 w-2.5 rounded-full ${theme.dot}`}
+                />
+                {compactLike ? (
+                  <div
                     className={
                       isDense
-                        ? "flex h-[2.4em] w-full items-center justify-center"
-                        : "flex h-[2.5em] w-full items-center justify-center"
+                        ? "relative flex h-full w-full flex-col items-center justify-between px-1.5 py-1.5"
+                        : "relative flex h-full w-full flex-col items-center justify-between px-2 py-2"
                     }
                   >
-                    <span
+                    <p
                       className={
                         isDense
-                          ? "line-clamp-2 text-center text-[12px] font-semibold leading-tight text-slate-800 dark:text-slate-100"
-                          : "line-clamp-2 text-center text-[13px] font-semibold leading-tight text-slate-800 dark:text-slate-100"
+                          ? "flex h-[2.4em] w-full items-center justify-center"
+                          : "flex h-[2.5em] w-full items-center justify-center"
                       }
                     >
-                      {product.name}
-                    </span>
-                  </p>
-                  <span
-                    className={
-                      isDense
-                        ? "text-[12px] font-bold leading-none text-indigo-600 dark:text-indigo-300"
-                        : "text-[13px] font-bold leading-none text-indigo-600 dark:text-indigo-300"
-                    }
-                  >
-                    {formatCurrency ? formatCurrency(parseFloat(product.price)) : product.price}
-                  </span>
-                </div>
-              ) : (
-                <>
-                  <div className="relative w-full flex-1 min-h-0 overflow-hidden border-b border-white/50 bg-white/80 p-0.5 dark:border-slate-800/50 dark:bg-slate-900/50">
-                    <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
-                      <img
-                        src={product.image || fallbackSrc}
-                        alt={product.name}
-                        className="h-full w-full object-cover"
-                        loading="lazy"
-                        decoding="async"
-                        fetchPriority="low"
-                        onError={(e) => {
-                          e.currentTarget.onerror = null;
-                          e.currentTarget.src = fallbackSrc;
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex w-full flex-none flex-col items-center justify-center gap-0.5 bg-white/80 px-1 py-1 dark:bg-slate-900/40">
-                    <p className="flex h-[2.4em] w-full items-center justify-center">
-                      <span className="line-clamp-2 text-center text-[11px] font-semibold leading-tight text-slate-800 dark:text-slate-50">
-                        {product.name}
+                      <span
+                        className={
+                          isDense
+                            ? "line-clamp-2 text-center text-[12px] font-semibold leading-tight text-slate-800 dark:text-slate-100"
+                            : "line-clamp-2 text-center text-[13px] font-semibold leading-tight text-slate-800 dark:text-slate-100"
+                        }
+                      >
+                        {productName}
                       </span>
                     </p>
-                    <span className="text-[13px] font-bold text-indigo-600 leading-none dark:text-indigo-300">
-                      {formatCurrency ? formatCurrency(parseFloat(product.price)) : product.price}
+                    <span
+                      className={`${theme.price} inline-flex min-w-[62px] items-center justify-center rounded-full px-2 py-1 text-[11px] font-bold leading-none shadow-sm`}
+                    >
+                      {formattedPrice}
                     </span>
                   </div>
-                </>
-              )}
-            </button>
-          ))}
+                ) : (
+                  <div className="relative flex h-full w-full flex-col">
+                    <div className="relative w-full flex-1 min-h-0 overflow-hidden border-b border-white/40 p-1 dark:border-slate-700/60">
+                      <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-[12px] border border-white/60 bg-white/65 dark:border-slate-700/50 dark:bg-slate-900/55">
+                        {product.image ? (
+                          <img
+                            src={product.image}
+                            alt={productName}
+                            className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.04]"
+                            loading="lazy"
+                            decoding="async"
+                            fetchPriority="low"
+                            onError={(e) => {
+                              e.currentTarget.onerror = null;
+                              e.currentTarget.src = fallbackSrc;
+                            }}
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-white/40 via-white/20 to-white/5 dark:from-slate-800/50 dark:via-slate-800/35 dark:to-slate-900/30">
+                            <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/75 text-sm font-bold text-slate-700 ring-1 ring-white/90 dark:bg-slate-800/85 dark:text-slate-100 dark:ring-slate-700/80">
+                              {initial || "•"}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex w-full flex-none flex-col items-center justify-center gap-1 px-2 pb-2 pt-1.5">
+                      <p className="flex h-[2.45em] w-full items-center justify-center">
+                        <span className="line-clamp-2 text-center text-[11px] font-semibold leading-tight tracking-[0.01em] text-slate-800 dark:text-slate-50">
+                          {productName}
+                        </span>
+                      </p>
+                      <span
+                        className={`${theme.price} inline-flex min-w-[74px] items-center justify-center rounded-full px-2.5 py-1 text-[12px] font-bold leading-none shadow-sm`}
+                      >
+                        {formattedPrice}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
     </article>
