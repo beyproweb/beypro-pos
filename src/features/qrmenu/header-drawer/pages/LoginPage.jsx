@@ -92,16 +92,16 @@ function LoginPage({
           className="w-full rounded-[24px] border border-[#ECECF4] bg-white px-5 py-6 shadow-[0_8px_24px_rgba(15,23,42,0.04)]"
           onSubmit={submit}
         >
-          <img
-            src="/Beylogo.svg"
-            alt="Beyall"
-            className="mx-auto mb-5 h-10 w-auto"
-            loading="lazy"
-          />
+          <div className="mx-auto mb-5 flex h-9 w-32 items-center justify-center overflow-hidden">
+            <img
+              src="/beyall-logo.png"
+              alt="Beyall"
+              className="h-9 w-auto scale-[3.2] origin-center"
+              loading="lazy"
+            />
+          </div>
 
-          <h3 className="text-[33px] font-semibold tracking-[-0.02em] text-gray-950">
-            {t("What's your phone number or email?")}
-          </h3>
+          
 
           <div className="mt-5 space-y-3">
             <input
@@ -130,7 +130,7 @@ function LoginPage({
             <button
               type="submit"
               disabled={loading}
-              className="h-[52px] w-full rounded-[14px] bg-black text-[17px] font-semibold text-white transition-transform duration-150 hover:bg-neutral-900 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+              className="h-[44px] w-full rounded-[14px] bg-black text-[17px] font-semibold text-white transition-transform duration-150 hover:bg-neutral-900 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
               style={{
                 backgroundColor: BEYALL_PRIMARY,
               }}
@@ -151,7 +151,6 @@ function LoginPage({
                 disabled={Boolean(socialLoading)}
                 className="flex h-12 w-full items-center justify-center gap-2.5 rounded-[14px] border border-gray-200 bg-white text-[17px] font-medium text-gray-900 transition-transform duration-150 hover:bg-gray-50 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <span className="text-[17px] font-bold text-[#4285F4]">G</span>
                 <span>{socialLoading === "google" ? "..." : t("Continue with Google")}</span>
               </button>
 
@@ -161,9 +160,7 @@ function LoginPage({
                 disabled={Boolean(socialLoading)}
                 className="flex h-12 w-full items-center justify-center gap-2.5 rounded-[14px] border border-gray-900 bg-gray-950 text-[17px] font-medium text-white transition-transform duration-150 hover:bg-black active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-white/35 text-[12px] font-semibold">
-                  A
-                </span>
+              
                 <span>{socialLoading === "apple" ? "..." : t("Continue with Apple")}</span>
               </button>
             </div>
