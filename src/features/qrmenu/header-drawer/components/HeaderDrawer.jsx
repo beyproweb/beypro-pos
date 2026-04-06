@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   CircleUserRound,
   ClipboardList,
+  House,
   LifeBuoy,
   LogIn,
   LogOut,
@@ -42,6 +43,7 @@ function HeaderDrawer({
   hasOrderStatus = false,
   onOpenOrderStatus = null,
   onRequestAuthView = null,
+  onOpenMarketplace = null,
 }) {
   const storage = typeof window !== "undefined" ? window.localStorage : null;
   const fetcher = React.useCallback(
@@ -139,6 +141,13 @@ function HeaderDrawer({
     openAuthView(VIEW_LOGIN);
   };
 
+  const handleOpenMarketplace = React.useCallback(() => {
+    if (typeof onOpenMarketplace === "function") {
+      onOpenMarketplace();
+    }
+    onClose?.();
+  }, [onClose, onOpenMarketplace]);
+
   const onOpenProfile = () => {
     if (!isLoggedIn) {
       openAuthView(VIEW_LOGIN);
@@ -194,6 +203,17 @@ function HeaderDrawer({
 
   const menuContent = (
     <div className="h-full flex flex-col">
+      {typeof onOpenMarketplace === "function" ? (
+        <div className="px-4 pt-4 pb-3">
+          <DrawerItem
+            icon={House}
+            label={t("Home")}
+            description={t("Back to marketplace")}
+            onClick={handleOpenMarketplace}
+          />
+        </div>
+      ) : null}
+
       <div className="px-4 py-4 border-b border-gray-200 dark:border-neutral-800">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

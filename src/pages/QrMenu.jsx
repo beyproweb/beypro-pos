@@ -60,7 +60,6 @@ import {
   normalizeReservationTimeSlotOptions,
 } from "../utils/qrBooking";
 import {
-  appendPublicBookingSubPath,
   buildConcertBookingPath,
   buildReservationBookingPath,
 } from "../features/qrmenu/publicBookingRoutes";
@@ -4869,7 +4868,6 @@ async function load() {
         isDark={isDark}
         isDrawerOpen={isReservationHeaderDrawerOpen}
         onOpenDrawer={openReservationHeaderDrawer}
-        onOpenMarketplace={handleOpenMarketplace}
         onSelect={handleHeaderOrderTypeSelect}
         reservationEnabled={reservationEnabled && reservationTabEnabled && openStatus.isOpen}
         tableEnabled={tableEnabled && openStatus.isOpen}
@@ -4884,19 +4882,11 @@ async function load() {
         tagline={subtitle || tagline || "Fresh • Local • Crafted"}
         accentColor={primaryAccentColor}
         t={t}
-        languageControl={
-          <LanguageSwitcher
-            lang={lang}
-            setLang={setLang}
-            t={t}
-            isDark={isDark}
-            compact
-          />
-        }
       />
       <HeaderDrawer
         isOpen={isReservationHeaderDrawerOpen}
         onClose={closeReservationHeaderDrawer}
+        onOpenMarketplace={handleOpenMarketplace}
         t={t}
         appendIdentifier={appendIdentifier}
         isDark={isDark}
@@ -8233,17 +8223,7 @@ export default function QrMenu() {
     hasBottomNavContext &&
     (!showHome || showStatus) &&
     !isCartDrawerOpen;
-  const showCustomerAuthWelcomeModal =
-    isManualAuthModalOpen ||
-    (
-    !showStatus &&
-    !showDeliveryForm &&
-    !showTakeawayForm &&
-    !showTableScanner &&
-    !isCustomerLoggedInEffective &&
-    !isAppHeaderDrawerOpen &&
-    !isAuthWelcomeDismissed
-    );
+  const showCustomerAuthWelcomeModal = isManualAuthModalOpen;
   const shouldLockReorderForNonTableConcert = (() => {
     const concertBookingType = String(
       activeOrder?.concert_booking_type ?? activeOrder?.concertBookingType ?? ""
@@ -8339,26 +8319,19 @@ export default function QrMenu() {
   const handleBookingOrderTypeSelect = useCallback(
     (nextType) => {
       if (!nextType) return;
-      if (nextType === "table") {
-        if (isCustomerAuthRestoring) return;
-        if (!isCustomerLoggedInEffective) {
-          openFullScreenAuth("login");
-          return;
-        }
+      if (isCustomerAuthRestoring && !isCustomerLoggedInEffective) return;
+      if (!isCustomerLoggedInEffective) {
+        openFullScreenAuth("login");
+        return;
       }
       if (nextType === "takeaway") {
-        if (isCustomerAuthRestoring && !isCustomerLoggedInEffective) return;
         const bookingPath = buildReservationBookingPath({
           pathname: location.pathname,
           slug,
           id,
           search: location.search,
         });
-        navigate(
-          isCustomerLoggedInEffective
-            ? bookingPath
-            : appendPublicBookingSubPath(bookingPath, "contact")
-        );
+        navigate(bookingPath);
         return;
       }
       triggerOrderType(nextType);
@@ -9097,6 +9070,10 @@ export default function QrMenu() {
     (event, defaults = {}) => {
       if (!event?.id) return;
       if (isCustomerAuthRestoring && !isCustomerLoggedInEffective) return;
+      if (!isCustomerLoggedInEffective) {
+        openFullScreenAuth("login");
+        return;
+      }
       const bookingPath = buildConcertBookingPath({
         pathname: location.pathname,
         slug,
@@ -9115,11 +9092,7 @@ export default function QrMenu() {
         params.set("ticket_type_id", requestedTicketTypeId);
       }
       const resolvedPath = params.toString() ? `${pathname}?${params.toString()}` : pathname;
-      navigate(
-        isCustomerLoggedInEffective
-          ? resolvedPath
-          : appendPublicBookingSubPath(resolvedPath, "contact")
-      );
+      navigate(resolvedPath);
     },
     [
       id,
@@ -9128,6 +9101,7 @@ export default function QrMenu() {
       location.pathname,
       location.search,
       navigate,
+      openFullScreenAuth,
       slug,
     ]
   );
@@ -9135,6 +9109,10 @@ export default function QrMenu() {
   const handleFreeConcertReservationStart = useCallback(
     (event) => {
       if (isCustomerAuthRestoring && !isCustomerLoggedInEffective) return;
+      if (!isCustomerLoggedInEffective) {
+        openFullScreenAuth("login");
+        return;
+      }
       if (event?.id) {
         const bookingPath = buildConcertBookingPath({
           pathname: location.pathname,
@@ -9143,11 +9121,7 @@ export default function QrMenu() {
           search: location.search,
           concertId: event.id,
         });
-        navigate(
-          isCustomerLoggedInEffective
-            ? bookingPath
-            : appendPublicBookingSubPath(bookingPath, "contact")
-        );
+        navigate(bookingPath);
         return;
       }
       const bookingPath = buildReservationBookingPath({
@@ -9156,11 +9130,7 @@ export default function QrMenu() {
         id,
         search: location.search,
       });
-      navigate(
-        isCustomerLoggedInEffective
-          ? bookingPath
-          : appendPublicBookingSubPath(bookingPath, "contact")
-      );
+      navigate(bookingPath);
     },
     [
       id,
@@ -9169,6 +9139,7 @@ export default function QrMenu() {
       location.pathname,
       location.search,
       navigate,
+      openFullScreenAuth,
       slug,
     ]
   );
@@ -9767,7 +9738,6 @@ export default function QrMenu() {
                   isDark={isQrHeaderDark}
                   isDrawerOpen={isAppHeaderDrawerOpen}
                   onOpenDrawer={openMenuHeaderDrawer}
-                  onOpenMarketplace={openMarketplaceFromQrMenu}
                   onSelect={handleSharedHeaderOrderTypeSelect}
                   reservationEnabled={shopIsOpen && !hasActiveDeliveryLock}
                   tableEnabled={shopIsOpen && !hasActiveDeliveryLock && allowTableOrder}
@@ -9791,20 +9761,12 @@ export default function QrMenu() {
                   shopHours={{}}
                   loadingShopHours={false}
                   shopHoursDropdownRef={null}
-                  languageControl={
-                    <LanguageSwitcher
-                      lang={lang}
-                      setLang={setLang}
-                      t={t}
-                      isDark={isQrHeaderDark}
-                      compact
-                    />
-                  }
                   showInfo={false}
                 />
                 <HeaderDrawer
                   isOpen={isAppHeaderDrawerOpen}
                   onClose={handleCloseAppHeaderDrawer}
+                  onOpenMarketplace={openMarketplaceFromQrMenu}
                   t={t}
                   appendIdentifier={appendIdentifier}
                   isDark={isQrHeaderDark}
