@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { useTranslation } from "react-i18next";
 import secureFetch from "../../utils/secureFetch";
@@ -51,6 +51,148 @@ const getDefaultIntegrations = () => ({
   // Migros configuration object
   migros: getDefaultMigros(),
 });
+
+const getDefaultWhatsAppBusinessConnection = () => ({
+  connected: false,
+  displayPhoneNumber: "",
+  verifiedName: "",
+  phoneNumberId: "",
+  businessAccountId: "",
+  connectedAt: null,
+  lastSyncAt: null,
+});
+
+const getDefaultWhatsAppConnectForm = () => ({
+  phoneNumberId: "",
+  businessAccountId: "",
+  displayPhoneNumber: "",
+  verifiedName: "",
+  accessToken: "",
+  tokenType: "Bearer",
+});
+
+const getDefaultWhatsAppTestForm = () => ({
+  to: "",
+  templateName: "reservation_confirmed_tr",
+  templateLanguage: "tr",
+});
+
+const getObjectByPath = (obj, path) => {
+  if (!obj || typeof obj !== "object") return undefined;
+  return String(path || "")
+    .split(".")
+    .reduce((acc, key) => {
+      if (!acc || typeof acc !== "object") return undefined;
+      return acc[key];
+    }, obj);
+};
+
+const pickFirstStringByPaths = (obj, paths) => {
+  for (const path of paths) {
+    const value = getObjectByPath(obj, path);
+    if (value === null || value === undefined) continue;
+    const normalized = String(value).trim();
+    if (normalized) return normalized;
+  }
+  return "";
+};
+
+const parseJsonSafely = (value) => {
+  if (value && typeof value === "object") return value;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+};
+
+const extractWhatsAppConnectFormFromMetaPayload = (rawPayload) => {
+  const parsed = parseJsonSafely(rawPayload);
+  if (!parsed || typeof parsed !== "object") return null;
+
+  const candidates = [
+    parsed,
+    parsed.data,
+    parsed.payload,
+    parsed.event,
+    parsed.event?.data,
+    parsed.payload?.data,
+    parsed.data?.payload,
+  ].filter((candidate) => candidate && typeof candidate === "object");
+
+  let bestMatch = null;
+  let bestScore = 0;
+
+  for (const candidate of candidates) {
+    const phoneNumberId = pickFirstStringByPaths(candidate, [
+      "phoneNumberId",
+      "phone_number_id",
+      "phone.id",
+      "phone_number.id",
+      "data.phone_number_id",
+    ]);
+    const businessAccountId = pickFirstStringByPaths(candidate, [
+      "businessAccountId",
+      "business_account_id",
+      "whatsappBusinessAccountId",
+      "whatsapp_business_account_id",
+      "wabaId",
+      "waba_id",
+      "data.whatsapp_business_account_id",
+    ]);
+    const displayPhoneNumber = pickFirstStringByPaths(candidate, [
+      "displayPhoneNumber",
+      "display_phone_number",
+      "phoneNumber",
+      "phone_number",
+      "data.display_phone_number",
+    ]);
+    const verifiedName = pickFirstStringByPaths(candidate, [
+      "verifiedName",
+      "verified_name",
+      "businessName",
+      "business_name",
+      "data.verified_name",
+    ]);
+    const accessToken = pickFirstStringByPaths(candidate, [
+      "accessToken",
+      "access_token",
+      "token",
+      "data.access_token",
+    ]);
+    const tokenType =
+      pickFirstStringByPaths(candidate, [
+        "tokenType",
+        "token_type",
+        "data.token_type",
+      ]) || "Bearer";
+
+    const score =
+      Number(Boolean(phoneNumberId)) +
+      Number(Boolean(businessAccountId)) +
+      Number(Boolean(displayPhoneNumber)) +
+      Number(Boolean(verifiedName)) +
+      Number(Boolean(accessToken));
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = {
+        phoneNumberId,
+        businessAccountId,
+        displayPhoneNumber,
+        verifiedName,
+        accessToken,
+        tokenType,
+      };
+    }
+  }
+
+  if (!bestMatch || bestScore < 2) return null;
+  return bestMatch;
+};
 
 const normalizeYemeksepeti = (rawYemeksepeti, rawIntegrations) => {
   const defaults = getDefaultYemeksepeti();
@@ -206,13 +348,20 @@ export default function IntegrationsTab() {
   const [ysSearch, setYsSearch] = useState("");
   const [ysSelectedCandidate, setYsSelectedCandidate] = useState(null);
   const [migrosRemoteId, setMigrosRemoteId] = useState("");
-  // Temporary local placeholder until WhatsApp Business backend wiring is ready.
-  const [whatsAppBusinessConnection, setWhatsAppBusinessConnection] = useState({
-    isConnected: false,
-    phoneNumberId: "",
-    whatsappBusinessAccountId: "",
-    metadata: null,
-  });
+  const [whatsAppBusinessConnection, setWhatsAppBusinessConnection] = useState(
+    () => getDefaultWhatsAppBusinessConnection()
+  );
+  const [whatsAppConnectForm, setWhatsAppConnectForm] = useState(() =>
+    getDefaultWhatsAppConnectForm()
+  );
+  const [whatsAppTestForm, setWhatsAppTestForm] = useState(() =>
+    getDefaultWhatsAppTestForm()
+  );
+  const [whatsAppStatusLoading, setWhatsAppStatusLoading] = useState(false);
+  const [whatsAppSaving, setWhatsAppSaving] = useState(false);
+  const [whatsAppDisconnecting, setWhatsAppDisconnecting] = useState(false);
+  const [whatsAppTesting, setWhatsAppTesting] = useState(false);
+  const [whatsAppManageOpen, setWhatsAppManageOpen] = useState(false);
 
   const formatShortDate = (value) => {
     if (!value) return "-";
@@ -221,23 +370,98 @@ export default function IntegrationsTab() {
     return parsed.toLocaleString();
   };
 
+  const getCurrentRestaurantId = () => {
+    const raw = localStorage.getItem("restaurant_id");
+    const parsed = Number.parseInt(String(raw || ""), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  };
+
+  const applyWhatsAppStatus = (status) => {
+    const next = {
+      ...getDefaultWhatsAppBusinessConnection(),
+      ...(status && typeof status === "object" ? status : {}),
+      connected: status?.connected === true,
+    };
+    setWhatsAppBusinessConnection(next);
+
+    if (next.connected !== true) {
+      setWhatsAppManageOpen(true);
+      setWhatsAppConnectForm((prev) => ({
+        ...prev,
+        phoneNumberId: next.phoneNumberId || "",
+        businessAccountId: next.businessAccountId || "",
+        displayPhoneNumber: next.displayPhoneNumber || "",
+        verifiedName: next.verifiedName || "",
+      }));
+    } else {
+      setWhatsAppConnectForm(() => getDefaultWhatsAppConnectForm());
+    }
+  };
+
+  const loadWhatsAppStatus = async (restaurantIdParam = null) => {
+    const restaurantId = restaurantIdParam || getCurrentRestaurantId();
+    if (!restaurantId) return;
+
+    setWhatsAppStatusLoading(true);
+    try {
+      const status = await secureFetch(`/integrations/whatsapp/status/${restaurantId}`);
+      applyWhatsAppStatus(status);
+    } catch (err) {
+      console.warn("⚠️ Failed to load WhatsApp Business status:", err);
+      setWhatsAppBusinessConnection(getDefaultWhatsAppBusinessConnection());
+      setWhatsAppManageOpen(true);
+    } finally {
+      setWhatsAppStatusLoading(false);
+    }
+  };
+
+  const applyImportedWhatsAppMetaPayload = (rawPayload, sourceLabel = "Meta payload") => {
+    const extracted = extractWhatsAppConnectFormFromMetaPayload(rawPayload);
+    if (!extracted) return false;
+
+    setWhatsAppConnectForm((prev) => ({
+      ...prev,
+      ...extracted,
+    }));
+    setWhatsAppManageOpen(true);
+    toast.success(t("Imported WhatsApp data from {{source}}", { source: sourceLabel }));
+    return true;
+  };
+
+  const handleImportWhatsAppMetaPayloadPrompt = () => {
+    const raw = window.prompt(t("Paste Meta Embedded Signup JSON payload"));
+    if (!raw) return;
+    const imported = applyImportedWhatsAppMetaPayload(raw, t("manual payload"));
+    if (!imported) {
+      toast.error(t("Could not read WhatsApp fields from payload"));
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
     setLoading(true);
 
-    const restaurantId = localStorage.getItem("restaurant_id");
-    // TODO: Fetch WhatsApp Business connection status for current restaurant.
+    const restaurantId = getCurrentRestaurantId();
 
     Promise.all([
       secureFetch("/settings/integrations"),
       restaurantId
         ? secureFetch(`/settings/restaurants/${restaurantId}/external-ids`).catch(() => ({ migrosRemoteId: "" }))
-        : Promise.resolve({ migrosRemoteId: "" })
+        : Promise.resolve({ migrosRemoteId: "" }),
+      restaurantId
+        ? secureFetch(`/integrations/whatsapp/status/${restaurantId}`).catch(() => null)
+        : Promise.resolve(null),
     ])
-      .then(([integrationsData, externalIds]) => {
+      .then(([integrationsData, externalIds, whatsAppStatus]) => {
         if (!mounted) return;
         setIntegrations(normalizeIntegrations(integrationsData));
         setMigrosRemoteId(externalIds?.migrosRemoteId || "");
+        if (whatsAppStatus) {
+          applyWhatsAppStatus(whatsAppStatus);
+        } else {
+          setWhatsAppBusinessConnection(getDefaultWhatsAppBusinessConnection());
+          setWhatsAppManageOpen(true);
+        }
         setLoading(false);
       })
       .catch((err) => {
@@ -245,6 +469,8 @@ export default function IntegrationsTab() {
         if (!mounted) return;
         setIntegrations(getDefaultIntegrations());
         setMigrosRemoteId("");
+        setWhatsAppBusinessConnection(getDefaultWhatsAppBusinessConnection());
+        setWhatsAppManageOpen(true);
         setLoading(false);
         toast.error(t("Failed to load settings"));
       });
@@ -252,6 +478,47 @@ export default function IntegrationsTab() {
     return () => {
       mounted = false;
     };
+  }, [t]);
+
+  useEffect(() => {
+    const handleMetaMessage = (event) => {
+      const imported = applyImportedWhatsAppMetaPayload(
+        event?.data,
+        t("window message")
+      );
+      if (!imported && typeof event?.data === "string") {
+        const maybeJsonFromData = parseJsonSafely(event.data);
+        if (maybeJsonFromData) {
+          applyImportedWhatsAppMetaPayload(maybeJsonFromData, t("window message"));
+        }
+      }
+    };
+
+    window.addEventListener("message", handleMetaMessage);
+    return () => window.removeEventListener("message", handleMetaMessage);
+  }, [t]);
+
+  useEffect(() => {
+    try {
+      const SearchParamsCtor = window.URLSearchParams;
+      if (typeof SearchParamsCtor !== "function") return;
+      const searchParams = new SearchParamsCtor(window.location.search || "");
+      const hashParams = new SearchParamsCtor(
+        String(window.location.hash || "").replace(/^#/, "")
+      );
+      const combined = {};
+
+      for (const [key, value] of searchParams.entries()) combined[key] = value;
+      for (const [key, value] of hashParams.entries()) {
+        if (!(key in combined)) combined[key] = value;
+      }
+
+      if (Object.keys(combined).length > 0) {
+        applyImportedWhatsAppMetaPayload(combined, t("URL callback params"));
+      }
+    } catch (err) {
+      console.warn("⚠️ Failed to parse WhatsApp callback params:", err);
+    }
   }, [t]);
 
   const loadYsMappings = async (itemType = ysMappingType) => {
@@ -443,20 +710,121 @@ export default function IntegrationsTab() {
     }
   };
 
-  const handleConnectWhatsApp = () => {
-    // TODO: Launch Meta Embedded Signup and exchange auth data with backend.
-    // TODO: Store `phone_number_id` for the current restaurant after successful signup.
-    // TODO: Store `whatsapp_business_account_id` for the current restaurant after successful signup.
-    // TODO: Store token/connection metadata securely on backend (not in local state/localStorage).
-    setWhatsAppBusinessConnection((prev) => ({
-      ...prev,
-      isConnected: true,
-    }));
-    toast.info(t("WhatsApp Business is connected locally (placeholder state)."));
+  const handleConnectWhatsApp = async () => {
+    const restaurantId = getCurrentRestaurantId();
+    if (!restaurantId) {
+      toast.error(t("Restaurant context is missing"));
+      return;
+    }
+
+    const requiredFields = [
+      "phoneNumberId",
+      "businessAccountId",
+      "displayPhoneNumber",
+      "verifiedName",
+      "accessToken",
+      "tokenType",
+    ];
+    const missingField = requiredFields.find(
+      (key) => !String(whatsAppConnectForm?.[key] || "").trim()
+    );
+    if (missingField) {
+      setWhatsAppManageOpen(true);
+      toast.error(t("Please fill all WhatsApp connection fields"));
+      return;
+    }
+
+    setWhatsAppSaving(true);
+    try {
+      // TODO: Launch Meta Embedded Signup and post callback payload here.
+      // TODO: Add backend callback integration for `phone_number_id` and `whatsapp_business_account_id`.
+      // TODO: Add long-lived token refresh flow after Meta signup.
+      const status = await secureFetch(`/integrations/whatsapp/connect/${restaurantId}`, {
+        method: "POST",
+        body: JSON.stringify({
+          phoneNumberId: whatsAppConnectForm.phoneNumberId,
+          businessAccountId: whatsAppConnectForm.businessAccountId,
+          displayPhoneNumber: whatsAppConnectForm.displayPhoneNumber,
+          verifiedName: whatsAppConnectForm.verifiedName,
+          accessToken: whatsAppConnectForm.accessToken,
+          tokenType: whatsAppConnectForm.tokenType || "Bearer",
+        }),
+      });
+
+      applyWhatsAppStatus(status);
+      setWhatsAppManageOpen(true);
+      setWhatsAppConnectForm(() => getDefaultWhatsAppConnectForm());
+      toast.success(t("WhatsApp Business connected successfully"));
+    } catch (err) {
+      console.error("❌ Failed to connect WhatsApp Business:", err);
+      toast.error(err?.message || t("Failed to connect WhatsApp Business"));
+    } finally {
+      setWhatsAppSaving(false);
+    }
   };
 
   const handleManageWhatsApp = () => {
-    toast.info(t("WhatsApp Business management UI will be wired in a later step."));
+    setWhatsAppManageOpen((prev) => !prev);
+  };
+
+  const handleDisconnectWhatsApp = async () => {
+    const restaurantId = getCurrentRestaurantId();
+    if (!restaurantId) {
+      toast.error(t("Restaurant context is missing"));
+      return;
+    }
+
+    setWhatsAppDisconnecting(true);
+    try {
+      await secureFetch(`/integrations/whatsapp/disconnect/${restaurantId}`, {
+        method: "POST",
+      });
+      applyWhatsAppStatus(getDefaultWhatsAppBusinessConnection());
+      setWhatsAppManageOpen(true);
+      setWhatsAppConnectForm(() => getDefaultWhatsAppConnectForm());
+      toast.success(t("WhatsApp Business disconnected"));
+    } catch (err) {
+      console.error("❌ Failed to disconnect WhatsApp Business:", err);
+      toast.error(err?.message || t("Failed to disconnect WhatsApp Business"));
+    } finally {
+      setWhatsAppDisconnecting(false);
+    }
+  };
+
+  const handleSendWhatsAppTestMessage = async () => {
+    const restaurantId = getCurrentRestaurantId();
+    if (!restaurantId) {
+      toast.error(t("Restaurant context is missing"));
+      return;
+    }
+
+    if (!String(whatsAppTestForm.to || "").trim()) {
+      toast.error(t("Please enter recipient phone number"));
+      return;
+    }
+
+    setWhatsAppTesting(true);
+    try {
+      const result = await secureFetch(`/integrations/whatsapp/test-message/${restaurantId}`, {
+        method: "POST",
+        body: JSON.stringify({
+          to: whatsAppTestForm.to,
+          templateName: whatsAppTestForm.templateName,
+          templateLanguage: whatsAppTestForm.templateLanguage,
+        }),
+      });
+      toast.success(
+        result?.messageId
+          ? t("Test message sent. Message ID: {{id}}", { id: result.messageId })
+          : t("Test message sent")
+      );
+      await loadWhatsAppStatus(restaurantId);
+    } catch (err) {
+      console.error("❌ Failed to send WhatsApp test message:", err);
+      toast.error(err?.message || t("Failed to send WhatsApp test message"));
+    } finally {
+      setWhatsAppTesting(false);
+    }
   };
 
   return (
@@ -1386,12 +1754,12 @@ export default function IntegrationsTab() {
                   </h3>
                   <span
                     className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold border ${
-                      whatsAppBusinessConnection?.isConnected
+                      whatsAppBusinessConnection?.connected
                         ? "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-700"
                         : "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
                     }`}
                   >
-                    {whatsAppBusinessConnection?.isConnected
+                    {whatsAppBusinessConnection?.connected
                       ? t("Connected")
                       : t("Not Connected")}
                   </span>
@@ -1411,17 +1779,244 @@ export default function IntegrationsTab() {
               <button
                 type="button"
                 onClick={
-                  whatsAppBusinessConnection?.isConnected
+                  whatsAppBusinessConnection?.connected
                     ? handleManageWhatsApp
                     : handleConnectWhatsApp
                 }
-                className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors"
+                disabled={
+                  whatsAppStatusLoading ||
+                  whatsAppSaving ||
+                  whatsAppDisconnecting ||
+                  whatsAppTesting
+                }
+                className={`w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 rounded-lg text-white text-sm font-semibold transition-colors ${
+                  whatsAppStatusLoading || whatsAppSaving || whatsAppDisconnecting || whatsAppTesting
+                    ? "bg-indigo-400 cursor-not-allowed"
+                    : "bg-indigo-600 hover:bg-indigo-700"
+                }`}
               >
-                {whatsAppBusinessConnection?.isConnected
-                  ? t("Manage Connection")
-                  : t("Connect WhatsApp")}
+                {whatsAppBusinessConnection?.connected
+                  ? whatsAppManageOpen
+                    ? t("Hide Connection")
+                    : t("Manage Connection")
+                  : whatsAppSaving
+                    ? t("Connecting...")
+                    : t("Connect WhatsApp")}
               </button>
             </div>
+
+            {(!whatsAppBusinessConnection?.connected || whatsAppManageOpen) && (
+              <div className="pt-3 border-t border-indigo-200 dark:border-indigo-700 space-y-4">
+                {!whatsAppBusinessConnection?.connected ? (
+                  <>
+                    <p className="text-xs text-gray-500 dark:text-gray-300">
+                      {t(
+                        "For now, paste connection fields manually. Meta Embedded Signup callback will be wired next."
+                      )}
+                    </p>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={handleImportWhatsAppMetaPayloadPrompt}
+                        className="px-3 py-1.5 rounded-lg border border-indigo-300 dark:border-indigo-600 text-indigo-700 dark:text-indigo-200 text-xs font-semibold hover:bg-indigo-100 dark:hover:bg-indigo-800/50"
+                      >
+                        {t("Paste Meta Payload")}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <input
+                        type="text"
+                        value={whatsAppConnectForm.phoneNumberId}
+                        onChange={(e) =>
+                          setWhatsAppConnectForm((prev) => ({
+                            ...prev,
+                            phoneNumberId: e.target.value,
+                          }))
+                        }
+                        placeholder={t("Phone Number ID")}
+                        className="w-full p-2.5 border rounded-lg bg-white dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-400 focus:outline-none text-sm"
+                      />
+                      <input
+                        type="text"
+                        value={whatsAppConnectForm.businessAccountId}
+                        onChange={(e) =>
+                          setWhatsAppConnectForm((prev) => ({
+                            ...prev,
+                            businessAccountId: e.target.value,
+                          }))
+                        }
+                        placeholder={t("Business Account ID")}
+                        className="w-full p-2.5 border rounded-lg bg-white dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-400 focus:outline-none text-sm"
+                      />
+                      <input
+                        type="text"
+                        value={whatsAppConnectForm.displayPhoneNumber}
+                        onChange={(e) =>
+                          setWhatsAppConnectForm((prev) => ({
+                            ...prev,
+                            displayPhoneNumber: e.target.value,
+                          }))
+                        }
+                        placeholder={t("Display Phone Number")}
+                        className="w-full p-2.5 border rounded-lg bg-white dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-400 focus:outline-none text-sm"
+                      />
+                      <input
+                        type="text"
+                        value={whatsAppConnectForm.verifiedName}
+                        onChange={(e) =>
+                          setWhatsAppConnectForm((prev) => ({
+                            ...prev,
+                            verifiedName: e.target.value,
+                          }))
+                        }
+                        placeholder={t("Verified Name")}
+                        className="w-full p-2.5 border rounded-lg bg-white dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-400 focus:outline-none text-sm"
+                      />
+                      <input
+                        type="password"
+                        value={whatsAppConnectForm.accessToken}
+                        onChange={(e) =>
+                          setWhatsAppConnectForm((prev) => ({
+                            ...prev,
+                            accessToken: e.target.value,
+                          }))
+                        }
+                        placeholder={t("Access Token")}
+                        className="w-full p-2.5 border rounded-lg bg-white dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-400 focus:outline-none text-sm sm:col-span-2"
+                      />
+                      <input
+                        type="text"
+                        value={whatsAppConnectForm.tokenType}
+                        onChange={(e) =>
+                          setWhatsAppConnectForm((prev) => ({
+                            ...prev,
+                            tokenType: e.target.value,
+                          }))
+                        }
+                        placeholder={t("Token Type")}
+                        className="w-full p-2.5 border rounded-lg bg-white dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-400 focus:outline-none text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleConnectWhatsApp}
+                        disabled={whatsAppSaving}
+                        className={`w-full inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-semibold text-white ${
+                          whatsAppSaving
+                            ? "bg-indigo-400 cursor-not-allowed"
+                            : "bg-indigo-600 hover:bg-indigo-700"
+                        }`}
+                      >
+                        {whatsAppSaving ? t("Connecting...") : t("Connect WhatsApp")}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-gray-600 dark:text-gray-200">
+                      <div>
+                        <div className="font-semibold text-gray-700 dark:text-gray-100">
+                          {t("Display Phone Number")}
+                        </div>
+                        <div>{whatsAppBusinessConnection?.displayPhoneNumber || "-"}</div>
+                      </div>
+                      <div>
+                        <div className="font-semibold text-gray-700 dark:text-gray-100">
+                          {t("Verified Name")}
+                        </div>
+                        <div>{whatsAppBusinessConnection?.verifiedName || "-"}</div>
+                      </div>
+                      <div>
+                        <div className="font-semibold text-gray-700 dark:text-gray-100">
+                          {t("Phone Number ID")}
+                        </div>
+                        <div className="break-all">{whatsAppBusinessConnection?.phoneNumberId || "-"}</div>
+                      </div>
+                      <div>
+                        <div className="font-semibold text-gray-700 dark:text-gray-100">
+                          {t("Business Account ID")}
+                        </div>
+                        <div className="break-all">{whatsAppBusinessConnection?.businessAccountId || "-"}</div>
+                      </div>
+                      <div>
+                        <div className="font-semibold text-gray-700 dark:text-gray-100">
+                          {t("Connected At")}
+                        </div>
+                        <div>{formatShortDate(whatsAppBusinessConnection?.connectedAt)}</div>
+                      </div>
+                      <div>
+                        <div className="font-semibold text-gray-700 dark:text-gray-100">
+                          {t("Last Sync")}
+                        </div>
+                        <div>{formatShortDate(whatsAppBusinessConnection?.lastSyncAt)}</div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                      <input
+                        type="text"
+                        value={whatsAppTestForm.to}
+                        onChange={(e) =>
+                          setWhatsAppTestForm((prev) => ({ ...prev, to: e.target.value }))
+                        }
+                        placeholder={t("Recipient Phone")}
+                        className="w-full p-2.5 border rounded-lg bg-white dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-400 focus:outline-none text-sm sm:col-span-2"
+                      />
+                      <input
+                        type="text"
+                        value={whatsAppTestForm.templateName}
+                        onChange={(e) =>
+                          setWhatsAppTestForm((prev) => ({
+                            ...prev,
+                            templateName: e.target.value,
+                          }))
+                        }
+                        placeholder={t("Template Name")}
+                        className="w-full p-2.5 border rounded-lg bg-white dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-400 focus:outline-none text-sm"
+                      />
+                      <input
+                        type="text"
+                        value={whatsAppTestForm.templateLanguage}
+                        onChange={(e) =>
+                          setWhatsAppTestForm((prev) => ({
+                            ...prev,
+                            templateLanguage: e.target.value,
+                          }))
+                        }
+                        placeholder={t("Language")}
+                        className="w-full p-2.5 border rounded-lg bg-white dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-indigo-400 focus:outline-none text-sm"
+                      />
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSendWhatsAppTestMessage}
+                        disabled={whatsAppTesting}
+                        className={`px-4 py-2 rounded-lg text-sm font-semibold text-white ${
+                          whatsAppTesting
+                            ? "bg-indigo-400 cursor-not-allowed"
+                            : "bg-indigo-600 hover:bg-indigo-700"
+                        }`}
+                      >
+                        {whatsAppTesting ? t("Sending...") : t("Send Test Message")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDisconnectWhatsApp}
+                        disabled={whatsAppDisconnecting}
+                        className={`px-4 py-2 rounded-lg text-sm font-semibold text-white ${
+                          whatsAppDisconnecting
+                            ? "bg-red-300 cursor-not-allowed"
+                            : "bg-red-500 hover:bg-red-600"
+                        }`}
+                      >
+                        {whatsAppDisconnecting ? t("Disconnecting...") : t("Disconnect")}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="pt-3 border-t border-indigo-200 dark:border-indigo-700">
               <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-300">
