@@ -1291,18 +1291,27 @@ const loadTables = async () => {
     let rows = [];
     let configuredAreaNames = [];
     try {
-      // Keep QR table settings aligned with TableOverview/Settings source of truth.
-      const scoped = await secureFetch(
-        appendIdentifier(`/tables?active=true&identifier=${encodeURIComponent(restaurantIdentifier)}`)
+      // Public QR menu must use public tables endpoint (no auth token required).
+      const publicTables = await secureFetch(
+        appendIdentifier(`/public/tables/${encodeURIComponent(restaurantIdentifier)}`)
       );
-      rows = Array.isArray(scoped) ? scoped : scoped?.data || [];
+      rows = Array.isArray(publicTables) ? publicTables : publicTables?.data || [];
 
-      try {
-        const tableSettings = await secureFetch(appendIdentifier("/settings/tables"));
-        configuredAreaNames = Array.isArray(tableSettings?.areaNames)
-          ? tableSettings.areaNames.map(normalizeConfiguredAreaName).filter(Boolean)
-          : [];
-      } catch {
+      const token = getStoredToken();
+      if (token) {
+        try {
+          // Keep QR table settings aligned with TableOverview/Settings source of truth
+          // only when an authenticated dashboard token exists.
+          const tableSettings = await secureFetch(appendIdentifier("/settings/tables"), {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          configuredAreaNames = Array.isArray(tableSettings?.areaNames)
+            ? tableSettings.areaNames.map(normalizeConfiguredAreaName).filter(Boolean)
+            : [];
+        } catch {
+          configuredAreaNames = readCachedTableAreaNames(restaurantIdentifier);
+        }
+      } else {
         configuredAreaNames = readCachedTableAreaNames(restaurantIdentifier);
       }
     } catch {
@@ -2034,7 +2043,7 @@ if (savedTable) {
       if (restaurantIdentifier) {
         try {
           const tableRows = await secureFetch(
-            appendIdentifier(`/tables?active=true&identifier=${encodeURIComponent(restaurantIdentifier)}`)
+            appendIdentifier(`/public/tables/${encodeURIComponent(restaurantIdentifier)}`)
           );
           const normalizedRows = Array.isArray(tableRows) ? tableRows : tableRows?.data || [];
           const lockedTableNumbers = normalizedRows
