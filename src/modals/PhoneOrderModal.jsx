@@ -223,24 +223,35 @@ const handleEditCustomer = async (id) => {
   try {
     const updated = await secureFetch(`/customers/${id}`, {
       method: "PATCH",
-    body: JSON.stringify({
-  ...editForm,
-  birthday: editForm.birthday || null,
-})
-
+      body: JSON.stringify({
+        ...editForm,
+        birthday: editForm.birthday || null,
+      }),
     });
 
-    if (updated && updated.id) {
-      setMatches((prev) =>
-        prev.map((m) => (m.id === id ? { ...m, ...editForm } : m))
-      );
-      setEditId(null);
-      toast?.success?.("✅ Customer updated successfully!");
-    } else if (updated?.error) {
-      alert("❌ Failed to update customer: " + updated.error);
+    if (!updated?.id) {
+      toast.error(t("Failed to update customer"));
+      return;
     }
+
+    setMatches((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, ...updated } : m))
+    );
+    if (selected?.id === id) {
+      setSelected((prev) => (prev ? { ...prev, ...updated } : prev));
+    }
+    setEditId(null);
+    toast?.success?.(t("Customer updated successfully"));
   } catch (err) {
-    alert("❌ Network error while updating customer: " + err.message);
+    const status = Number(err?.details?.status || 0);
+    const apiError = String(err?.details?.body?.error || "");
+
+    if (status === 409 && apiError === "DUPLICATE_CUSTOMER_PHONE") {
+      toast.error(t("This phone number is already used by another customer"));
+      return;
+    }
+
+    toast.error(err?.message || t("Failed to update customer"));
   }
 };
 
