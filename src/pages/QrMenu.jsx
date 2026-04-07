@@ -72,20 +72,17 @@ import {
   buildAppRestaurantUrl,
   buildPublicRestaurantUrl,
 } from "../utils/publicRestaurantUrl";
+import {
+  PHONE_API_REGEX,
+  formatPhoneForInput,
+  normalizePhoneForApi,
+} from "../utils/phone";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const QR_PHONE_REGEX = /^(5\d{9}|[578]\d{7})$/;
+const QR_PHONE_REGEX = PHONE_API_REGEX;
 
 function normalizeQrPhone(value) {
-  let digits = String(value || "").replace(/\D/g, "");
-  if (!digits) return "";
-  if (digits.startsWith("00")) digits = digits.slice(2);
-  if (digits.startsWith("90") && digits.length > 2) digits = digits.slice(2);
-  if (digits.startsWith("0") && digits.length > 1) digits = digits.slice(1);
-
-  if (digits.startsWith("5")) return digits.slice(0, 10);
-  if (digits.startsWith("7") || digits.startsWith("8")) return digits.slice(0, 8);
-  return digits.slice(0, 10);
+  return normalizePhoneForApi(value);
 }
 
 function navigateToMarketplaceFromQrMenu() {
@@ -114,16 +111,7 @@ function navigateToMarketplaceFromQrMenu() {
 }
 
 function formatQrPhoneForInput(value) {
-  const normalized = normalizeQrPhone(value);
-  if (!normalized) return "";
-  if (/^5\d{0,9}$/.test(normalized)) {
-    const a = normalized.slice(0, 3);
-    const b = normalized.slice(3, 6);
-    const c = normalized.slice(6, 8);
-    const d = normalized.slice(8, 10);
-    return ["+90", a, b, c, d].filter(Boolean).join(" ");
-  }
-  return normalized;
+  return formatPhoneForInput(value);
 }
 
 function parseGuestCompositionCount(value) {
@@ -1522,7 +1510,7 @@ const DICT = {
     "Delivery Info": "Delivery Info",
     "Full Name": "Full Name",
     "Phone (5XXXXXXXXX)": "Phone (5XXXXXXXXX)",
-    "Phone (+90 555 555 55 55)": "Phone (+90 555 555 55 55)",
+    "Phone (905555555555)": "Phone (905555555555)",
     Address: "Address",
     "Add item": "Add item",
     "Reserve now": "Reserve now",
@@ -1878,7 +1866,7 @@ const DICT = {
     "Delivery Info": "Teslimat Bilgileri",
     "Full Name": "Ad Soyad",
     "Phone (5XXXXXXXXX)": "Telefon (5XXXXXXXXX)",
-    "Phone (+90 555 555 55 55)": "Telefon (+90 555 555 55 55)",
+    "Phone (905555555555)": "Telefon (905555555555)",
     Address: "Adres",
     "Add item": "Urun ekle",
     "Reserve now": "Simdi rezerve et",
@@ -2358,7 +2346,7 @@ const DICT = {
     Cancel: "Abbrechen",
     Email: "E-Mail",
     Phone: "Telefon",
-    "Phone (+90 555 555 55 55)": "Telefon (+90 555 555 55 55)",
+    "Phone (905555555555)": "Telefon (905555555555)",
     Username: "Benutzername",
     Password: "Passwort",
     Save: "Speichern",
@@ -2612,7 +2600,7 @@ const DICT = {
     Cancel: "Annuler",
     Email: "E-mail",
     Phone: "Téléphone",
-    "Phone (+90 555 555 55 55)": "Téléphone (+90 555 555 55 55)",
+    "Phone (905555555555)": "Téléphone (905555555555)",
     Username: "Nom d'utilisateur",
     Password: "Mot de passe",
     Save: "Enregistrer",
@@ -6947,13 +6935,13 @@ function TakeawayOrderForm({
             className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
               touched.phone && !phoneValid ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
             }`}
-            placeholder={t("Phone (+90 555 555 55 55)")}
+            placeholder={t("Phone (905555555555)")}
             value={form.phone}
             onChange={(e) => {
               setForm((f) => ({ ...f, phone: formatQrPhoneForInput(e.target.value) }));
             }}
             inputMode="tel"
-            maxLength={18}
+            maxLength={12}
           />
 
           <input

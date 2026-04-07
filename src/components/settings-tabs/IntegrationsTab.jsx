@@ -206,6 +206,13 @@ export default function IntegrationsTab() {
   const [ysSearch, setYsSearch] = useState("");
   const [ysSelectedCandidate, setYsSelectedCandidate] = useState(null);
   const [migrosRemoteId, setMigrosRemoteId] = useState("");
+  // Temporary local placeholder until WhatsApp Business backend wiring is ready.
+  const [whatsAppBusinessConnection, setWhatsAppBusinessConnection] = useState({
+    isConnected: false,
+    phoneNumberId: "",
+    whatsappBusinessAccountId: "",
+    metadata: null,
+  });
 
   const formatShortDate = (value) => {
     if (!value) return "-";
@@ -219,6 +226,7 @@ export default function IntegrationsTab() {
     setLoading(true);
 
     const restaurantId = localStorage.getItem("restaurant_id");
+    // TODO: Fetch WhatsApp Business connection status for current restaurant.
 
     Promise.all([
       secureFetch("/settings/integrations"),
@@ -433,6 +441,22 @@ export default function IntegrationsTab() {
       console.error("❌ Failed to remove Yemeksepeti mapping:", err);
       toast.error(err?.message || t("Failed to save settings"));
     }
+  };
+
+  const handleConnectWhatsApp = () => {
+    // TODO: Launch Meta Embedded Signup and exchange auth data with backend.
+    // TODO: Store `phone_number_id` for the current restaurant after successful signup.
+    // TODO: Store `whatsapp_business_account_id` for the current restaurant after successful signup.
+    // TODO: Store token/connection metadata securely on backend (not in local state/localStorage).
+    setWhatsAppBusinessConnection((prev) => ({
+      ...prev,
+      isConnected: true,
+    }));
+    toast.info(t("WhatsApp Business is connected locally (placeholder state)."));
+  };
+
+  const handleManageWhatsApp = () => {
+    toast.info(t("WhatsApp Business management UI will be wired in a later step."));
   };
 
   return (
@@ -1353,6 +1377,62 @@ export default function IntegrationsTab() {
 
         {/* WhatsApp + QR Menu toggles (below Migros) */}
         <div className="border-t pt-6 space-y-6">
+          <div className="bg-indigo-50 dark:bg-indigo-900 p-4 rounded-xl border border-indigo-200 dark:border-indigo-600 shadow space-y-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-xl font-semibold text-indigo-700 dark:text-indigo-300">
+                    {t("WhatsApp Business")}
+                  </h3>
+                  <span
+                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold border ${
+                      whatsAppBusinessConnection?.isConnected
+                        ? "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-700"
+                        : "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                    }`}
+                  >
+                    {whatsAppBusinessConnection?.isConnected
+                      ? t("Connected")
+                      : t("Not Connected")}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-200 max-w-2xl">
+                  {t(
+                    "Connect your restaurant’s own WhatsApp number to send order, reservation, OTP, and delivery updates from your business number."
+                  )}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-300">
+                  {t(
+                    "Your customers will receive WhatsApp messages from your restaurant’s own number."
+                  )}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={
+                  whatsAppBusinessConnection?.isConnected
+                    ? handleManageWhatsApp
+                    : handleConnectWhatsApp
+                }
+                className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors"
+              >
+                {whatsAppBusinessConnection?.isConnected
+                  ? t("Manage Connection")
+                  : t("Connect WhatsApp")}
+              </button>
+            </div>
+
+            <div className="pt-3 border-t border-indigo-200 dark:border-indigo-700">
+              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-300">
+                <li>{t("Order updates")}</li>
+                <li>{t("Reservation confirmations")}</li>
+                <li>{t("Delivery notifications")}</li>
+                <li>{t("OTP login messages")}</li>
+              </ul>
+            </div>
+          </div>
+
           {INTEGRATION_TOGGLES_BOTTOM.map(({ key, name }) => (
             <div key={key} className="flex items-center justify-between">
               <span className="text-lg text-gray-800 dark:text-white">

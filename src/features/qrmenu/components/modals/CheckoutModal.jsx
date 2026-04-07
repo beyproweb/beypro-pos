@@ -1,34 +1,14 @@
 import React, { useEffect, useState } from "react";
 import secureFetch from "../../../../utils/secureFetch";
 import { getCheckoutPrefill } from "../../header-drawer/services/customerService";
+import {
+  PHONE_API_REGEX,
+  formatPhoneForInput,
+  normalizePhoneForApi,
+} from "../../../../utils/phone";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_REGEX = /^(5\d{9}|[578]\d{7})$/;
-
-function normalizePhoneValue(value) {
-  let digits = String(value || "").replace(/\D/g, "");
-  if (!digits) return "";
-  if (digits.startsWith("00")) digits = digits.slice(2);
-  if (digits.startsWith("90") && digits.length > 2) digits = digits.slice(2);
-  if (digits.startsWith("0") && digits.length > 1) digits = digits.slice(1);
-
-  if (digits.startsWith("5")) return digits.slice(0, 10);
-  if (digits.startsWith("7") || digits.startsWith("8")) return digits.slice(0, 8);
-  return digits.slice(0, 10);
-}
-
-function formatPhoneForInput(value) {
-  const normalized = normalizePhoneValue(value);
-  if (!normalized) return "";
-  if (/^5\d{0,9}$/.test(normalized)) {
-    const a = normalized.slice(0, 3);
-    const b = normalized.slice(3, 6);
-    const c = normalized.slice(6, 8);
-    const d = normalized.slice(8, 10);
-    return ["+90", a, b, c, d].filter(Boolean).join(" ");
-  }
-  return normalized;
-}
+const PHONE_REGEX = PHONE_API_REGEX;
 
 function detectBrand(num) {
   const n = (num || "").replace(/\s+/g, "");
@@ -142,7 +122,7 @@ const CheckoutModal = React.memo(function CheckoutModal({
   const [savedOnce, setSavedOnce] = useState(false);
   const [paymentPrompt, setPaymentPrompt] = useState(false);
   const [shakeModal, setShakeModal] = useState(false);
-  const normalizedPhone = normalizePhoneValue(form.phone);
+  const normalizedPhone = normalizePhoneForApi(form.phone);
 
   useEffect(() => {
     try {
@@ -400,7 +380,7 @@ const CheckoutModal = React.memo(function CheckoutModal({
                 ? "border-red-500"
                 : "border-neutral-300"
             }`}
-            placeholder={t("Phone (+90 555 555 55 55)")}
+            placeholder={t("Phone (905555555555)")}
             value={form.phone}
             onChange={(e) => {
               setForm((f) => ({ ...f, phone: formatPhoneForInput(e.target.value) }));

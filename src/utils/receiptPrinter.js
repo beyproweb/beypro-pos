@@ -792,7 +792,7 @@ function makeTestKitchenOrder() {
   return {
     ...makeTestOrder(),
     customer_name: "YS Customer",
-    customer_phone: "+905551112233",
+    customer_phone: "905551112233",
     customer_address: "Dede Korkut Sk. No:5, Esentepe Şişli / İstanbul",
     takeaway_notes: "Please do not ring; baby is sleeping.",
   };

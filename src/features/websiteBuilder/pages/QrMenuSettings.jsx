@@ -274,6 +274,43 @@ function normalizeTableNumberList(values) {
   ).sort((a, b) => a - b);
 }
 
+function normalizeLocationText(value) {
+  return String(value || "").trim();
+}
+
+function normalizeCoordinateValue(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeDeliveryZoneCitiesInput(value) {
+  if (Array.isArray(value)) {
+    return Array.from(
+      new Set(
+        value
+          .map((item) => String(item || "").trim())
+          .filter(Boolean)
+      )
+    );
+  }
+  const raw = String(value || "").trim();
+  if (!raw) return [];
+  return Array.from(
+    new Set(
+      raw
+        .split(/[,\n]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function normalizeDeliveryRangeKmInput(value, fallback = 5) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.max(0.5, Math.min(parsed, 100));
+}
+
 export default function QrMenuSettings() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -296,6 +333,7 @@ export default function QrMenuSettings() {
   const [savingReservationGuestComposition, setSavingReservationGuestComposition] =
     useState(false);
   const [savingDisableAllProducts, setSavingDisableAllProducts] = useState(false);
+  const [savingDeliveryCoverage, setSavingDeliveryCoverage] = useState(false);
   const [savingConcertReservationButtonColor, setSavingConcertReservationButtonColor] = useState(false);
   const [savingBookingSettings, setSavingBookingSettings] = useState(false);
   const [savingFloorPlanLayout, setSavingFloorPlanLayout] = useState(false);
@@ -352,6 +390,13 @@ export default function QrMenuSettings() {
   const [showGuestCompositionTablesDropdown, setShowGuestCompositionTablesDropdown] =
     useState(false);
   const guestCompositionTablesDropdownRef = useRef(null);
+  const [deliveryZoneCitiesInput, setDeliveryZoneCitiesInput] = useState("");
+  const [restaurantDeliveryProfile, setRestaurantDeliveryProfile] = useState({
+    location: "",
+    city: "",
+    pos_location_lat: null,
+    pos_location_lng: null,
+  });
   const [uploadingStoryImages, setUploadingStoryImages] = useState(false);
   const [uploadingStoryVideo, setUploadingStoryVideo] = useState(false);
   const [draggedStoryImageIndex, setDraggedStoryImageIndex] = useState(null);
@@ -386,6 +431,11 @@ export default function QrMenuSettings() {
   social_tiktok: "",
   social_website: "",
   delivery_enabled: true,
+  delivery_zone_cities: [],
+  delivery_range_km: 5,
+  delivery_origin_location: "",
+  delivery_origin_lat: null,
+  delivery_origin_lng: null,
   reservation_pickup_enabled: true,
   reservation_guest_composition_enabled: false,
   reservation_guest_composition_field_mode: "optional",
@@ -510,7 +560,13 @@ export default function QrMenuSettings() {
     return legacy ? [legacy] : [""];
   };
 
-  const applyLoadedCustomization = React.useCallback((customization = {}) => {
+  const applyLoadedCustomization = React.useCallback((customization = {}, restaurantMeta = null) => {
+    const normalizedRestaurantMeta = {
+      location: normalizeLocationText(restaurantMeta?.location),
+      city: normalizeLocationText(restaurantMeta?.city),
+      pos_location_lat: normalizeCoordinateValue(restaurantMeta?.pos_location_lat),
+      pos_location_lng: normalizeCoordinateValue(restaurantMeta?.pos_location_lng),
+    };
     const normalizedCustomization = {
       ...customization,
       app_icon: normalizeAssetValue(customization.app_icon),
@@ -522,6 +578,17 @@ export default function QrMenuSettings() {
       marketplace_banner: normalizeAssetValue(customization.marketplace_banner),
       branding_updated_at: normalizeAssetValue(customization.branding_updated_at),
       qr_floor_plan_layout: normalizeFloorPlanLayout(customization.qr_floor_plan_layout),
+      delivery_origin_location:
+        normalizeLocationText(customization.delivery_origin_location) ||
+        normalizedRestaurantMeta.location,
+      delivery_origin_lat:
+        normalizeCoordinateValue(customization.delivery_origin_lat) ??
+        normalizedRestaurantMeta.pos_location_lat,
+      delivery_origin_lng:
+        normalizeCoordinateValue(customization.delivery_origin_lng) ??
+        normalizedRestaurantMeta.pos_location_lng,
+      delivery_zone_cities: normalizeDeliveryZoneCitiesInput(customization.delivery_zone_cities),
+      delivery_range_km: normalizeDeliveryRangeKmInput(customization.delivery_range_km, 5),
     };
     const storyImages = normalizeStoryImages(normalizedCustomization);
     const storyVideoYoutubeUrls = normalizeStoryVideoUrls(normalizedCustomization);
@@ -537,6 +604,12 @@ export default function QrMenuSettings() {
       story_video_youtube_urls: storyVideoYoutubeUrls,
       story_video_youtube_url: String(storyVideoYoutubeUrls[0] || "").trim(),
     }));
+    setDeliveryZoneCitiesInput(
+      normalizeDeliveryZoneCitiesInput(normalizedCustomization.delivery_zone_cities).join(", ")
+    );
+    if (restaurantMeta && typeof restaurantMeta === "object") {
+      setRestaurantDeliveryProfile(normalizedRestaurantMeta);
+    }
 
     setAppIconFileName(
       getAssetFileName(
@@ -647,6 +720,23 @@ export default function QrMenuSettings() {
 
 function updateField(key, value) {
   setSettings((prev) => ({ ...prev, [key]: value }));
+}
+
+function buildDeliveryCoveragePayload(currentSettings, zoneCitiesInput, fallbackProfile = {}) {
+  const nextDeliveryZoneCities = normalizeDeliveryZoneCitiesInput(zoneCitiesInput);
+  const nextDeliveryRangeKm = normalizeDeliveryRangeKmInput(currentSettings.delivery_range_km, 5);
+  const fallbackLocation = normalizeLocationText(fallbackProfile.location);
+  const fallbackLat = normalizeCoordinateValue(fallbackProfile.pos_location_lat);
+  const fallbackLng = normalizeCoordinateValue(fallbackProfile.pos_location_lng);
+
+  return {
+    delivery_zone_cities: nextDeliveryZoneCities,
+    delivery_range_km: nextDeliveryRangeKm,
+    delivery_origin_location:
+      normalizeLocationText(currentSettings.delivery_origin_location) || fallbackLocation,
+    delivery_origin_lat: normalizeCoordinateValue(currentSettings.delivery_origin_lat) ?? fallbackLat,
+    delivery_origin_lng: normalizeCoordinateValue(currentSettings.delivery_origin_lng) ?? fallbackLng,
+  };
 }
 
 function updateStoryVideoUrl(index, value) {
@@ -939,8 +1029,14 @@ async function saveAllCustomization() {
       .map((item) => String(item || "").trim())
       .filter(Boolean);
     const normalizedBookingSettings = normalizeQrBookingSettings(settings);
+    const deliveryCoveragePayload = buildDeliveryCoveragePayload(
+      settings,
+      deliveryZoneCitiesInput,
+      restaurantDeliveryProfile
+    );
     const payload = {
       ...settings,
+      ...deliveryCoveragePayload,
       ...normalizedBookingSettings,
       custom_domain: String(customDomainInput || "").trim(),
       story_enabled: settings.story_enabled !== false,
@@ -958,6 +1054,7 @@ async function saveAllCustomization() {
     setCustomDomainError("");
     setCurrentRestaurantSlug(savedSlug);
     setCustomDomainInput(savedCustomDomain);
+    setDeliveryZoneCitiesInput(deliveryCoveragePayload.delivery_zone_cities.join(", "));
     if (savedSlug) {
       syncRestaurantSlugCache(savedSlug);
       writeQrMenuBrandingCache(savedSlug, saveRes?.customization || payload);
@@ -1002,7 +1099,7 @@ async function saveAllCustomization() {
       // ✅ 3) LOAD QR MENU CUSTOMIZATION (THE FIX)
       const customRes = await secureFetch("/settings/qr-menu-customization");
       if (customRes?.success && customRes.customization) {
-        applyLoadedCustomization(customRes.customization);
+        applyLoadedCustomization(customRes.customization, customRes?.restaurant || null);
         setCustomDomainInput(String(customRes?.restaurant?.custom_domain || "").trim());
         setCurrentRestaurantSlug(String(customRes?.restaurant?.slug || "").trim());
         setCustomDomainError("");
@@ -1223,6 +1320,29 @@ async function saveAllCustomization() {
       toast.error(t("Failed to save changes"));
     } finally {
       setDeletingProductId(null);
+    }
+  };
+
+  const saveDeliveryCoverage = async () => {
+    setSavingDeliveryCoverage(true);
+    try {
+      const payload = buildDeliveryCoveragePayload(
+        settings,
+        deliveryZoneCitiesInput,
+        restaurantDeliveryProfile
+      );
+      await secureFetch("/settings/qr-menu-customization", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setSettings((prev) => ({ ...prev, ...payload }));
+      setDeliveryZoneCitiesInput(payload.delivery_zone_cities.join(", "));
+      toast.success(t("Saved successfully!"));
+    } catch (err) {
+      console.error("❌ Failed to save delivery coverage settings:", err);
+      toast.error(t("Save failed"));
+    } finally {
+      setSavingDeliveryCoverage(false);
     }
   };
 
@@ -2897,6 +3017,85 @@ async function saveAllCustomization() {
                 </div>
                 <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
                   {t("Toggle whether delivery/online ordering appears in the QR menu order picker.")}
+                </p>
+              </div>
+
+              <div className="rounded-3xl border border-slate-200 bg-white/70 p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/60">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <label className="block text-base font-bold text-slate-900 dark:text-slate-100">
+                      {t("Delivery Coverage")}
+                    </label>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      {t("Set which cities can order and the max delivery distance in km.")}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={saveDeliveryCoverage}
+                    disabled={savingDeliveryCoverage}
+                    className="rounded-xl border border-blue-500 px-4 py-2 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 disabled:opacity-50 dark:border-blue-400 dark:text-blue-300 dark:hover:bg-blue-500/10"
+                  >
+                    {savingDeliveryCoverage ? t("Saving...") : t("Save Delivery Coverage")}
+                  </button>
+                </div>
+
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <div className="md:col-span-2">
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      {t("Delivery Area (Cities)")}
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={deliveryZoneCitiesInput}
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        setDeliveryZoneCitiesInput(nextValue);
+                        updateField("delivery_zone_cities", normalizeDeliveryZoneCitiesInput(nextValue));
+                      }}
+                      placeholder={t("Example: Istanbul, Izmir, Ankara")}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:border-zinc-700 dark:bg-zinc-900 dark:text-slate-100 dark:focus:border-blue-500 dark:focus:ring-blue-500/30"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      {t("Delivery Range (km)")}
+                    </label>
+                    <input
+                      type="number"
+                      min={0.5}
+                      max={100}
+                      step={0.5}
+                      value={settings.delivery_range_km}
+                      onChange={(event) => updateField("delivery_range_km", event.target.value)}
+                      onBlur={() =>
+                        updateField(
+                          "delivery_range_km",
+                          normalizeDeliveryRangeKmInput(settings.delivery_range_km, 5)
+                        )
+                      }
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:border-zinc-700 dark:bg-zinc-900 dark:text-slate-100 dark:focus:border-blue-500 dark:focus:ring-blue-500/30"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      {t("Delivery Origin")}
+                    </label>
+                    <input
+                      type="text"
+                      value={settings.delivery_origin_location}
+                      onChange={(event) => updateField("delivery_origin_location", event.target.value)}
+                      placeholder={t("Restaurant address")}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:border-zinc-700 dark:bg-zinc-900 dark:text-slate-100 dark:focus:border-blue-500 dark:focus:ring-blue-500/30"
+                    />
+                  </div>
+                </div>
+
+                <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                  {t("Detected restaurant location from backend")}:{" "}
+                  {restaurantDeliveryProfile.location || t("Not available yet")}
                 </p>
               </div>
 

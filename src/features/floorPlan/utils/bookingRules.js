@@ -1,30 +1,20 @@
+import {
+  PHONE_API_REGEX,
+  formatPhoneForInput,
+  normalizePhoneForApi,
+} from "../../../utils/phone";
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const QR_PHONE_REGEX = /^(5\d{9}|[578]\d{7})$/;
+const QR_PHONE_REGEX = PHONE_API_REGEX;
 
 export { EMAIL_REGEX, QR_PHONE_REGEX };
 
 export function normalizeQrPhone(value) {
-  let digits = String(value || "").replace(/\D/g, "");
-  if (!digits) return "";
-  if (digits.startsWith("00")) digits = digits.slice(2);
-  if (digits.startsWith("90") && digits.length > 2) digits = digits.slice(2);
-  if (digits.startsWith("0") && digits.length > 1) digits = digits.slice(1);
-  if (digits.startsWith("5")) return digits.slice(0, 10);
-  if (digits.startsWith("7") || digits.startsWith("8")) return digits.slice(0, 8);
-  return digits.slice(0, 10);
+  return normalizePhoneForApi(value);
 }
 
 export function formatQrPhoneForInput(value) {
-  const normalized = normalizeQrPhone(value);
-  if (!normalized) return "";
-  if (/^5\d{0,9}$/.test(normalized)) {
-    const a = normalized.slice(0, 3);
-    const b = normalized.slice(3, 6);
-    const c = normalized.slice(6, 8);
-    const d = normalized.slice(8, 10);
-    return ["+90", a, b, c, d].filter(Boolean).join(" ");
-  }
-  return normalized;
+  return formatPhoneForInput(value);
 }
 
 export function parseGuestCompositionCount(value) {

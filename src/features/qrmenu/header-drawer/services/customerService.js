@@ -1,4 +1,5 @@
 import { API_BASE } from "../../../../utils/api";
+import { normalizePhoneForApi } from "../../../../utils/phone";
 
 const STORAGE_KEYS = {
   session: "qr_customer_session",
@@ -51,12 +52,7 @@ function normalizeEmail(value) {
 }
 
 function normalizePhone(value) {
-  let digits = String(value || "").replace(/\D/g, "");
-  if (!digits) return "";
-  if (digits.startsWith("00") && digits.length > 2) digits = digits.slice(2);
-  if (digits.startsWith("90") && digits.length > 10) digits = digits.slice(2);
-  if (digits.startsWith("0") && digits.length > 10) digits = digits.slice(1);
-  return digits;
+  return normalizePhoneForApi(value);
 }
 
 function normalizeLanguage(value) {
