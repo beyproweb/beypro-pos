@@ -435,10 +435,6 @@ function HeaderDrawer({
               onLogin={onLogin}
               onGoogleLogin={onGoogleAuth}
               onAppleLogin={onAppleAuth}
-              onQrLogin={() => {
-                setView(VIEW_MENU);
-                onClose?.();
-              }}
               onGoRegister={() => setView(VIEW_REGISTER)}
               onBack={() => setView(VIEW_MENU)}
               accentColor={accentColor}

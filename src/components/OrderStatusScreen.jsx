@@ -1,7 +1,16 @@
 // src/components/OrderStatusScreen.jsx
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { io } from "socket.io-client";
-import { Music2, Navigation } from "lucide-react";
+import {
+  CalendarDays,
+  ChevronDown,
+  ChevronRight,
+  Music2,
+  Navigation,
+  ShoppingBag,
+  Ticket,
+  Truck,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import secureFetch, { getAuthToken, BASE_URL } from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
@@ -170,6 +179,41 @@ const buildCheckInQrImageUrl = (qrUrl) => {
 };
 const isDeliveryLikeOrderType = (value) =>
   ["packet", "delivery", "online", "phone"].includes(normalizeComparableText(value));
+const ACTIVE_MULTI_ORDER_STATUSES = new Set([
+  "new",
+  "pending",
+  "confirmed",
+  "awaiting_confirm",
+  "pending_bank_transfer",
+  "preparing",
+  "ready",
+  "open",
+  "reserved",
+  "checked_in",
+  "on_road",
+  "in_progress",
+  "processing",
+  "accepted",
+]);
+const PAST_MULTI_ORDER_STATUSES = new Set([
+  "delivered",
+  "served",
+  "closed",
+  "completed",
+  "visit_completed",
+  "checked_out",
+  "cancelled",
+  "canceled",
+  "void",
+  "deleted",
+  "failed",
+  "rejected",
+]);
+const normalizeComparablePhone = (value) => String(value || "").replace(/\D/g, "");
+const toOrderTimestamp = (value) => {
+  const ts = Date.parse(value || 0);
+  return Number.isFinite(ts) ? ts : 0;
+};
 const normItem = (it) => ({
   id:
     it.id ||
@@ -487,6 +531,361 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null) => {
   }
   // Keep reservation lock for any pre-checkin state (including transient "paid/closed" before restore).
   return true;
+};
+
+const readScopedStorageItem = (key) => {
+  if (typeof window === "undefined") return "";
+  try {
+    const native = window.localStorage;
+    if (!native) return "";
+    for (const candidate of getQrKeyVariants(key)) {
+      const value = native.getItem(candidate);
+      if (value) return value;
+    }
+    return "";
+  } catch {
+    return "";
+  }
+};
+
+const readScopedCustomerSession = () => {
+  const raw = readScopedStorageItem("qr_customer_session");
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const normalizeOrdersPayload = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.orders)) return payload.orders;
+  if (Array.isArray(payload?.rows)) return payload.rows;
+  return [];
+};
+
+const extractAccountHintsFromOrder = (orderLike) => {
+  if (!orderLike || typeof orderLike !== "object") return {};
+  const reservation =
+    orderLike?.reservation && typeof orderLike.reservation === "object" ? orderLike.reservation : null;
+  const customer =
+    orderLike?.customer && typeof orderLike.customer === "object" ? orderLike.customer : null;
+  const customerId = Number(
+    orderLike?.customer_id ??
+      orderLike?.customerId ??
+      reservation?.customer_id ??
+      reservation?.customerId ??
+      customer?.id ??
+      0
+  );
+  return {
+    customerId: Number.isFinite(customerId) && customerId > 0 ? customerId : null,
+    email: normalizeComparableText(
+      orderLike?.customer_email ||
+        orderLike?.email ||
+        reservation?.customer_email ||
+        reservation?.email ||
+        customer?.email
+    ),
+    phone: normalizeComparablePhone(
+      orderLike?.customer_phone ||
+        orderLike?.phone ||
+        reservation?.customer_phone ||
+        reservation?.phone ||
+        customer?.phone
+    ),
+    name: normalizeComparableText(
+      orderLike?.customer_name ||
+        orderLike?.username ||
+        orderLike?.name ||
+        reservation?.customer_name ||
+        customer?.username ||
+        customer?.name
+    ),
+  };
+};
+
+const mergeAccountHints = (...hintsList) => {
+  const seed = { customerId: null, email: "", phone: "", name: "" };
+  for (const hints of hintsList) {
+    if (!hints || typeof hints !== "object") continue;
+    if (!seed.customerId && Number.isFinite(Number(hints.customerId)) && Number(hints.customerId) > 0) {
+      seed.customerId = Number(hints.customerId);
+    }
+    if (!seed.email && hints.email) seed.email = normalizeComparableText(hints.email);
+    if (!seed.phone && hints.phone) seed.phone = normalizeComparablePhone(hints.phone);
+    if (!seed.name && hints.name) seed.name = normalizeComparableText(hints.name);
+  }
+  return seed;
+};
+
+const orderMatchesHints = (orderLike, hints = {}) => {
+  if (!orderLike || typeof orderLike !== "object") return false;
+  const orderHints = extractAccountHintsFromOrder(orderLike);
+  if (hints.customerId && orderHints.customerId && Number(orderHints.customerId) === Number(hints.customerId)) {
+    return true;
+  }
+  if (hints.email && orderHints.email && orderHints.email === hints.email) return true;
+  if (hints.phone && orderHints.phone && orderHints.phone === hints.phone) return true;
+  if (hints.name && orderHints.name && orderHints.name === hints.name) return true;
+  return false;
+};
+
+const normalizeOrderTypeForPortfolio = (orderLike) => {
+  const orderType = normalizeComparableText(orderLike?.order_type || orderLike?.orderType);
+  const concertBookingType = normalizeComparableText(
+    orderLike?.concert_booking_type || orderLike?.concertBookingType
+  );
+  const hasTicketContext =
+    Number(orderLike?.concert_booking_id || orderLike?.concertBookingId) > 0 ||
+    concertBookingType === "ticket" ||
+    orderType === "ticket";
+
+  if (hasTicketContext) return "ticket";
+  if (hasReservationData(orderLike) || orderType === "reservation") return "reservation";
+  if (isDeliveryLikeOrderType(orderType)) return "delivery";
+  return "order";
+};
+
+const normalizeOrderStatusForPortfolio = (orderLike) =>
+  normalizeReservationStatus(
+    orderLike?.status ||
+      orderLike?.order_status ||
+      orderLike?.orderStatus ||
+      orderLike?.reservation_status ||
+      orderLike?.reservationStatus
+  );
+
+const isActivePortfolioStatus = (status) => {
+  const normalized = normalizeReservationStatus(status);
+  if (!normalized) return false;
+  if (PAST_MULTI_ORDER_STATUSES.has(normalized)) return false;
+  if (ACTIVE_MULTI_ORDER_STATUSES.has(normalized)) return true;
+  return true;
+};
+
+const resolveOrderGroupKey = (orderLike) => {
+  const directGroupKey =
+    orderLike?.relation_group_id ||
+    orderLike?.relationGroupId ||
+    orderLike?.group_id ||
+    orderLike?.groupId ||
+    orderLike?.order_group_id ||
+    orderLike?.orderGroupId ||
+    orderLike?.bundle_id ||
+    orderLike?.bundleId ||
+    orderLike?.booking_bundle_id ||
+    orderLike?.bookingBundleId ||
+    orderLike?.relation_id ||
+    orderLike?.relationId;
+  if (directGroupKey) return `group:${directGroupKey}`;
+
+  const reservationId =
+    orderLike?.reservation_id ||
+    orderLike?.reservationId ||
+    orderLike?.reservation?.id ||
+    orderLike?.reservation?.reservation_id ||
+    orderLike?.reservation?.reservationId;
+  if (reservationId) return `reservation:${reservationId}`;
+
+  const concertBookingId =
+    orderLike?.concert_booking_id ||
+    orderLike?.concertBookingId ||
+    orderLike?.concert_booking?.id ||
+    orderLike?.concertBooking?.id;
+  if (concertBookingId) return `ticket:${concertBookingId}`;
+
+  const linkedOrderId =
+    orderLike?.parent_order_id ||
+    orderLike?.parentOrderId ||
+    orderLike?.source_order_id ||
+    orderLike?.sourceOrderId ||
+    orderLike?.related_order_id ||
+    orderLike?.relatedOrderId;
+  if (linkedOrderId) return `linked:${linkedOrderId}`;
+
+  return `order:${
+    orderLike?.id ||
+    orderLike?.order_id ||
+    orderLike?.orderId ||
+    orderLike?.created_at ||
+    orderLike?.createdAt ||
+    "unknown"
+  }`;
+};
+
+const isOrderPaidLikeForPortfolio = (orderLike) => {
+  const paymentStatus = normalizeReservationStatus(
+    orderLike?.payment_status ||
+      orderLike?.paymentStatus ||
+      orderLike?.concert_booking_payment_status ||
+      orderLike?.concertBookingPaymentStatus
+  );
+  return Boolean(
+    orderLike?.is_paid === true ||
+      orderLike?.paid === true ||
+      paymentStatus === "paid" ||
+      paymentStatus === "confirmed"
+  );
+};
+
+const isOrderActionNeeded = (orderLike, normalizedStatus, type) => {
+  if (normalizedStatus === "pending_bank_transfer") return true;
+  if (normalizedStatus === "awaiting_confirm") return true;
+  if (type === "ticket" && !isOrderPaidLikeForPortfolio(orderLike)) return true;
+  return false;
+};
+
+const hasUpcomingReservationWindow = (orderLike) => {
+  const reservationDate =
+    orderLike?.reservation?.reservation_date || orderLike?.reservation_date || orderLike?.reservationDate;
+  const reservationTime =
+    orderLike?.reservation?.reservation_time || orderLike?.reservation_time || orderLike?.reservationTime;
+  const normalizedDate = String(reservationDate || "").trim();
+  const normalizedTime = String(reservationTime || "").trim();
+  if (!normalizedDate && !normalizedTime) return false;
+  const candidate = normalizedDate && normalizedTime ? `${normalizedDate} ${normalizedTime}` : normalizedDate;
+  const ts = Date.parse(candidate);
+  if (!Number.isFinite(ts)) return true;
+  const now = Date.now();
+  const diff = ts - now;
+  return diff >= -2 * 60 * 60 * 1000;
+};
+
+const getGroupPriorityScore = (group) => {
+  const primary = group?.primary || {};
+  const type = primary.type || "order";
+  const status = primary.status || "";
+  const active = isActivePortfolioStatus(status);
+  let score = 0;
+  if (active) score += 200;
+  if (type === "delivery" && active) score += 120;
+  if (type === "reservation" && active && hasUpcomingReservationWindow(primary.raw)) score += 100;
+  if (type === "ticket" && isOrderActionNeeded(primary.raw, status, type)) score += 90;
+  if (group?.relationLabel) score += 10;
+  if (group?.updatedAtMs) score += Math.min(50, Math.floor(group.updatedAtMs / 1_000_000_000));
+  return score;
+};
+
+const dedupeOrdersById = (orders) => {
+  const map = new Map();
+  for (const raw of Array.isArray(orders) ? orders : []) {
+    const normalizedId = Number(raw?.id || raw?.order_id || raw?.orderId || 0);
+    if (!Number.isFinite(normalizedId) || normalizedId <= 0) continue;
+    const existing = map.get(normalizedId);
+    if (!existing) {
+      map.set(normalizedId, raw);
+      continue;
+    }
+    const existingTs = Math.max(
+      toOrderTimestamp(existing?.updated_at || existing?.updatedAt),
+      toOrderTimestamp(existing?.created_at || existing?.createdAt)
+    );
+    const nextTs = Math.max(
+      toOrderTimestamp(raw?.updated_at || raw?.updatedAt),
+      toOrderTimestamp(raw?.created_at || raw?.createdAt)
+    );
+    if (nextTs >= existingTs) map.set(normalizedId, raw);
+  }
+  return Array.from(map.values());
+};
+
+const buildMultiOrderModel = (orders = [], fallbackOrderId = null) => {
+  const rows = dedupeOrdersById(orders)
+    .map((raw) => {
+      const id = Number(raw?.id || raw?.order_id || raw?.orderId || 0);
+      if (!Number.isFinite(id) || id <= 0) return null;
+      const status = normalizeOrderStatusForPortfolio(raw);
+      const type = normalizeOrderTypeForPortfolio(raw);
+      const createdAt = raw?.created_at || raw?.createdAt || null;
+      const updatedAt = raw?.updated_at || raw?.updatedAt || createdAt || null;
+      const createdAtMs = toOrderTimestamp(createdAt);
+      const updatedAtMs = toOrderTimestamp(updatedAt || createdAt);
+      const total = Number(raw?.total || raw?.grand_total || raw?.amount_total || 0) || 0;
+      const itemCount = Number(raw?.items_count || raw?.item_count || raw?.itemsCount || raw?.itemCount || 0) || 0;
+      return {
+        id,
+        raw,
+        status,
+        type,
+        createdAt,
+        updatedAt,
+        createdAtMs,
+        updatedAtMs,
+        total,
+        itemCount,
+        groupKey: resolveOrderGroupKey(raw),
+        actionNeeded: isOrderActionNeeded(raw, status, type),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+
+  const groupsMap = new Map();
+  for (const entry of rows) {
+    const key = entry.groupKey;
+    if (!groupsMap.has(key)) groupsMap.set(key, []);
+    groupsMap.get(key).push(entry);
+  }
+
+  const groups = Array.from(groupsMap.entries()).map(([key, entries]) => {
+    const sortedEntries = entries.slice().sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+    const primary = sortedEntries[0];
+    const hasReservation = sortedEntries.some((entry) => entry.type === "reservation");
+    const hasTicket = sortedEntries.some((entry) => entry.type === "ticket");
+    const relationLabel =
+      sortedEntries.length > 1
+        ? hasReservation && hasTicket
+          ? "Booking Bundle"
+          : hasReservation
+          ? "Related to your reservation"
+          : "Related orders"
+        : "";
+    const hasActive = sortedEntries.some((entry) => isActivePortfolioStatus(entry.status));
+    const updatedAtMs = sortedEntries.reduce((max, entry) => Math.max(max, entry.updatedAtMs), 0);
+    return {
+      key,
+      entries: sortedEntries,
+      primary,
+      type: primary?.type || "order",
+      status: primary?.status || "",
+      relationLabel,
+      hasActive,
+      updatedAtMs,
+      hasActionNeeded: sortedEntries.some((entry) => entry.actionNeeded),
+    };
+  });
+
+  const activeGroups = groups
+    .filter((group) => group.hasActive)
+    .sort((a, b) => {
+      const scoreDiff = getGroupPriorityScore(b) - getGroupPriorityScore(a);
+      if (scoreDiff !== 0) return scoreDiff;
+      return b.updatedAtMs - a.updatedAtMs;
+    });
+  const pastGroups = groups
+    .filter((group) => !group.hasActive)
+    .sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+
+  const fallbackId = Number(fallbackOrderId || 0);
+  const fallbackGroup =
+    Number.isFinite(fallbackId) && fallbackId > 0
+      ? activeGroups.find((group) => group.entries.some((entry) => entry.id === fallbackId)) ||
+        pastGroups.find((group) => group.entries.some((entry) => entry.id === fallbackId))
+      : null;
+
+  const currentOrderGroup = activeGroups[0] || fallbackGroup || pastGroups[0] || null;
+  const otherActive = activeGroups.filter((group) => group.key !== currentOrderGroup?.key);
+
+  return {
+    currentOrderGroup,
+    otherActive,
+    pastGroups,
+    activeCount: activeGroups.length,
+  };
 };
 
 /* ---------- UI COMPONENTS (UI-only; no business logic) ---------- */
@@ -957,6 +1356,257 @@ function InlineBottomActions({
   );
 }
 
+function getPortfolioTypeMeta(type, t) {
+  const normalized = String(type || "order").toLowerCase();
+  if (normalized === "reservation") {
+    return {
+      label: t("Reservation"),
+      Icon: CalendarDays,
+      badgeClass:
+        "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-200",
+    };
+  }
+  if (normalized === "ticket") {
+    return {
+      label: t("Ticket"),
+      Icon: Ticket,
+      badgeClass:
+        "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200",
+    };
+  }
+  if (normalized === "delivery") {
+    return {
+      label: t("Delivery"),
+      Icon: Truck,
+      badgeClass:
+        "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200",
+    };
+  }
+  return {
+    label: t("Order"),
+    Icon: ShoppingBag,
+    badgeClass:
+      "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200",
+  };
+}
+
+function getPortfolioStatusDotClass(status) {
+  const normalized = normalizeReservationStatus(status);
+  if (["cancelled", "canceled", "void", "deleted", "failed"].includes(normalized)) return "bg-rose-500";
+  if (["awaiting_confirm", "pending_bank_transfer", "pending"].includes(normalized)) return "bg-amber-500";
+  if (["ready"].includes(normalized)) return "bg-blue-500";
+  if (["on_road"].includes(normalized)) return "bg-sky-500";
+  if (["delivered", "served", "closed", "completed", "checked_out", "visit_completed"].includes(normalized)) {
+    return "bg-neutral-400";
+  }
+  return "bg-emerald-500";
+}
+
+function formatPortfolioDate(value, t) {
+  const ts = toOrderTimestamp(value);
+  if (!ts) return t("—");
+  try {
+    return new Date(ts).toLocaleString();
+  } catch {
+    return t("—");
+  }
+}
+
+function buildPortfolioOrderMeta(order, t) {
+  if (!order || typeof order !== "object") return "";
+  const parts = [];
+  const tableNo = Number(
+    order?.table_number ||
+      order?.tableNumber ||
+      order?.reservation?.table_number ||
+      order?.reservation?.tableNumber ||
+      0
+  );
+  const eventName =
+    order?.concert_booking?.event_name ||
+    order?.concert_booking?.name ||
+    order?.concert_booking_name ||
+    order?.event_name ||
+    order?.eventName ||
+    "";
+  if (eventName) parts.push(String(eventName));
+  if (Number.isFinite(tableNo) && tableNo > 0) parts.push(`${t("Table")} ${tableNo}`);
+
+  const reservationTime =
+    order?.reservation?.reservation_time || order?.reservation_time || order?.reservationTime || "";
+  const reservationDate =
+    order?.reservation?.reservation_date || order?.reservation_date || order?.reservationDate || "";
+  if (reservationTime || reservationDate) parts.push([reservationDate, reservationTime].filter(Boolean).join(" "));
+
+  if (parts.length > 0) return parts.join(" • ");
+
+  const deliveryAddress = String(order?.customer_address || order?.address || "").trim();
+  if (deliveryAddress) return deliveryAddress;
+  return "";
+}
+
+function MultiOrderCard({
+  t,
+  group,
+  isHero = false,
+  formatCurrency,
+  displayStatus,
+}) {
+  const [expanded, setExpanded] = useState(Boolean(isHero));
+  const entry = group?.primary;
+  if (!entry) return null;
+
+  const typeMeta = getPortfolioTypeMeta(group.type, t);
+  const statusLabel = displayStatus(entry.status);
+  const statusDotClass = getPortfolioStatusDotClass(entry.status);
+  const relationLabel = group?.relationLabel ? t(group.relationLabel) : "";
+  const childCount = Math.max(0, (group?.entries?.length || 0) - 1);
+  const shouldShowExpander = childCount > 0;
+  const raw = entry.raw || {};
+  const orderMeta = buildPortfolioOrderMeta(raw, t);
+  const headline = `${typeMeta.label} #${entry.id}`;
+  const totalLabel = formatCurrency(Number(entry.total || 0));
+  const actionLabel = group?.hasActionNeeded ? t("Action needed") : "";
+  const freshOrder = Date.now() - Number(entry.createdAtMs || 0) < 10 * 60 * 1000;
+  const newLabel = freshOrder ? t("New") : "";
+
+  return (
+    <section
+      className={`rounded-2xl border px-4 py-3 ${
+        isHero
+          ? "border-slate-300 dark:border-slate-700 bg-white dark:bg-neutral-900 shadow-sm"
+          : "border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${typeMeta.badgeClass}`}
+            >
+              <typeMeta.Icon className="h-3.5 w-3.5" />
+              <span>{typeMeta.label}</span>
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-0.5 text-[11px] font-semibold text-neutral-700 dark:text-neutral-200">
+              <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass}`} />
+              <span>{statusLabel}</span>
+            </span>
+            {actionLabel ? (
+              <span className="inline-flex items-center rounded-full border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-200">
+                {actionLabel}
+              </span>
+            ) : null}
+            {!actionLabel && newLabel ? (
+              <span className="inline-flex items-center rounded-full border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-200">
+                {newLabel}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="mt-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">
+            {headline}
+          </div>
+
+          <div className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            {formatPortfolioDate(entry.updatedAt || entry.createdAt, t)}
+          </div>
+
+          {orderMeta ? (
+            <div className="mt-1 text-xs text-neutral-600 dark:text-neutral-300 truncate">{orderMeta}</div>
+          ) : null}
+
+          {relationLabel ? (
+            <div className="mt-2 text-xs font-medium text-neutral-600 dark:text-neutral-300">{relationLabel}</div>
+          ) : null}
+        </div>
+
+        <div className="shrink-0 text-right">
+          <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{totalLabel}</div>
+          {shouldShowExpander ? (
+            <button
+              type="button"
+              onClick={() => setExpanded((prev) => !prev)}
+              className="mt-2 inline-flex items-center gap-1 rounded-full border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-0.5 text-[11px] font-semibold text-neutral-600 dark:text-neutral-200"
+            >
+              {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              <span>{`+${childCount} ${t("more")}`}</span>
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      {shouldShowExpander && expanded ? (
+        <div className="mt-3 space-y-2 border-t border-neutral-100 dark:border-neutral-800 pt-3">
+          {group.entries.slice(1).map((child) => {
+            const childMeta = getPortfolioTypeMeta(child.type, t);
+            return (
+              <div
+                key={`${group.key}-${child.id}`}
+                className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <div className="inline-flex items-center gap-1 text-xs font-semibold text-neutral-700 dark:text-neutral-200">
+                    <childMeta.Icon className="h-3.5 w-3.5" />
+                    <span>{`${childMeta.label} #${child.id}`}</span>
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+                    {displayStatus(child.status)}
+                  </div>
+                </div>
+                <div className="shrink-0 text-xs font-semibold text-neutral-700 dark:text-neutral-200">
+                  {formatCurrency(Number(child.total || 0))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function MultiOrderSection({
+  t,
+  title,
+  count = null,
+  groups = [],
+  emptyLabel,
+  hero = false,
+  formatCurrency,
+  displayStatus,
+}) {
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500 dark:text-neutral-400">
+          {title}
+        </h3>
+        {Number.isFinite(count) ? (
+          <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">{count}</span>
+        ) : null}
+      </div>
+      {groups.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-3 text-xs text-neutral-500 dark:text-neutral-400">
+          {emptyLabel}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {groups.map((group) => (
+            <MultiOrderCard
+              key={group.key}
+              t={t}
+              group={group}
+              isHero={hero}
+              formatCurrency={formatCurrency}
+              displayStatus={displayStatus}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 /* ---------- MAIN COMPONENT ---------- */
 const OrderStatusScreen = ({
   orderId,
@@ -985,6 +1635,7 @@ const OrderStatusScreen = ({
   );
   const [isDarkUi, setIsDarkUi] = useState(() => (typeof forceDark === "boolean" ? forceDark : false));
   const [order, setOrder] = useState(null);
+  const [accountOrders, setAccountOrders] = useState([]);
   const [items, setItems] = useState([]);
   const [timer, setTimer] = useState("00:00");
   const [order404, setOrder404] = useState(false);
@@ -998,6 +1649,7 @@ const OrderStatusScreen = ({
   const intervalRef = useRef(null);
   const joinedRestaurantRef = useRef(null);
   const driversCacheRef = useRef({ fetchedAtMs: 0, byId: new Map() });
+  const accountOrdersFetchRef = useRef({ key: "", fetchedAtMs: 0 });
   const { formatCurrency } = useCurrency();
 
   const FINISHED_STATES = ["closed", "completed"]; // keep cancelled visible
@@ -1010,6 +1662,7 @@ const OrderStatusScreen = ({
     setCheckedOutSticky(false);
     setOrder(null);
     setItems([]);
+    setAccountOrders([]);
     setOrder404(false);
     setIsTrackingOpen(false);
     setActiveScreenView("status");
@@ -1354,6 +2007,86 @@ const OrderStatusScreen = ({
     [fetchJSON, hydrateOrderDriverName, hydrateOrderItems]
   );
 
+  const fetchAccountOrdersForPortfolio = useCallback(
+    async (baseOrder) => {
+      if (!baseOrder || typeof baseOrder !== "object") {
+        setAccountOrders([]);
+        return;
+      }
+
+      const session = readScopedCustomerSession();
+      const sessionHints = {
+        customerId: Number(session?.id || 0) || null,
+        email: normalizeComparableText(session?.email),
+        phone: normalizeComparablePhone(session?.phone),
+        name: normalizeComparableText(session?.username || session?.name),
+      };
+      const hints = mergeAccountHints(extractAccountHintsFromOrder(baseOrder), sessionHints);
+      const fetchKey = [
+        hints.customerId || "",
+        hints.email || "",
+        hints.phone || "",
+        hints.name || "",
+      ].join("|");
+
+      const now = Date.now();
+      if (
+        fetchKey &&
+        accountOrdersFetchRef.current.key === fetchKey &&
+        now - Number(accountOrdersFetchRef.current.fetchedAtMs || 0) < 8_000
+      ) {
+        return;
+      }
+
+      const queryPaths = [];
+      if (hints.customerId) queryPaths.push(`/orders?customer_id=${encodeURIComponent(hints.customerId)}`);
+      if (hints.phone) queryPaths.push(`/orders?customer_phone=${encodeURIComponent(hints.phone)}`);
+      if (hints.email) queryPaths.push(`/orders?customer_email=${encodeURIComponent(hints.email)}`);
+      if (hints.name) queryPaths.push(`/orders?customer_name=${encodeURIComponent(hints.name)}`);
+
+      const fallbackTableNo = Number(baseOrder?.table_number || baseOrder?.tableNumber || 0);
+      if (queryPaths.length === 0 && Number.isFinite(fallbackTableNo) && fallbackTableNo > 0) {
+        queryPaths.push(`/orders?table_number=${fallbackTableNo}`);
+      }
+
+      if (queryPaths.length === 0) {
+        setAccountOrders([baseOrder]);
+        return;
+      }
+
+      const merged = [baseOrder];
+      const hasCustomerHints = Boolean(hints.customerId || hints.phone || hints.email || hints.name);
+      for (const path of queryPaths) {
+        try {
+          const { res, data } = await fetchJSON(path);
+          if (!res?.ok) continue;
+          const rows = normalizeOrdersPayload(data);
+          rows.forEach((row) => {
+            if (!hasCustomerHints || orderMatchesHints(row, hints)) merged.push(row);
+          });
+        } catch {
+          // Continue building from other endpoints.
+        }
+      }
+
+      const nextOrders = dedupeOrdersById(merged).sort((a, b) => {
+        const aTs = Math.max(
+          toOrderTimestamp(a?.updated_at || a?.updatedAt),
+          toOrderTimestamp(a?.created_at || a?.createdAt)
+        );
+        const bTs = Math.max(
+          toOrderTimestamp(b?.updated_at || b?.updatedAt),
+          toOrderTimestamp(b?.created_at || b?.createdAt)
+        );
+        return bTs - aTs;
+      });
+
+      setAccountOrders(nextOrders);
+      accountOrdersFetchRef.current = { key: fetchKey, fetchedAtMs: now };
+    },
+    [fetchJSON]
+  );
+
   useEffect(() => {
     if (!order) return;
     const status = (order.status || "").toLowerCase();
@@ -1433,9 +2166,11 @@ const OrderStatusScreen = ({
           setCheckedOutSticky(true);
         }
         setOrder(nextOrder);
+        await fetchAccountOrdersForPortfolio(nextOrder);
         setOrder404(false);
       } else if (res.status === 404) {
         setOrder(null);
+        setAccountOrders([]);
         setOrder404(true);
       }
     } catch {}
@@ -1491,6 +2226,7 @@ const OrderStatusScreen = ({
           setCheckedOutSticky(true);
         }
         setOrder(hydrated);
+        fetchAccountOrdersForPortfolio(hydrated);
         if (import.meta.env.DEV) {
           console.info("[OrderStatusScreen] fetched order", {
             orderId,
@@ -1508,7 +2244,7 @@ const OrderStatusScreen = ({
       abort = true;
       clearInterval(iv);
     };
-  }, [hydrateOrderDriverName, orderId]);
+  }, [fetchAccountOrdersForPortfolio, fetchJSON, hydrateOrderDriverName, orderId]);
 
   useSocketIO(fetchOrder, orderId);
   useEffect(() => {
@@ -1858,6 +2594,21 @@ const OrderStatusScreen = ({
     if (s === "new") return "bg-neutral-50 text-neutral-700 border-neutral-200";
     return "bg-neutral-50 text-neutral-600 border-neutral-200";
   };
+
+  const multiOrderModel = React.useMemo(() => {
+    const baseList = [];
+    if (order && typeof order === "object") baseList.push(order);
+    if (Array.isArray(accountOrders) && accountOrders.length > 0) baseList.push(...accountOrders);
+    return buildMultiOrderModel(baseList, Number(order?.id || orderId || 0));
+  }, [accountOrders, order, orderId]);
+
+  const currentOrderGroups = multiOrderModel.currentOrderGroup
+    ? [multiOrderModel.currentOrderGroup]
+    : [];
+  const otherActiveGroups = multiOrderModel.otherActive || [];
+  const showMultiOrderSections =
+    currentOrderGroups.length > 0 || otherActiveGroups.length > 0;
+
   const suborders = Array.isArray(order?.suborders) ? order.suborders : [];
   const effectiveSuborderStatus = (() => {
     const statuses = suborders
@@ -2031,6 +2782,29 @@ const OrderStatusScreen = ({
             />
           ) : (
             <>
+              {showMultiOrderSections ? (
+                <div className="space-y-3">
+                  <MultiOrderSection
+                    t={t}
+                    title={t("Current Order")}
+                    groups={currentOrderGroups}
+                    emptyLabel={t("No active order")}
+                    hero={true}
+                    formatCurrency={formatCurrency}
+                    displayStatus={displayStatus}
+                  />
+                  <MultiOrderSection
+                    t={t}
+                    title={`${t("Other Active Orders")} (${otherActiveGroups.length})`}
+                    count={otherActiveGroups.length}
+                    groups={otherActiveGroups}
+                    emptyLabel={t("No other active orders")}
+                    formatCurrency={formatCurrency}
+                    displayStatus={displayStatus}
+                  />
+                </div>
+              ) : null}
+
               <OrderProgressStepper
                 t={t}
                 currentStepIndex={getCurrentStepIndex()}

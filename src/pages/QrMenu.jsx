@@ -559,6 +559,7 @@ function GuestWelcomeAuthModal({
                   onGoogleLogin={onGoogleLogin}
                   onAppleLogin={onAppleLogin}
                   onGoLogin={() => onViewChange?.("login")}
+                  onContinueGuest={onClose}
                   onBack={onClose}
                   accentColor={accentColor}
                 />
@@ -572,20 +573,11 @@ function GuestWelcomeAuthModal({
                   onGoogleLogin={onGoogleLogin}
                   onAppleLogin={onAppleLogin}
                   onGoRegister={() => onViewChange?.("register")}
+                  onContinueGuest={onClose}
                   onBack={onClose}
                   accentColor={accentColor}
                 />
               )}
-            </div>
-
-            <div className="border-t border-slate-200/80 bg-white px-4 py-3 dark:border-white/10 dark:bg-neutral-950 sm:bg-white/85 sm:dark:bg-neutral-950/88">
-              <button
-                type="button"
-                onClick={onClose}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:border-white/20 dark:hover:bg-white/10"
-              >
-                {t("Continue as Guest")}
-              </button>
             </div>
           </div>
         </div>
@@ -1760,11 +1752,16 @@ const DICT = {
     "My Orders": "My Orders",
     "My Profile": "My Profile",
     "Login / Register": "Login / Register",
+    "Login / Signup": "Login / Signup",
+    "Sign-Up": "Sign-Up",
+    "Login/Register": "Login/Register",
+    "Login/Signup": "Login/Signup",
     "Login to sync profile and orders": "Login to sync profile and orders",
     "Active and past orders": "Active and past orders",
     "Saved checkout details": "Saved checkout details",
     "Sign out from this device": "Sign out from this device",
     "Access your account": "Access your account",
+    "Continue with your email": "Continue with your email",
     "Support / Contact": "Support / Contact",
     "Contact support for help": "Contact support for help",
     "Support section will be available soon.": "Support section will be available soon.",
@@ -1773,6 +1770,7 @@ const DICT = {
     "Full name": "Full name",
     "Address (optional)": "Address (optional)",
     "Create Account": "Create Account",
+    "Need an account? Signup": "Need an account? Signup",
     "Login instead": "Login instead",
     "Registration failed": "Registration failed",
     "Unable to save profile": "Unable to save profile",
@@ -1787,6 +1785,7 @@ const DICT = {
     "Email already registered.": "Email already registered.",
     "Username already in use.": "Username already in use.",
     "Please enter your credentials.": "Please enter your credentials.",
+    "Please enter a valid email address.": "Please enter a valid email address.",
     "No account found for this phone number or email. Please register.": "No account found for this phone number or email. Please register.",
     "Invalid credentials.": "Invalid credentials.",
     "Please login first.": "Please login first.",
@@ -2116,11 +2115,16 @@ const DICT = {
     "My Orders": "Siparişlerim",
     "My Profile": "Profilim",
     "Login / Register": "Giriş / Kayıt",
+    "Login / Signup": "Giriş / Kayıt Ol",
+    "Sign-Up": "Kayıt Ol",
+    "Login/Register": "Giriş/Kayıt",
+    "Login/Signup": "Giriş/Kayıt Ol",
     "Login to sync profile and orders": "Profilinizi ve siparişlerinizi senkronize etmek için giriş yapın",
     "Active and past orders": "Aktif ve geçmiş siparişler",
     "Saved checkout details": "Kayıtlı ödeme ve teslimat bilgileri",
     "Sign out from this device": "Bu cihazdan çıkış yap",
     "Access your account": "Hesabınıza erişin",
+    "Continue with your email": "E-posta ile devam edin",
     "Support / Contact": "Destek / İletişim",
     "Contact support for help": "Yardım için destekle iletişime geçin",
     "Support section will be available soon.": "Destek bölümü yakında kullanıma açılacak.",
@@ -2129,6 +2133,7 @@ const DICT = {
     "Full name": "Ad soyad",
     "Address (optional)": "Adres (isteğe bağlı)",
     "Create Account": "Hesap Oluştur",
+    "Need an account? Signup": "Hesabın yok mu? Kayıt Ol",
     "Login instead": "Bunun yerine giriş yap",
     "Registration failed": "Kayıt başarısız",
     "Unable to save profile": "Profil kaydedilemedi",
@@ -2147,6 +2152,7 @@ const DICT = {
     "Email already registered.": "E-posta zaten kayıtlı.",
     "Username already in use.": "Kullanıcı adı zaten kullanılıyor.",
     "Please enter your credentials.": "Lütfen giriş bilgilerinizi girin.",
+    "Please enter a valid email address.": "Lütfen geçerli bir e-posta adresi girin.",
     "No account found for this phone number or email. Please register.": "Bu telefon numarası veya e-posta için hesap bulunamadı. Lütfen kayıt olun.",
     "Invalid credentials.": "Geçersiz giriş bilgileri.",
     "Please login first.": "Lütfen önce giriş yapın.",
@@ -2364,16 +2370,22 @@ const DICT = {
     "My Orders": "Meine Bestellungen",
     "My Profile": "Mein Profil",
     "Login / Register": "Anmelden / Registrieren",
+    "Login / Signup": "Anmelden / Registrieren",
+    "Sign-Up": "Registrieren",
+    "Login/Register": "Anmelden/Registrieren",
+    "Login/Signup": "Anmelden/Registrieren",
     "Login to sync profile and orders": "Zum Synchronisieren von Profil und Bestellungen anmelden",
     "Active and past orders": "Aktive und vergangene Bestellungen",
     "Saved checkout details": "Gespeicherte Checkout-Daten",
     "Sign out from this device": "Von diesem Gerät abmelden",
     "Access your account": "Auf Ihr Konto zugreifen",
+    "Continue with your email": "Fahren Sie mit Ihrer E-Mail fort",
     "Support / Contact": "Support / Kontakt",
     "Contact support for help": "Support für Hilfe kontaktieren",
     "Support section will be available soon.": "Der Support-Bereich ist bald verfügbar.",
     "Email or username": "E-Mail oder Benutzername",
     "Create Account": "Konto erstellen",
+    "Need an account? Signup": "Noch kein Konto? Registrieren",
     "Login instead": "Stattdessen anmelden",
     "Registration failed": "Registrierung fehlgeschlagen",
     "Unable to save profile": "Profil konnte nicht gespeichert werden",
@@ -2391,6 +2403,7 @@ const DICT = {
     "Full name": "Vollständiger Name",
     "Address (optional)": "Adresse (optional)",
     "Please enter your credentials.": "Bitte Zugangsdaten eingeben.",
+    "Please enter a valid email address.": "Bitte geben Sie eine gültige E-Mail-Adresse ein.",
     "No account found for this phone number or email. Please register.": "Für diese Telefonnummer oder E-Mail wurde kein Konto gefunden. Bitte registrieren Sie sich.",
     "Invalid credentials.": "Ungültige Zugangsdaten.",
     "Please login first.": "Bitte zuerst anmelden.",
@@ -2618,16 +2631,22 @@ const DICT = {
     "My Orders": "Mes commandes",
     "My Profile": "Mon profil",
     "Login / Register": "Connexion / Inscription",
+    "Login / Signup": "Connexion / Inscription",
+    "Sign-Up": "Inscription",
+    "Login/Register": "Connexion/Inscription",
+    "Login/Signup": "Connexion/Inscription",
     "Login to sync profile and orders": "Connectez-vous pour synchroniser votre profil et vos commandes",
     "Active and past orders": "Commandes actives et passées",
     "Saved checkout details": "Informations de commande enregistrées",
     "Sign out from this device": "Se déconnecter de cet appareil",
     "Access your account": "Accéder à votre compte",
+    "Continue with your email": "Continuez avec votre e-mail",
     "Support / Contact": "Support / Contact",
     "Contact support for help": "Contacter le support pour obtenir de l'aide",
     "Support section will be available soon.": "La section support sera bientôt disponible.",
     "Email or username": "E-mail ou nom d'utilisateur",
     "Create Account": "Créer un compte",
+    "Need an account? Signup": "Besoin d'un compte ? Inscrivez-vous",
     "Login instead": "Se connecter à la place",
     "Registration failed": "Échec de l'inscription",
     "Unable to save profile": "Impossible d'enregistrer le profil",
@@ -2645,6 +2664,7 @@ const DICT = {
     "Full name": "Nom complet",
     "Address (optional)": "Adresse (facultatif)",
     "Please enter your credentials.": "Veuillez saisir vos identifiants.",
+    "Please enter a valid email address.": "Veuillez saisir une adresse e-mail valide.",
     "No account found for this phone number or email. Please register.": "Aucun compte n’a été trouvé pour ce numéro de téléphone ou cet e-mail. Veuillez vous inscrire.",
     "Invalid credentials.": "Identifiants invalides.",
     "Please login first.": "Veuillez vous connecter d'abord.",

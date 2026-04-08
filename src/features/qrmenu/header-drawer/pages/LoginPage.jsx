@@ -1,5 +1,9 @@
 import React from "react";
-import { QrCode } from "lucide-react";
+import {
+  EMAIL_REGEX,
+  QR_PHONE_REGEX,
+  normalizeQrPhone,
+} from "../../../floorPlan/utils/bookingRules";
 
 const BEYALL_PRIMARY = "#5B2EFF";
 const BEYALL_SECONDARY = "#7C3AED";
@@ -9,8 +13,8 @@ function LoginPage({
   onLogin,
   onGoogleLogin,
   onAppleLogin,
-  onQrLogin,
   onGoRegister,
+  onContinueGuest,
   onBack,
 }) {
   const [login, setLogin] = React.useState("");
@@ -19,11 +23,34 @@ function LoginPage({
   const [loading, setLoading] = React.useState(false);
   const [socialLoading, setSocialLoading] = React.useState("");
   const [error, setError] = React.useState("");
+  const normalizedLogin = normalizeQrPhone(login);
+  const loginError =
+    login.trim() &&
+    !(QR_PHONE_REGEX.test(normalizedLogin) || EMAIL_REGEX.test(login.trim().toLowerCase()))
+      ? t("Please enter a valid phone number or email.")
+      : "";
+  const passwordError = showPassword && !password.trim() ? t("Please enter your credentials.") : "";
 
   const submit = async (event) => {
     event.preventDefault();
     if (!showPassword) {
+      if (!login.trim()) {
+        setError(t("Please enter your credentials."));
+        return;
+      }
+      if (loginError) {
+        setError(loginError);
+        return;
+      }
       setShowPassword(true);
+      return;
+    }
+    if (loginError) {
+      setError(loginError);
+      return;
+    }
+    if (!password.trim()) {
+      setError(passwordError || t("Please enter your credentials."));
       return;
     }
     setError("");
@@ -52,15 +79,6 @@ function LoginPage({
     }
   };
 
-  const handleQrLogin = () => {
-    setError("");
-    if (typeof onQrLogin === "function") {
-      onQrLogin();
-      return;
-    }
-    setError("QR login is not available yet.");
-  };
-
   return (
     <div className="relative h-full overflow-y-auto bg-white">
       <div
@@ -84,7 +102,7 @@ function LoginPage({
         >
           {t("Back")}
         </button>
-        <h3 className="text-sm font-semibold text-gray-900">{t("Login / Register")}</h3>
+        <h3 className="text-sm font-semibold text-gray-900">{t("Login / Signup")}</h3>
       </div>
 
       <div className="mx-auto flex min-h-[calc(100%-56px)] w-full max-w-[420px] items-center px-5 py-7">
@@ -92,21 +110,23 @@ function LoginPage({
           className="w-full rounded-[24px] border border-[#ECECF4] bg-white px-5 py-6 shadow-[0_8px_24px_rgba(15,23,42,0.04)]"
           onSubmit={submit}
         >
-          <div className="mx-auto mb-5 flex h-9 w-32 items-center justify-center overflow-hidden">
-            <img
-              src="/beyall-logo.png"
-              alt="Beyall"
-              className="h-9 w-auto scale-[3.2] origin-center"
-              loading="lazy"
-            />
+          <div className="mb-6 text-center">
+            <div className="inline-flex items-center rounded-full border border-[#E5E7F4] bg-[#F8F8FF] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#5B2EFF]">
+              {t("Access your account")}
+            </div>
+            <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.03em] text-gray-950">
+              {t("Login/Signup")}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-gray-500">{t("Continue with your email")}</p>
           </div>
-
-          
 
           <div className="mt-5 space-y-3">
             <input
               value={login}
-              onChange={(e) => setLogin(e.target.value)}
+              onChange={(e) => {
+                setLogin(e.target.value);
+                if (error) setError("");
+              }}
               placeholder={t("Enter phone number or email")}
               className="h-[52px] w-full rounded-[14px] border border-gray-300 bg-white px-4 text-[16px] text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-[#5B2EFF] focus:ring-2 focus:ring-[#5B2EFF]/20"
               autoComplete="username"
@@ -116,7 +136,10 @@ function LoginPage({
               <input
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (error) setError("");
+                }}
                 placeholder={t("Enter password")}
                 className="h-[52px] w-full rounded-[14px] border border-gray-300 bg-white px-4 text-[16px] text-gray-900 outline-none transition-all placeholder:text-gray-400 focus:border-[#5B2EFF] focus:ring-2 focus:ring-[#5B2EFF]/20"
                 autoComplete="current-password"
@@ -124,7 +147,9 @@ function LoginPage({
             ) : null}
           </div>
 
-          {error ? <p className="mt-3 text-xs font-medium text-rose-600">{t(error)}</p> : null}
+          {error || loginError || passwordError ? (
+            <p className="mt-3 text-xs font-medium text-rose-600">{error || loginError || passwordError}</p>
+          ) : null}
 
           <div className="mt-4 space-y-3">
             <button
@@ -163,6 +188,16 @@ function LoginPage({
               
                 <span>{socialLoading === "apple" ? "..." : t("Continue with Apple")}</span>
               </button>
+
+              {typeof onContinueGuest === "function" ? (
+                <button
+                  type="button"
+                  onClick={onContinueGuest}
+                  className="flex h-12 w-full items-center justify-center gap-2.5 rounded-[14px] border border-gray-200 bg-white text-[17px] font-medium text-gray-900 transition-transform duration-150 hover:bg-gray-50 active:scale-[0.99]"
+                >
+                  <span>{t("Continue as Guest")}</span>
+                </button>
+              ) : null}
             </div>
 
             <div className="my-3 flex items-center gap-3 text-sm text-gray-400">
@@ -173,25 +208,15 @@ function LoginPage({
 
             <button
               type="button"
-              onClick={handleQrLogin}
-              className="flex h-12 w-full items-center justify-center gap-2.5 rounded-[14px] border border-gray-200 bg-white text-[17px] font-medium text-gray-900 transition-transform duration-150 hover:bg-gray-50 active:scale-[0.99]"
+              onClick={onGoRegister}
+              className="flex h-12 w-full items-center justify-center rounded-[14px] border border-[#D8DDF8] bg-[#F8F8FF] px-4 text-[15px] font-semibold text-[#5B2EFF] transition-all duration-150 hover:border-[#C6CEFF] hover:bg-[#F3F4FF] active:scale-[0.99]"
             >
-              <QrCode className="h-4 w-4 text-gray-700" />
-              <span>{t("Log in with QR code")}</span>
+              {t("Need an account? Signup")}
             </button>
 
             <p className="pt-3 text-center text-[12px] leading-5 text-gray-500">
               {t("By continuing, you agree to Beyall Terms and Privacy Policy.")}
             </p>
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={onGoRegister}
-                className="text-[12px] font-medium text-gray-500 underline decoration-gray-300 underline-offset-2 hover:text-gray-700"
-              >
-                {t("Need an account? Sign up")}
-              </button>
-            </div>
           </div>
         </form>
       </div>
