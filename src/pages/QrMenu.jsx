@@ -9379,12 +9379,15 @@ export default function QrMenu() {
   }, []);
 
   const openDownloadQrModal = useCallback(() => {
-    if (!boolish(orderSelectCustomization?.qr_download_popup_enabled, true)) {
-      handleDownloadQrImage();
-      return;
-    }
-    setDownloadQrModalOpen(true);
-  }, [handleDownloadQrImage, orderSelectCustomization?.qr_download_popup_enabled]);
+    setDownloadQrModalOpen(false);
+    handleDownloadQrImage();
+  }, [handleDownloadQrImage]);
+
+  useEffect(() => {
+    if (!showQrPrompt) return;
+    setShowQrPrompt(false);
+    setQrPromptMode("default");
+  }, [setQrPromptMode, setShowQrPrompt, showQrPrompt]);
 
   const handleShareFromModal = useCallback(() => {
     shareCurrentMenu();
@@ -9621,7 +9624,7 @@ export default function QrMenu() {
         onInstall={handleInstallFromModal}
         onDownloadImage={handleDownloadImageFromModal}
       />
-      {showQrPrompt && (
+      {false && showQrPrompt && (
         <div className="fixed bottom-5 left-1/2 z-[999] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 px-2">
           <div className="pointer-events-auto rounded-2xl border border-neutral-200/80 bg-white/95 shadow-[0_18px_50px_rgba(0,0,0,0.12)] backdrop-blur-md dark:border-neutral-800/70 dark:bg-neutral-950/85">
             <div className="p-4">
@@ -9650,9 +9653,7 @@ export default function QrMenu() {
 
               <button
                 type="button"
-                onClick={() => {
-                  setDownloadQrModalOpen(true);
-                }}
+                onClick={openDownloadQrModal}
                 className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-neutral-900 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-neutral-800 transition dark:border-neutral-800"
               >
                 <Download className="h-5 w-5" />
