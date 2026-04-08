@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import secureFetch from "../utils/secureFetch";
+import secureFetch, { getAuthToken } from "../utils/secureFetch";
 import {
   DEFAULT_CURRENCY_KEY,
   getCurrencyConfig,
@@ -63,7 +63,7 @@ export function CurrencyProvider({ children }) {
       typeof window.location?.pathname === "string" &&
       window.location.pathname.startsWith("/standalone");
 
-    if (!isStandalone) {
+    if (!isStandalone && getAuthToken()) {
       secureFetch("/settings/localization")
         .then((data) => {
           if (!mounted || !data?.currency) return;

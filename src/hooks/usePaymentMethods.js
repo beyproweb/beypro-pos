@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import secureFetch from "../utils/secureFetch";
+import secureFetch, { getAuthToken } from "../utils/secureFetch";
 import {
   DEFAULT_PAYMENT_METHODS,
   normalizePaymentSettings,
@@ -10,6 +10,12 @@ export function usePaymentMethods() {
 
   useEffect(() => {
     let mounted = true;
+    if (!getAuthToken()) {
+      setMethods(DEFAULT_PAYMENT_METHODS);
+      return () => {
+        mounted = false;
+      };
+    }
     secureFetch("/settings/payments")
       .then((data) => {
         if (!mounted) return;
@@ -33,6 +39,12 @@ export function usePaymentSettings() {
 
   useEffect(() => {
     let mounted = true;
+    if (!getAuthToken()) {
+      setSettings(normalizePaymentSettings({}));
+      return () => {
+        mounted = false;
+      };
+    }
     secureFetch("/settings/payments")
       .then((data) => {
         if (!mounted) return;

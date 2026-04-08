@@ -9,6 +9,11 @@ import { requestDriverLocationPermission } from "../utils/driverLocationPermissi
 import { DEFAULT_LANGUAGE, persistLanguage } from "../utils/language";
 
 const REMEMBER_ME_PREFERENCE_KEY = "beyproRememberMe";
+const GOOGLE_OAUTH_QUERY_KEYS = [
+  "google_oauth",
+  "transfer_token",
+  "google_oauth_error",
+];
 
 function getInitialRememberMe() {
   if (typeof window === "undefined") return true;
@@ -25,7 +30,9 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [rememberMe, setRememberMe] = useState(getInitialRememberMe);
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const passwordInputRef = useRef(null);
+  const rememberMeRef = useRef(getInitialRememberMe());
   const navigate = useNavigate();
   const { setCurrentUser } = useAuth();
   const { t, i18n } = useTranslation();
@@ -48,6 +55,127 @@ export default function LoginScreen() {
     return normalized;
   };
 
+  const parseLoginPayload = async (response) => {
+    const raw = await response.text();
+    let data;
+    try {
+      data = raw ? JSON.parse(raw) : null;
+    } catch {
+      throw new Error(
+        raw?.slice?.(0, 120) || `Login failed (non-JSON response, ${response.status})`
+      );
+    }
+
+    if (!response.ok || !data?.token) {
+      throw new Error(
+        data?.error ||
+          data?.message ||
+          (raw ? raw.slice(0, 120) : "") ||
+          t("Invalid credentials")
+      );
+    }
+
+    return data;
+  };
+
+  const persistAuthSession = (payload) => {
+    const normalizedUser = normalizeUser({
+      ...payload.user,
+      token: payload.token,
+    });
+
+    if (!normalizedUser) {
+      throw new Error(t("Invalid user payload"));
+    }
+
+    const shouldRemember = rememberMeRef.current;
+    const authStorage = shouldRemember ? window.localStorage : window.sessionStorage;
+    const otherStorage = shouldRemember ? window.sessionStorage : window.localStorage;
+    try {
+      otherStorage.removeItem("token");
+      otherStorage.removeItem("beyproUser");
+    } catch {
+      // ignore storage errors
+    }
+
+    try {
+      window.localStorage.setItem(
+        REMEMBER_ME_PREFERENCE_KEY,
+        shouldRemember ? "true" : "false"
+      );
+    } catch {
+      // ignore storage errors
+    }
+
+    authStorage.setItem("token", payload.token);
+    try {
+      localStorage.removeItem("__beypro_skip_me_probe");
+    } catch {
+      // ignore storage errors
+    }
+    if (normalizedUser.restaurant_id) {
+      localStorage.setItem("restaurant_id", normalizedUser.restaurant_id);
+    } else {
+      localStorage.removeItem("restaurant_id");
+    }
+
+    authStorage.setItem("beyproUser", JSON.stringify(normalizedUser));
+    setCurrentUser(normalizedUser);
+    requestDriverLocationPermission(normalizedUser);
+    navigate("/tableoverview?tab=tables", { replace: true });
+  };
+
+  const mapGoogleOAuthError = (code) => {
+    const normalized = String(code || "").trim().toLowerCase();
+    switch (normalized) {
+      case "google_not_configured":
+        return t("Google login is not configured.");
+      case "invalid_oauth_state":
+        return t("Google login session expired. Please try again.");
+      case "missing_oauth_code":
+        return t("Google login response was incomplete. Please try again.");
+      case "user_not_linked":
+        return t("This Google account is not linked to a POS user.");
+      case "oauth_start_failed":
+      case "oauth_callback_failed":
+        return t("Google login failed. Please try again.");
+      default:
+        return t("Google login failed.");
+    }
+  };
+
+  const buildGoogleReturnToUrl = () => {
+    const url = new URL(window.location.href);
+    GOOGLE_OAUTH_QUERY_KEYS.forEach((key) => {
+      url.searchParams.delete(key);
+    });
+    return url.toString();
+  };
+
+  const clearGoogleOAuthQueryParamsFromLocation = () => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    let changed = false;
+    GOOGLE_OAUTH_QUERY_KEYS.forEach((key) => {
+      if (url.searchParams.has(key)) {
+        changed = true;
+        url.searchParams.delete(key);
+      }
+    });
+    if (!changed) return;
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState(window.history.state, "", next);
+  };
+
+  const handleGoogleOAuthStart = () => {
+    if (typeof window === "undefined") return;
+    setError("");
+    setGoogleSubmitting(true);
+    const returnTo = buildGoogleReturnToUrl();
+    const startUrl = `${BASE_URL}/auth/google?return_to=${encodeURIComponent(returnTo)}`;
+    window.location.assign(startUrl);
+  };
+
   useEffect(() => {
     if (rememberMe) return undefined;
 
@@ -62,6 +190,61 @@ export default function LoginScreen() {
     const timer = window.setTimeout(clearPasswordField, 50);
     return () => window.clearTimeout(timer);
   }, [rememberMe]);
+
+  useEffect(() => {
+    rememberMeRef.current = rememberMe;
+  }, [rememberMe]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const url = new URL(window.location.href);
+    const transferToken = String(url.searchParams.get("transfer_token") || "").trim();
+    const oauthError = String(url.searchParams.get("google_oauth_error") || "").trim();
+
+    if (!transferToken && !oauthError) {
+      return undefined;
+    }
+
+    clearGoogleOAuthQueryParamsFromLocation();
+
+    if (oauthError) {
+      setError(mapGoogleOAuthError(oauthError));
+      setGoogleSubmitting(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      setError("");
+      setGoogleSubmitting(true);
+      try {
+        const response = await fetch(`${BASE_URL}/auth/google/complete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transfer_token: transferToken,
+          }),
+        });
+        const payload = await parseLoginPayload(response);
+        if (!cancelled) {
+          persistAuthSession(payload);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(normalizeLoginError(err?.message || t("Google login failed")));
+        }
+      } finally {
+        if (!cancelled) {
+          setGoogleSubmitting(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -78,71 +261,8 @@ export default function LoginScreen() {
           password,
         }),
       });
-
-      const raw = await response.text();
-      let data;
-      try {
-        data = raw ? JSON.parse(raw) : null;
-      } catch {
-        throw new Error(
-          raw?.slice?.(0, 120) ||
-            `Login failed (non-JSON response, ${response.status})`
-        );
-      }
-
-      if (!response.ok || !data?.token) {
-        throw new Error(
-          data?.error ||
-            data?.message ||
-            (raw ? raw.slice(0, 120) : "") ||
-            t("Invalid credentials")
-        );
-      }
-
-      const normalizedUser = normalizeUser({
-        ...data.user,
-        token: data.token,
-      });
-
-      if (!normalizedUser) {
-        throw new Error(t("Invalid user payload"));
-      }
-
-      const authStorage = rememberMe ? window.localStorage : window.sessionStorage;
-      const otherStorage = rememberMe ? window.sessionStorage : window.localStorage;
-      try {
-        otherStorage.removeItem("token");
-        otherStorage.removeItem("beyproUser");
-      } catch {
-        // ignore storage errors
-      }
-
-      try {
-        window.localStorage.setItem(
-          REMEMBER_ME_PREFERENCE_KEY,
-          rememberMe ? "true" : "false"
-        );
-      } catch {
-        // ignore storage errors
-      }
-
-      authStorage.setItem("token", data.token);
-      try {
-        localStorage.removeItem("__beypro_skip_me_probe");
-      } catch {
-        // ignore storage errors
-      }
-      if (normalizedUser.restaurant_id) {
-        localStorage.setItem("restaurant_id", normalizedUser.restaurant_id);
-      } else {
-        localStorage.removeItem("restaurant_id");
-      }
-
-      authStorage.setItem("beyproUser", JSON.stringify(normalizedUser));
-      setCurrentUser(normalizedUser);
-      requestDriverLocationPermission(normalizedUser);
-
-      navigate("/tableoverview?tab=tables", { replace: true });
+      const payload = await parseLoginPayload(response);
+      persistAuthSession(payload);
     } catch (err) {
       console.error("❌ Login failed:", err);
       setError(normalizeLoginError(err?.message));
@@ -302,12 +422,28 @@ export default function LoginScreen() {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || googleSubmitting}
                 className="w-full flex items-center justify-center gap-2 px-4 lg:px-5 py-2.5 lg:py-3 mt-2 bg-gradient-to-r from-indigo-500 to-blue-500 text-white font-semibold rounded-xl shadow hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-60 text-sm lg:text-base"
               >
                 <LogIn size={18} />
-                {loading ? t("Logging in...") : t("Login")}
+                {loading || googleSubmitting ? t("Logging in...") : t("Login")}
               </button>
+
+              <div className="pt-2">
+                <div className="my-2 flex items-center gap-3 text-xs text-gray-400">
+                  <span className="h-px flex-1 bg-gray-200" />
+                  <span>{t("or")}</span>
+                  <span className="h-px flex-1 bg-gray-200" />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleGoogleOAuthStart}
+                  disabled={loading || googleSubmitting}
+                  className="w-full flex items-center justify-center gap-2 px-4 lg:px-5 py-2.5 lg:py-3 bg-white text-gray-800 font-semibold rounded-xl border border-gray-300 shadow hover:bg-gray-50 active:scale-[0.98] transition-all disabled:opacity-60 text-sm lg:text-base"
+                >
+                  {googleSubmitting ? t("Redirecting...") : t("Continue with Google")}
+                </button>
+              </div>
             </form>
 
             {/* Staff Login Button */}

@@ -53,7 +53,18 @@ function HeaderDrawer({
     },
     [appendIdentifier]
   );
-  const { customer, isLoggedIn, login, loginWithApple, loginWithGoogle, register, logout, updateProfile } = useCustomerAuth(storage, {
+  const {
+    customer,
+    isLoggedIn,
+    login,
+    loginWithApple,
+    loginWithGoogle,
+    requestEmailOtp,
+    register,
+    verifyEmailOtp,
+    logout,
+    updateProfile,
+  } = useCustomerAuth(storage, {
     fetcher,
   });
 
@@ -165,6 +176,16 @@ function HeaderDrawer({
   const onRegister = async (payload) => {
     await register(payload);
     setView(VIEW_PROFILE);
+  };
+
+  const onRequestEmailOtp = async (payload) => {
+    return requestEmailOtp(payload);
+  };
+
+  const onVerifyEmailOtp = async (payload) => {
+    await verifyEmailOtp(payload);
+    setView(VIEW_MENU);
+    onClose?.();
   };
 
   const onGoogleAuth = async () => {
@@ -433,6 +454,8 @@ function HeaderDrawer({
             <LoginPage
               t={t}
               onLogin={onLogin}
+              onRequestEmailOtp={onRequestEmailOtp}
+              onVerifyEmailOtp={onVerifyEmailOtp}
               onGoogleLogin={onGoogleAuth}
               onAppleLogin={onAppleAuth}
               onGoRegister={() => setView(VIEW_REGISTER)}

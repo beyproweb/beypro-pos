@@ -460,7 +460,9 @@ function GuestWelcomeAuthModal({
   onAppleLogin,
   onGoogleLogin,
   onLogin,
+  onRequestEmailOtp,
   onRegister,
+  onVerifyEmailOtp,
   t,
   brandName,
   accentColor = "#111827",
@@ -568,6 +570,11 @@ function GuestWelcomeAuthModal({
                   t={t}
                   onLogin={async (payload) => {
                     await onLogin?.(payload);
+                    onClose?.();
+                  }}
+                  onRequestEmailOtp={onRequestEmailOtp}
+                  onVerifyEmailOtp={async (payload) => {
+                    await onVerifyEmailOtp?.(payload);
                     onClose?.();
                   }}
                   onGoogleLogin={onGoogleLogin}
@@ -7827,7 +7834,9 @@ export default function QrMenu() {
     login: loginCustomerSession,
     loginWithApple: loginCustomerWithApple,
     loginWithGoogle: loginCustomerWithGoogle,
+    requestEmailOtp: requestCustomerEmailOtp,
     register: registerCustomerSession,
+    verifyEmailOtp: verifyCustomerEmailOtp,
   } = useCustomerAuth(storage, {
     fetcher: customerAuthFetcher,
     identifier: restaurantIdentifier,
@@ -9669,7 +9678,9 @@ export default function QrMenu() {
           })
         }
         onLogin={loginCustomerSession}
+        onRequestEmailOtp={requestCustomerEmailOtp}
         onRegister={registerCustomerSession}
+        onVerifyEmailOtp={verifyCustomerEmailOtp}
         t={t}
         brandName={brandName}
         accentColor={takeawaySubmitButtonColor}

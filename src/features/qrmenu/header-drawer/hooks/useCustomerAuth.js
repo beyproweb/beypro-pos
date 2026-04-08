@@ -4,11 +4,13 @@ import {
   getCustomerSession,
   loginCustomer,
   logoutCustomer,
+  requestCustomerEmailOtp,
   registerCustomer,
   restoreCustomerSession,
   startAppleOAuthLogin,
   startGoogleOAuthLogin,
   updateCustomerProfile,
+  verifyCustomerEmailOtp,
 } from "../services/customerService";
 
 export default function useCustomerAuth(storage, options = {}) {
@@ -120,6 +122,24 @@ export default function useCustomerAuth(storage, options = {}) {
     [authContext]
   );
 
+  const requestEmailOtp = useCallback(
+    async (payload) => {
+      setOauthError("");
+      return requestCustomerEmailOtp(payload, authContext);
+    },
+    [authContext]
+  );
+
+  const verifyEmailOtp = useCallback(
+    async (payload) => {
+      setOauthError("");
+      const next = await verifyCustomerEmailOtp(payload, authContext);
+      setCustomer(next);
+      return next;
+    },
+    [authContext]
+  );
+
   const logout = useCallback(() => {
     setOauthError("");
     logoutCustomer(authContext);
@@ -165,7 +185,9 @@ export default function useCustomerAuth(storage, options = {}) {
     login,
     loginWithApple,
     loginWithGoogle,
+    requestEmailOtp,
     register,
+    verifyEmailOtp,
     logout,
     updateProfile,
   };

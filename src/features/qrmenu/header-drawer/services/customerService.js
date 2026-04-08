@@ -24,10 +24,21 @@ const AUTH_ERROR_MESSAGES = {
   invalidLoginInput: "Please enter your phone number or email and password.",
   invalidCredentials: "Incorrect password.",
   missingLoginFields: "Phone number or email and password are required",
+  missingOtpFields: "Email and verification code are required.",
+  invalidOtpCode: "Invalid verification code.",
+  expiredOtpCode: "Verification code has expired.",
+  tooManyOtpAttempts: "Too many invalid attempts. Request a new code.",
 };
 
 const OAUTH_PROVIDER_SET = new Set(["google", "apple"]);
-const OAUTH_QUERY_KEYS = ["qr_oauth_token", "qr_oauth_error", "qr_oauth_provider"];
+const OAUTH_QUERY_KEYS = [
+  "qr_oauth_token",
+  "qr_oauth_error",
+  "qr_oauth_provider",
+  "google_oauth",
+  "google_oauth_error",
+  "transfer_token",
+];
 
 function parseJSON(raw, fallback) {
   try {
@@ -321,9 +332,29 @@ function normalizeAuthError(error) {
       return createAuthError("Invalid credentials.", error);
     case AUTH_ERROR_MESSAGES.missingLoginFields:
       return createAuthError(AUTH_ERROR_MESSAGES.invalidLoginInput, error);
+    case AUTH_ERROR_MESSAGES.missingOtpFields:
+      return createAuthError("Please enter your email and verification code.", error);
+    case AUTH_ERROR_MESSAGES.invalidOtpCode:
+      return createAuthError("Invalid verification code.", error);
+    case AUTH_ERROR_MESSAGES.expiredOtpCode:
+      return createAuthError("Verification code has expired. Request a new code.", error);
+    case AUTH_ERROR_MESSAGES.tooManyOtpAttempts:
+      return createAuthError("Too many invalid attempts. Request a new code.", error);
     default:
       return error;
   }
+}
+
+function persistCustomerAuthResponse(response, context = {}) {
+  const customer = saveSessionState(
+    {
+      customer: response?.customer,
+      token: response?.token,
+    },
+    context?.storage
+  );
+  upsertCheckoutInfo(customer, context?.storage);
+  return customer;
 }
 
 async function requestCustomerAuth(path, options = {}, context = {}) {
@@ -478,8 +509,12 @@ export async function completeCustomerOAuthFromUrl(context = {}) {
 
   const url = new URL(window.location.href);
   const token = normalizeText(url.searchParams.get("qr_oauth_token"));
-  const provider = normalizeOAuthProvider(url.searchParams.get("qr_oauth_provider"));
-  const errorCode = normalizeText(url.searchParams.get("qr_oauth_error"));
+  const provider =
+    normalizeOAuthProvider(url.searchParams.get("qr_oauth_provider")) ||
+    (normalizeText(url.searchParams.get("google_oauth_error")) ? "google" : "");
+  const errorCode = normalizeText(
+    url.searchParams.get("qr_oauth_error") || url.searchParams.get("google_oauth_error")
+  );
 
   if (!token && !errorCode) {
     return { handled: false, customer: getSession(context?.storage), error: "" };
@@ -558,15 +593,7 @@ export async function registerCustomer(payload, context = {}) {
     context
   );
 
-  const customer = saveSessionState(
-    {
-      customer: response?.customer,
-      token: response?.token,
-    },
-    context?.storage
-  );
-  upsertCheckoutInfo(customer, context?.storage);
-  return customer;
+  return persistCustomerAuthResponse(response, context);
 }
 
 export async function loginCustomer(payload, context = {}) {
@@ -586,15 +613,52 @@ export async function loginCustomer(payload, context = {}) {
     context
   );
 
-  const customer = saveSessionState(
+  return persistCustomerAuthResponse(response, context);
+}
+
+export async function requestCustomerEmailOtp(payload, context = {}) {
+  const email = normalizeEmail(payload?.email || payload?.login);
+  if (!email) {
+    throw createAuthError("Please enter your email address.");
+  }
+
+  const response = await requestCustomerAuth(
+    "/public/customer-auth/email-otp/request",
     {
-      customer: response?.customer,
-      token: response?.token,
+      method: "POST",
+      body: JSON.stringify({ email }),
     },
-    context?.storage
+    context
   );
-  upsertCheckoutInfo(customer, context?.storage);
-  return customer;
+
+  return {
+    email,
+    sent: Boolean(response?.sent),
+    message:
+      normalizeText(response?.message) ||
+      "If this email is registered, a verification code has been sent.",
+    retryAfterSeconds: Number(response?.retry_after_seconds || 0) || 0,
+    expiresInSeconds: Number(response?.expires_in_seconds || 0) || 0,
+  };
+}
+
+export async function verifyCustomerEmailOtp(payload, context = {}) {
+  const email = normalizeEmail(payload?.email || payload?.login);
+  const code = normalizeText(payload?.code);
+  if (!email || !code) {
+    throw createAuthError("Please enter your email and verification code.");
+  }
+
+  const response = await requestCustomerAuth(
+    "/public/customer-auth/email-otp/verify",
+    {
+      method: "POST",
+      body: JSON.stringify({ email, code }),
+    },
+    context
+  );
+
+  return persistCustomerAuthResponse(response, context);
 }
 
 export function logoutCustomer(context = {}) {
