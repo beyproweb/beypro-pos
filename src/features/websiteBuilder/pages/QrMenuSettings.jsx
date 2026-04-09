@@ -3868,11 +3868,13 @@ async function saveAllCustomization() {
               {t("QR Menu App Branding")}
             </h4>
             <p className="mb-4 text-xs text-gray-500">
-              {t("Branding upload guide: App Icon 1024 x 1024 px (square), Splash Logo 1600 x 900 px, Main Title Logo 1200 x 320 px.")}
+              {t("Branding upload guide: App Icon/Favicon 1024 x 1024 px (square), Splash Logo 1600 x 900 px, Main Title Logo 1200 x 320 px.")}
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="font-semibold block mb-2">{t("Restaurant App Icon")}</label>
+                <label className="font-semibold block mb-2">
+                  {t("Restaurant App Icon (Favicon)")}
+                </label>
                 <div className="flex items-center gap-3">
                   <input
                     ref={appIconInputRef}
@@ -3912,12 +3914,12 @@ async function saveAllCustomization() {
                       className="w-14 h-14 rounded-2xl object-cover border bg-white"
                     />
                     <span className="text-xs text-gray-500">
-                      {t("Auto-resized to 192px and 512px for PWA install compatibility.")}
+                      {t("Used for browser tab icon (favicon) and auto-resized to 192px/512px for PWA install compatibility.")}
                     </span>
                   </div>
                 ) : (
                   <p className="mt-2 text-xs text-gray-500">
-                    {t("If not uploaded, Beypro default icon is used.")}
+                    {t("If not uploaded, Beypro default favicon/app icon is used.")}
                   </p>
                 )}
                 <p className="mt-2 text-xs text-gray-500">
