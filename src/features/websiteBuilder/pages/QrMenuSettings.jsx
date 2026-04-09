@@ -526,9 +526,24 @@ export default function QrMenuSettings() {
   const resolveUploadSrc = (raw, version = "") => {
     const value = normalizeAssetValue(raw);
     if (!value) return "";
-    const resolved = value.startsWith("http")
-      ? value
-      : `${uploadsBaseUrl}/uploads/${value.replace(/^\/?uploads\//, "")}`;
+    const normalized = value.replace(/\\/g, "/");
+    let resolved = "";
+
+    if (/^https?:\/\//i.test(normalized)) {
+      resolved = normalized;
+    } else if (/^\/api\/uploads\//i.test(normalized)) {
+      resolved = `${uploadsBaseUrl}${normalized.replace(/^\/api/i, "")}`;
+    } else if (/^\/public\/uploads\//i.test(normalized)) {
+      resolved = `${uploadsBaseUrl}${normalized.replace(/^\/public/i, "")}`;
+    } else if (/^\/uploads\//i.test(normalized)) {
+      resolved = `${uploadsBaseUrl}${normalized}`;
+    } else if (/^uploads\//i.test(normalized)) {
+      resolved = `${uploadsBaseUrl}/${normalized}`;
+    } else if (/^\/.+/.test(normalized)) {
+      resolved = `${uploadsBaseUrl}${normalized}`;
+    } else {
+      resolved = `${uploadsBaseUrl}/uploads/${normalized.replace(/^\/?uploads\//i, "")}`;
+    }
 
     if (!version) return resolved;
     const separator = resolved.includes("?") ? "&" : "?";
@@ -613,9 +628,10 @@ export default function QrMenuSettings() {
 
     setAppIconFileName(
       getAssetFileName(
-        normalizedCustomization.app_icon_512 ||
+        normalizedCustomization.app_icon ||
+          normalizedCustomization.app_icon_512 ||
           normalizedCustomization.app_icon_192 ||
-          normalizedCustomization.app_icon
+          ""
       )
     );
     setSplashLogoFileName(getAssetFileName(normalizedCustomization.splash_logo));
@@ -645,9 +661,10 @@ export default function QrMenuSettings() {
     () =>
       normalizeAssetValue(
         settings.apple_touch_icon ||
+          settings.app_icon ||
           settings.app_icon_192 ||
           settings.app_icon_512 ||
-          settings.app_icon
+          ""
       ),
     [
       settings.apple_touch_icon,
@@ -659,14 +676,11 @@ export default function QrMenuSettings() {
   const iosPwaIconHref = useMemo(() => {
     if (!iosPwaIconSource) return toAbsolutePublicUrl("/apple-touch-icon.png");
 
-    const resolved = iosPwaIconSource.startsWith("http")
-      ? iosPwaIconSource
-      : `${uploadsBaseUrl}/uploads/${iosPwaIconSource.replace(/^\/?uploads\//, "")}`;
-    return appendVersionParam(
-      toAbsolutePublicUrl(resolved),
+    return resolveUploadSrc(
+      iosPwaIconSource,
       normalizeAssetValue(settings.branding_updated_at)
     );
-  }, [iosPwaIconSource, settings.branding_updated_at, uploadsBaseUrl]);
+  }, [iosPwaIconSource, settings.branding_updated_at]);
   const iosPwaTitle = useMemo(
     () => String(settings.app_display_name || settings.main_title || "Beypro").trim() || "Beypro",
     [settings.app_display_name, settings.main_title]
@@ -3903,11 +3917,11 @@ async function saveAllCustomization() {
                     {appIconFileName ? appIconFileName : t("No file chosen")}
                   </span>
                 </div>
-                {(settings.app_icon_512 || settings.app_icon_192 || settings.app_icon) ? (
+                {(settings.app_icon || settings.app_icon_512 || settings.app_icon_192) ? (
                   <div className="mt-2 flex items-center gap-3">
                     <img
                       src={resolveUploadSrc(
-                        settings.app_icon_512 || settings.app_icon_192 || settings.app_icon,
+                        settings.app_icon || settings.app_icon_512 || settings.app_icon_192,
                         settings.branding_updated_at
                       )}
                       alt={t("Restaurant App Icon")}
