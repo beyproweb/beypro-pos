@@ -2,6 +2,7 @@ import React from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { io } from "socket.io-client";
+import { toast } from "react-toastify";
 import secureFetch, { getAuthToken } from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
 import { SOCKET_BASE } from "../utils/api";
@@ -1003,6 +1004,9 @@ export default function QrConcertBookingPage() {
 
   const handleSubmit = React.useCallback(async () => {
     if (!canSubmit || !identifier || !concertId || !selectedTicketType) {
+      if (formErrors.phone) {
+        toast.warning(formErrors.phone);
+      }
       const firstInvalidKey =
         formErrors.name
           ? "name"
@@ -1161,6 +1165,7 @@ export default function QrConcertBookingPage() {
     selectedTicketType,
     storage,
     t,
+    toast,
     womenCount,
     focusInvalidField,
     scheduleLiveTableStateRefresh,
