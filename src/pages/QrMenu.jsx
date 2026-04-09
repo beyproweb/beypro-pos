@@ -9534,6 +9534,7 @@ export default function QrMenu() {
             occupiedLabel={t("Occupied")}
             reservedNumbers={filteredReserved}
             reservedLabel={t("Reserved")}
+            blockedLabel={t("Blocked")}
             hideTopBar={true}
             onSelect={(tbl) => {
               if (tableQrScanEnabled) {

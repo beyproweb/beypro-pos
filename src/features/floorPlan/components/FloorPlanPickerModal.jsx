@@ -274,17 +274,23 @@ export default function FloorPlanPickerModal({
               <X className="h-5 w-5" />
             </button>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[15px] font-semibold text-neutral-950 dark:text-white">{resolvedTitle}</div>
-              {subtitle ? (
-                <div className="truncate text-xs text-neutral-500 dark:text-neutral-400">{subtitle}</div>
-              ) : null}
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="truncate text-[15px] font-semibold text-neutral-950 dark:text-white">
+                  {resolvedTitle}
+                </div>
+                {subtitle ? (
+                  <div className="min-w-0 truncate text-[12px] font-medium text-neutral-500 dark:text-neutral-400">
+                    {subtitle}
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
 
         <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col overflow-hidden px-3 py-3 sm:px-4 sm:py-4">
           <div className="min-h-0 flex-1 overflow-y-auto pb-8 sm:pb-10">
-            <div className="sticky top-0 z-10 -mx-1 mb-4 border-b border-black/5 bg-[#fafaf9]/95 px-1 pb-3 backdrop-blur dark:border-white/10 dark:bg-[#09090b]/95">
+            <div className="sticky top-0 z-10 -mx-1 mb-2 border-b border-black/5 bg-[#fafaf9]/95 px-1 pb-1.5 backdrop-blur dark:border-white/10 dark:bg-[#09090b]/95">
               <div className="flex items-center justify-center gap-2">
                 <div ref={statusMenuRef} className="relative min-w-0 w-[42.5%]">
                   <button
@@ -426,7 +432,7 @@ export default function FloorPlanPickerModal({
                   : t("No available tables in this section")}
               </div>
             ) : null}
-            <div className="mt-3 sm:mt-4">
+            <div className="mt-1.5 sm:mt-2">
               <div className="mx-auto w-full max-w-[430px] overflow-hidden rounded-[26px] border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
                 <FloorPlanView
                   layout={layout}

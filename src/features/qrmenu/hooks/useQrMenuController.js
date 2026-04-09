@@ -9,6 +9,12 @@ import useQrMenuCheckout from "./useQrMenuCheckout";
 import useQrMenuStorage from "./useQrMenuStorage";
 import { hasConcertBookingContext } from "../../../utils/reservationStatus";
 import { DEFAULT_LANGUAGE, resolvePreferredLanguage } from "../../../utils/language";
+import {
+  getOrderTableNumberKey,
+  isActiveTableOrderStatus,
+  normalizeTableNumberKey,
+  isSameTableNumberKey,
+} from "../../../utils/activeTableState";
 
 const QR_MENU_BRANDING_CACHE_PREFIX = "qr-menu-branding-cache:";
 const QR_MENU_BRANDING_UPDATED_EVENT = "qr:branding-cache-updated";
@@ -169,13 +175,10 @@ const isCheckedInReservationStatus = (status) => {
   const normalized = normalizeReservationStatus(status);
   return normalized === "checked_in" || normalized === "checkedin" || normalized === "checkin";
 };
-const normalizeTableNumberKey = (value) => String(value ?? "").trim();
 const isSameTableNumber = (left, right) => {
-  const l = normalizeTableNumberKey(left);
-  const r = normalizeTableNumberKey(right);
-  return l !== "" && r !== "" && l === r;
+  return isSameTableNumberKey(left, right);
 };
-const isTable10 = (value) => normalizeTableNumberKey(value) === "10";
+const isTable10 = (value) => String(value ?? "").trim() === "10";
 const formatCurrentLocalYmd = () => {
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -1165,7 +1168,6 @@ const {
   setShowStatus,
   setOrderStatus,
   setLastError,
-  setOccupiedTables,
 });
 
 const stopTableScanner = useCallback(async () => {
@@ -1387,9 +1389,9 @@ const loadTables = async () => {
             : Number(r.guests),
         label: r.label || "",
         color: r.color || "",
-        isLocked: Boolean(
-          r.locked ?? r.is_locked ?? r.isLocked ?? r.occupied ?? r.unavailable
-        ),
+        // Occupied/reserved must come from active orders only.
+        // Keep explicit table lock flags for blocked/maintenance state.
+        isLocked: Boolean(r.locked ?? r.is_locked ?? r.isLocked),
         active: r.active ?? true,
       };
     });
@@ -2068,217 +2070,90 @@ if (savedTable) {
 
 
   const refreshOccupiedTables = useCallback(async () => {
-    const nextOccupiedSet = new Set();
-    const nextReservedSet = new Set();
-    let hasAnySource = false;
-    const addNumbers = (targetSet, values) => {
-      toArray(values).forEach((value) => {
-        const n = Number(value);
-        if (Number.isFinite(n) && n > 0) targetSet.add(n);
-      });
-    };
+    const nextOccupiedKeys = new Set();
+    const nextReservedKeys = new Set();
 
     try {
-      if (restaurantIdentifier) {
-        try {
-          const tableRows = await secureFetch(
-            appendIdentifier(`/public/tables/${encodeURIComponent(restaurantIdentifier)}`)
-          );
-          const normalizedRows = Array.isArray(tableRows) ? tableRows : tableRows?.data || [];
-          const lockedTableNumbers = normalizedRows
-            .filter((row) => Boolean(row?.locked ?? row?.is_locked ?? row?.isLocked ?? row?.occupied ?? row?.unavailable))
-            .map((row) => Number(row?.number ?? row?.tableNumber ?? row?.table_number))
-            .filter((n) => Number.isFinite(n) && n > 0);
-          addNumbers(nextOccupiedSet, lockedTableNumbers);
-          if (import.meta.env.DEV && lockedTableNumbers.some((n) => isTable10(n))) {
-            console.warn("[table10-debug][qr-refresh][locked-tables]", lockedTableNumbers);
-          }
-          hasAnySource = hasAnySource || lockedTableNumbers.length > 0;
-        } catch (lockErr) {
-          console.warn("⚠️ Locked tables fetch failed:", lockErr);
-        }
-      }
-
-      if (restaurantIdentifier) {
-        try {
-          const token = getStoredToken();
-          const authOpts = token
-            ? {
-                headers: { Authorization: `Bearer ${token}` },
-              }
-            : {};
-          let payload = null;
-          try {
-            payload = await secureFetch(
-              appendIdentifier(
-                `/public/unavailable-tables/${encodeURIComponent(restaurantIdentifier)}`
-              ),
-              authOpts
-            );
-          } catch (primaryErr) {
-            const retryLegacy = /401|404|405|unauthorized|token missing/i.test(
-              String(primaryErr?.message || "")
-            );
-            if (!retryLegacy) throw primaryErr;
-            // Backward-compat for older production API shape.
-            payload = await secureFetch(
-              appendIdentifier(
-                `/public/unavailable-tables?identifier=${encodeURIComponent(
-                  restaurantIdentifier
-                )}`
-              ),
-              authOpts
-            );
-          }
-          addNumbers(nextOccupiedSet, payload?.table_numbers);
-          addNumbers(nextReservedSet, payload?.reserved_table_numbers);
-          if (import.meta.env.DEV) {
-            const table10Payload =
-              toArray(payload?.table_numbers).some((n) => isTable10(n)) ||
-              toArray(payload?.reserved_table_numbers).some((n) => isTable10(n));
-            if (table10Payload) {
-              console.warn("[table10-debug][qr-refresh][public-unavailable]", payload);
-            }
-          }
-          hasAnySource = true;
-        } catch (err) {
-          console.warn("⚠️ Public unavailable tables fetch failed:", err);
-        }
-
-        // Intentionally no second public fallback here.
-        // Anonymous QR availability must come from /public/unavailable-tables only,
-        // otherwise generic table orders can keep tables falsely occupied after
-        // reservation checkout/cancel/delete flows.
-      }
-
       const token = getStoredToken();
-      if (token) {
-        const [ordersRes, reservationsRes] = await Promise.allSettled([
-          sFetch("/orders", { headers: { Authorization: `Bearer ${token}` } }),
-          sFetch("/orders/reservations", {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-        ]);
+      if (!token) {
+        setOccupiedTables([]);
+        setReservedTables([]);
+        return;
+      }
 
-        if (ordersRes.status !== "fulfilled") {
-          throw ordersRes.reason || new Error("Failed to fetch orders");
-        }
+      const ordersPayload = await sFetch("/orders", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const orders = parseArray(ordersPayload);
 
-        const list = parseArray(ordersRes.value);
-        const reservationsRaw =
-          reservationsRes.status === "fulfilled" ? reservationsRes.value : [];
-        const reservations = Array.isArray(reservationsRaw?.reservations)
-          ? reservationsRaw.reservations
-          : Array.isArray(reservationsRaw)
-          ? reservationsRaw
-          : [];
-        try {
-          const nextMap = new Map();
-          toArray(list).forEach((o) => {
-            const oid = Number(o?.id);
-            const tno = Number(o?.table_number);
-            if (Number.isFinite(oid) && Number.isFinite(tno) && tno > 0) nextMap.set(oid, tno);
+      const table10Input = [];
+      toArray(orders).forEach((order) => {
+        const tableKey = getOrderTableNumberKey(order);
+        if (!tableKey) return;
+        const normalizedStatus = String(order?.status ?? order?.order_status ?? "")
+          .trim()
+          .toLowerCase();
+        if (isTable10(tableKey)) {
+          table10Input.push({
+            id: order?.id ?? null,
+            status: normalizedStatus,
+            table_number:
+              order?.table_number ??
+              order?.tableNumber ??
+              order?.table_id ??
+              order?.tableId ??
+              order?.table ??
+              null,
           });
-          orderIdToTableRef.current = nextMap;
-        } catch {}
-        const occupiedFromOrders = toArray(list)
-          .filter((order) => {
-            if (!order?.table_number) return false;
-            const status = String(order?.status || "").toLowerCase();
-            if (isTerminalOrderStatus(status)) return false;
-            if (isReservationLikeEntry(order)) return isCheckedInReservationEntry(order, status);
-            return true;
-          })
-          .map((order) => Number(order.table_number))
-          .filter((n) => Number.isFinite(n) && n > 0);
-        const occupiedFromReservations = toArray(reservations)
-          .filter((reservation) => {
-            const status = String(reservation?.status || "").toLowerCase();
-            if (isTerminalOrderStatus(status)) return false;
-            return isCheckedInReservationEntry(reservation, status);
-          })
-          .map((reservation) =>
-            Number(
-              reservation?.table_number ?? reservation?.tableNumber ?? reservation?.table
-            )
-          )
-          .filter((n) => Number.isFinite(n) && n > 0);
-        const reservedFromOrders = toArray(list)
-          .filter((order) => {
-            const status = String(order?.status || "").toLowerCase();
-            if (isTerminalOrderStatus(status)) return false;
-            if (isCheckedInReservationStatus(status)) return false;
-            if (!hasActiveReservationPayload(order)) return false;
-            return true;
-          })
-          .map((order) => Number(order?.table_number))
-          .filter((n) => Number.isFinite(n) && n > 0);
-        const reservedFromReservations = toArray(reservations)
-          .filter((reservation) => {
-            const status = String(reservation?.status || "").toLowerCase();
-            if (isTerminalOrderStatus(status)) return false;
-            if (isCheckedInReservationStatus(status)) return false;
-            if (!hasActiveReservationPayload(reservation)) return false;
-            return true;
-          })
-          .map((reservation) =>
-            Number(
-              reservation?.table_number ?? reservation?.tableNumber ?? reservation?.table
-            )
-          )
-          .filter((n) => Number.isFinite(n) && n > 0);
-        addNumbers(nextOccupiedSet, occupiedFromOrders);
-        addNumbers(nextOccupiedSet, occupiedFromReservations);
-        addNumbers(nextReservedSet, reservedFromOrders);
-        addNumbers(nextReservedSet, reservedFromReservations);
-        if (import.meta.env.DEV) {
-          const hasTable10Authenticated =
-            occupiedFromOrders.some((n) => isTable10(n)) ||
-            occupiedFromReservations.some((n) => isTable10(n)) ||
-            reservedFromOrders.some((n) => isTable10(n)) ||
-            reservedFromReservations.some((n) => isTable10(n));
-          if (hasTable10Authenticated) {
-            console.warn("[table10-debug][qr-refresh][authenticated-derivation]", {
-              occupiedFromOrders,
-              occupiedFromReservations,
-              reservedFromOrders,
-              reservedFromReservations,
-            });
+        }
+        if (!isActiveTableOrderStatus(normalizedStatus)) return;
+        nextOccupiedKeys.add(tableKey);
+      });
+
+      try {
+        const nextMap = new Map();
+        toArray(orders).forEach((order) => {
+          const orderId = Number(order?.id);
+          const tableKey = getOrderTableNumberKey(order);
+          const tableNo = Number(tableKey);
+          if (Number.isFinite(orderId) && Number.isFinite(tableNo) && tableNo > 0) {
+            nextMap.set(orderId, tableNo);
           }
-        }
-        hasAnySource = true;
-      }
+        });
+        orderIdToTableRef.current = nextMap;
+      } catch {}
 
-      if (!hasAnySource && !restaurantIdentifier && !token) {
-        setOccupiedTables([]);
-        setReservedTables([]);
-        return;
-      }
-      if (!hasAnySource) {
-        // Never preserve stale previous state when no source was available.
-        setOccupiedTables([]);
-        setReservedTables([]);
-        return;
-      }
+      const occupiedNumbers = Array.from(nextOccupiedKeys)
+        .map((value) => Number(value))
+        .filter((n) => Number.isFinite(n) && n > 0);
+      const reservedNumbers = Array.from(nextReservedKeys)
+        .map((value) => Number(value))
+        .filter((n) => Number.isFinite(n) && n > 0);
+
       if (import.meta.env.DEV) {
-        const table10Final =
-          Array.from(nextOccupiedSet).some((n) => isTable10(n)) ||
-          Array.from(nextReservedSet).some((n) => isTable10(n));
-        if (table10Final) {
-          console.warn("[table10-debug][qr-refresh][final-sets]", {
-            occupied: Array.from(nextOccupiedSet),
-            reserved: Array.from(nextReservedSet),
+        const table10Output =
+          occupiedNumbers.includes(10) || reservedNumbers.includes(10)
+            ? {
+                occupied: occupiedNumbers,
+                reserved: reservedNumbers,
+              }
+            : null;
+        if (table10Input.length > 0 || table10Output) {
+          console.warn("[table10-debug][floor-map][input-output]", {
+            inputOrders: table10Input,
+            output: table10Output,
           });
         }
       }
-      setOccupiedTables(Array.from(nextOccupiedSet));
-      setReservedTables(Array.from(nextReservedSet));
+
+      setOccupiedTables(occupiedNumbers);
+      setReservedTables(reservedNumbers);
     } catch (err) {
       console.warn("⚠️ Failed to refresh occupied tables:", err);
       setOccupiedTables([]);
       setReservedTables([]);
     }
-  }, [appendIdentifier, getStoredToken, restaurantIdentifier, sFetch, toArray]);
+  }, [getStoredToken, parseArray, sFetch, toArray]);
 
   useEffect(() => {
     const handleTableLockUpdated = (event) => {
@@ -2922,25 +2797,47 @@ const myTable =
 
 
 const filteredOccupied = useMemo(() => {
-  const next = new Set(toArray(safeOccupiedTables).map((value) => Number(value)).filter((n) => Number.isFinite(n) && n > 0));
-  toArray(tables).forEach((table) => {
-    if (!Boolean(table?.isLocked)) return;
-    const tableNumber = Number(table?.tableNumber ?? table?.number ?? table?.table_number);
-    if (Number.isFinite(tableNumber) && tableNumber > 0) {
-      next.add(tableNumber);
-    }
-  });
-  const derived = Array.from(next);
+  const knownTableKeys = new Set(
+    toArray(tables)
+      .map((table) => normalizeTableNumberKey(table?.tableNumber ?? table?.table_number ?? table?.number))
+      .filter(Boolean)
+  );
+  const derived = Array.from(
+    new Set(
+      toArray(safeOccupiedTables)
+        .map((value) => normalizeTableNumberKey(value))
+        .filter(Boolean)
+        .filter((tableKey) =>
+          knownTableKeys.size > 0
+            ? knownTableKeys.has(tableKey)
+            : true
+        )
+        .map((tableKey) => Number(tableKey))
+        .filter((n) => Number.isFinite(n) && n > 0)
+    )
+  );
   if (import.meta.env.DEV && derived.some((value) => isTable10(value))) {
     console.warn("[table10-debug][qr-selector][filteredOccupied]", derived);
   }
   return derived;
 }, [safeOccupiedTables, tables, toArray]);
 const filteredReserved = useMemo(() => {
+  const knownTableKeys = new Set(
+    toArray(tables)
+      .map((table) => normalizeTableNumberKey(table?.tableNumber ?? table?.table_number ?? table?.number))
+      .filter(Boolean)
+  );
   const next = Array.from(
     new Set(
       toArray(safeReservedTables)
-        .map((value) => Number(value))
+        .map((value) => normalizeTableNumberKey(value))
+        .filter(Boolean)
+        .filter((tableKey) =>
+          knownTableKeys.size > 0
+            ? knownTableKeys.has(tableKey)
+            : true
+        )
+        .map((tableKey) => Number(tableKey))
         .filter((n) => Number.isFinite(n) && n > 0)
     )
   );
@@ -2948,7 +2845,7 @@ const filteredReserved = useMemo(() => {
     console.warn("[table10-debug][qr-selector][filteredReserved]", next);
   }
   return next;
-}, [safeReservedTables, toArray]);
+}, [safeReservedTables, tables, toArray]);
 const showTableSelector = !forceHome && orderType === "table" && !table;
 
 

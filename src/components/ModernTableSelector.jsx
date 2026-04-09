@@ -46,6 +46,7 @@ export default function ModernTableSelector({
   occupiedLabel = "Occupied",
   reservedNumbers = [],
   reservedLabel = "Reserved",
+  blockedLabel = "Blocked",
   showAreas = true,
   formatTableName,
   t = (value) => value,
@@ -89,6 +90,27 @@ export default function ModernTableSelector({
   const occupiedSet = useMemo(() => new Set((occupiedNumbers || []).map((n) => Number(n))), [occupiedNumbers]);
   const reservedSet = useMemo(() => new Set((reservedNumbers || []).map((n) => Number(n))), [reservedNumbers]);
   const renderAreaTabs = areaViewEnabled && areas.length > 1;
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const table10 = visibleTables.find((table) => Number(table?.tableNumber) === 10);
+    if (!table10 && !occupiedSet.has(10) && !reservedSet.has(10)) return;
+    console.warn("[table10-debug][floor-map][render]", {
+      table: table10
+        ? {
+            tableNumber: table10?.tableNumber ?? null,
+            isLocked: Boolean(table10?.isLocked),
+          }
+        : null,
+      occupiedNumbers: Array.from(occupiedSet),
+      reservedNumbers: Array.from(reservedSet),
+      computed: {
+        occupied: occupiedSet.has(10),
+        reserved: reservedSet.has(10),
+        blocked: Boolean(table10?.isLocked),
+      },
+    });
+  }, [occupiedSet, reservedSet, visibleTables]);
 
   return (
     <div className="min-h-screen w-full px-4 py-6 bg-gradient-to-br from-[#fafafa] to-[#f0f2f5] dark:from-neutral-950 dark:to-neutral-900 text-neutral-900 dark:text-neutral-100">
@@ -222,10 +244,10 @@ export default function ModernTableSelector({
               {isDisabled ? (
                 <span
                   className={`px-3 py-1 rounded-full text-xs font-semibold text-white ${
-                    isReserved ? "bg-amber-600" : "bg-red-600"
+                    isReserved ? "bg-amber-600" : isLocked ? "bg-slate-600" : "bg-red-600"
                   }`}
                 >
-                  {isReserved ? reservedLabel : occupiedLabel}
+                  {isReserved ? reservedLabel : isLocked ? blockedLabel : occupiedLabel}
                 </span>
               ) : (() => {
                 const lbl = (tbl.label ?? "").toString().trim();

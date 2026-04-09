@@ -29,7 +29,6 @@ export function useQrMenuCheckout({
   setShowStatus,
   setOrderStatus,
   setLastError,
-  setOccupiedTables,
 }) {
   const DELIVERY_REORDER_CONTEXT_KEY = "qr_delivery_reorder_context";
   const normalizeStatusValue = (value) =>
@@ -694,16 +693,6 @@ export function useQrMenuCheckout({
       }
 
       setOrderId(newId);
-      if (Number.isFinite(effectiveTableForStorage) && effectiveTableForStorage > 0) {
-        const nTable = Number(effectiveTableForStorage);
-        if (Number.isFinite(nTable) && nTable > 0) {
-          setOccupiedTables((prev) => {
-            const next = new Set(toArray(prev).map(Number));
-            next.add(nTable);
-            return Array.from(next);
-          });
-        }
-      }
       storage.setItem(
         "qr_active_order",
         JSON.stringify({
@@ -772,7 +761,6 @@ export function useQrMenuCheckout({
     setCart,
     setCustomerInfo,
     setLastError,
-    setOccupiedTables,
     setOrderId,
     setOrderStatus,
     setOrderType,

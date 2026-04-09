@@ -54,6 +54,10 @@ import {
   hasReservationServiceActivity,
 } from "../utils/reservationStatus";
 import {
+  getOrderTableNumberKey,
+  isActiveTableOrderStatus,
+} from "../utils/activeTableState";
+import {
   RenderCounter,
   isTablePerfDebugEnabled,
   markPerfTrace,
@@ -4730,36 +4734,67 @@ const ordersByTable = React.useMemo(
   () =>
     withPerfTimer("[perf] TableList ordersByTable selector", () => {
       const map = new Map();
+      const rawTable10 = [];
       (effectiveOrdersByTableRaw instanceof Map ? effectiveOrdersByTableRaw : new Map()).forEach(
         (tableOrders, tableKey) => {
-          const tableNumber = Number(tableKey);
-          if (!Number.isFinite(tableNumber) || map.has(tableNumber)) return;
-          
-          // Filter out recently closed orders
-          if (recentlyClosedRef.current.has(`table_${tableNumber}`)) return;
-          
+          const tableNumberKey = normalizeTableKey(tableKey);
+          if (!tableNumberKey || map.has(tableNumberKey)) return;
+          if (recentlyClosedRef.current.has(`table_${tableNumberKey}`)) return;
+
           const ordersForTable = Array.isArray(tableOrders) ? tableOrders : [];
+          if (isTable10(tableNumberKey)) {
+            rawTable10.push(
+              ...ordersForTable.map((order) => ({
+                id: order?.id ?? null,
+                status: normalizeOrderStatus(order?.status),
+                table_number:
+                  order?.table_number ??
+                  order?.tableNumber ??
+                  order?.table_id ??
+                  order?.tableId ??
+                  order?.table ??
+                  null,
+              }))
+            );
+          }
           const visibleOrders = ordersForTable.filter((order) => {
-            // Filter out recently closed orders by ID
             const orderId = Number(order?.id);
             if (Number.isFinite(orderId) && recentlyClosedRef.current.has(`order_${orderId}`)) {
               return false;
             }
-            const status = normalizeOrderStatus(order?.status);
-            if (
-              status === "closed" ||
-              status === "completed" ||
-              status === "deleted" ||
-              status === "void"
-            ) {
+            const orderTableKey = getOrderTableNumberKey(order);
+            if (!isSameTableNumber(orderTableKey, tableNumberKey)) {
               return false;
             }
-            return !isOrderCancelledOrCanceled(status) && !isEffectivelyFreeOrder(order);
+            const status = normalizeOrderStatus(order?.status);
+            if (!isActiveTableOrderStatus(status)) return false;
+            return true;
           });
           if (visibleOrders.length === 0) return;
-          map.set(tableNumber, visibleOrders[0]);
+          map.set(tableNumberKey, visibleOrders[0]);
         }
       );
+      if (import.meta.env.DEV) {
+        const table10Selected = map.get("10") || null;
+        if (rawTable10.length > 0 || table10Selected) {
+          logTable10("selector:ordersByTable:input-output", {
+            input: rawTable10,
+            output: table10Selected
+              ? {
+                  id: table10Selected?.id ?? null,
+                  status: normalizeOrderStatus(table10Selected?.status),
+                  table_number:
+                    table10Selected?.table_number ??
+                    table10Selected?.tableNumber ??
+                    table10Selected?.table_id ??
+                    table10Selected?.tableId ??
+                    table10Selected?.table ??
+                    null,
+                }
+              : null,
+          });
+        }
+      }
       return map;
     }),
   [effectiveOrdersByTableRaw, closedOrdersVersion]
@@ -4989,7 +5024,7 @@ useEffect(() => {
 const { tables } = useTablesModel({
   tableConfigs: effectiveTableConfigs,
   ordersByTable,
-  reservationsToday: reservationsForModel,
+  reservationsToday: [],
 });
 const filteredTablesByNumberSearch = React.useMemo(() => {
   const allTables = Array.isArray(tables) ? tables : [];
