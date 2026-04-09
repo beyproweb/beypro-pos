@@ -4,7 +4,6 @@ import secureFetch from "../../utils/secureFetch";
 import {
   formatLocalYmd,
   isEffectivelyFreeOrder,
-  isOrderCancelledOrCanceled,
   normalizeOrderStatus,
   parseLooseDateToMs,
 } from "../tables/tableVisuals";
@@ -15,8 +14,8 @@ import {
 import useConfirmedTimers from "../tables/useConfirmedTimers";
 import {
   getVisibleServiceOrderStatus,
-  isPendingReservationOnlyOrder,
 } from "../../utils/reservationStatus";
+import { isActiveTableOrderStatus } from "../../utils/activeTableState";
 
 const pickLatestTimestampValue = (existingValue, nextValue) => {
   if (!existingValue) return nextValue;
@@ -499,10 +498,7 @@ export default function useTableOrdersData() {
           if (!Number.isFinite(tableNumber)) return false;
 
           const status = normalizeOrderStatus(o.status);
-          if (status === "closed" || status === "completed" || status === "deleted" || status === "void") return false;
-          if (isOrderCancelledOrCanceled(status)) return false;
-          if (isPendingReservationOnlyOrder(o)) return false;
-          if (isEffectivelyFreeOrder(o)) return false;
+          if (!isActiveTableOrderStatus(status)) return false;
           return true;
         })
         .map((order) => {
