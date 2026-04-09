@@ -7987,11 +7987,25 @@ export default function QrMenu() {
     const faviconPngBase = resolveBrandingAsset(
       orderSelectCustomization?.app_icon_192 ||
         orderSelectCustomization?.app_icon_512 ||
-        orderSelectCustomization?.app_icon,
+        orderSelectCustomization?.app_icon ||
+        orderSelectCustomization?.main_title_logo ||
+        orderSelectCustomization?.splash_logo,
       "/icon-192.png"
     );
     const faviconPngHref = appendCacheVersion(
       toAbsolutePublicUrl(faviconPngBase),
+      brandingVersion
+    );
+    const faviconIcoBase = resolveBrandingAsset(
+      orderSelectCustomization?.app_icon_512 ||
+        orderSelectCustomization?.app_icon_192 ||
+        orderSelectCustomization?.app_icon ||
+        orderSelectCustomization?.main_title_logo ||
+        orderSelectCustomization?.splash_logo,
+      "/favicon.ico"
+    );
+    const faviconIcoHref = appendCacheVersion(
+      toAbsolutePublicUrl(faviconIcoBase),
       brandingVersion
     );
     const webAppTitle =
@@ -8076,6 +8090,17 @@ export default function QrMenu() {
       { rel: "icon", type: "image/png", sizes: "192x192" },
       faviconPngHref
     );
+    upsertLink(
+      'link[rel="icon"][type="image/png"][sizes="512x512"]',
+      { rel: "icon", type: "image/png", sizes: "512x512" },
+      faviconPngHref
+    );
+    upsertLink(
+      'link[rel="icon"]:not([type]):not([sizes])',
+      { rel: "icon" },
+      faviconIcoHref
+    );
+    upsertLink('link[rel="shortcut icon"]', { rel: "shortcut icon" }, faviconIcoHref);
 
     return () => {
       touched.forEach(({ node, created, attr, previous }) => {
@@ -8099,6 +8124,8 @@ export default function QrMenu() {
     orderSelectCustomization?.app_icon,
     orderSelectCustomization?.app_icon_192,
     orderSelectCustomization?.app_icon_512,
+    orderSelectCustomization?.main_title_logo,
+    orderSelectCustomization?.splash_logo,
     orderSelectCustomization?.apple_touch_icon,
     orderSelectCustomization?.branding_updated_at,
     orderSelectCustomization?.primary_color,

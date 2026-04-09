@@ -308,6 +308,37 @@
         var gradient =
           "linear-gradient(160deg, " + splash.primary + " 0%, " + splash.background + " 100%)";
 
+        function upsertLink(selector, attrs, href) {
+          var node = document.head.querySelector(selector);
+          if (!node) {
+            node = document.createElement("link");
+            Object.keys(attrs || {}).forEach(function (key) {
+              node.setAttribute(key, attrs[key]);
+            });
+            document.head.appendChild(node);
+          }
+          node.setAttribute("href", href);
+        }
+
+        if (isQr && splash.logo) {
+          upsertLink(
+            'link[rel="icon"]:not([type]):not([sizes])',
+            { rel: "icon" },
+            splash.logo
+          );
+          upsertLink(
+            'link[rel="icon"][type="image/png"][sizes="192x192"]',
+            { rel: "icon", type: "image/png", sizes: "192x192" },
+            splash.logo
+          );
+          upsertLink(
+            'link[rel="icon"][type="image/png"][sizes="512x512"]',
+            { rel: "icon", type: "image/png", sizes: "512x512" },
+            splash.logo
+          );
+          upsertLink('link[rel="shortcut icon"]', { rel: "shortcut icon" }, splash.logo);
+        }
+
         document.documentElement.style.background = gradient;
         document.body.style.background = gradient;
         root.style.background = gradient;
