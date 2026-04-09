@@ -43,7 +43,7 @@ import CustomerInsights from "./pages/CustomerInsights";
 import MarketingCampaigns from "./pages/MarketingCampaigns";
 import MaintenanceTracker from "./pages/MaintenanceTracker";
 import TicketScannerPage from "./pages/TicketScannerPage";
-import secureFetch from "./utils/secureFetch";
+import secureFetch, { getAuthToken } from "./utils/secureFetch";
 import { QrMenuSettings } from "./features/websiteBuilder/index.js";
 import UserManagementPage from "./pages/UserManagementPage";
 import RoleManagementPage from "./pages/RoleManagementPage";
@@ -110,9 +110,9 @@ function SettingsRouteWrapper() {
 
 const isAuthenticated = () => {
   try {
-    return !!(localStorage.getItem("beyproUser") || sessionStorage.getItem("beyproUser"));
+    return !!getAuthToken();
   } catch {
-    return !!localStorage.getItem("beyproUser");
+    return false;
   }
 };
 
@@ -208,6 +208,7 @@ function AppShell() {
   useEffect(() => {
     const loadSettings = async () => {
       if (isStandalonePath() || isPublicShellPath()) return;
+      if (!getAuthToken()) return;
       try {
         const data = await secureFetch("/settings/notifications");
         window.notificationSettings = data;

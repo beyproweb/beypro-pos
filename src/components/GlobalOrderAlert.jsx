@@ -8,7 +8,7 @@ import React, {
   Fragment,
 } from "react";
 import { toast } from "react-toastify";
-import secureFetch from "../utils/secureFetch";
+import secureFetch, { getAuthToken } from "../utils/secureFetch";
 import { fetchOrderWithItems } from "../utils/orderPrinting";
 import socket, { joinRestaurantRoom } from "../utils/socket";
 import {
@@ -517,6 +517,7 @@ export default function GlobalOrderAlert() {
   /* Load notification config */
   useEffect(() => {
     (async () => {
+      if (!getAuthToken()) return;
       try {
         const data = await secureFetch("/settings/notifications");
         if (!data) return;
