@@ -44,21 +44,84 @@ export default function TableDetailsSheet({
   accentColor = "#111827",
 }) {
   const { t } = useTranslation();
-  if (!tableNode) return null;
-  const state = tableNode.state || {};
-  const areaLabel = state.zone || tableNode.zone || t("Main floor");
+  const state = tableNode?.state || {};
   const resolvedConfirmLabel = confirmLabel || t("Select table");
-  const tableNumber = Number(tableNode.linked_table_number || tableNode.table_number || 0);
-  const rawName = String(tableNode.displayName || "").trim();
+  const tableNumber = Number(tableNode?.linked_table_number || tableNode?.table_number || 0);
+  const rawName = String(tableNode?.displayName || "").trim();
   const resolvedTableTitle =
     tableNumber > 0 && (!rawName || /^Table\s+\d+$/i.test(rawName))
       ? t("Table {{count}}", { count: tableNumber })
       : rawName || t("Table");
-  const capacity = Number(tableNode.capacity || state.capacity || 0);
-  const tableType = t(String(state.table_type || tableNode.table_type || "regular").replace(/_/g, " "));
-  const useMobileFullscreen = embedded && Boolean(guestCompositionProps);
+  const capacity = Number(tableNode?.capacity || state.capacity || 0);
+  const tableArea = String(
+    state.zone || tableNode?.zone || tableNode?.table?.area || t("Main floor")
+  ).trim();
+  const hasGuestCompositionStep = embedded && Boolean(guestCompositionProps);
+  const [showGuestComposition, setShowGuestComposition] = React.useState(false);
+  const useMobileFullscreen = hasGuestCompositionStep && showGuestComposition;
   const resolvedAccentColor = normalizeHexColor(accentColor, "#111827");
   const accentTextColor = getReadableTextColor(resolvedAccentColor);
+
+  React.useEffect(() => {
+    setShowGuestComposition(false);
+  }, [hasGuestCompositionStep, tableNumber, tableNode?.id]);
+
+  if (!tableNode) return null;
+
+  if (hasGuestCompositionStep && !showGuestComposition) {
+    return (
+      <div className="mt-2 rounded-[24px] border border-neutral-200 bg-white/98 p-2.5 shadow-[0_-10px_26px_rgba(15,23,42,0.12)] dark:border-neutral-800 dark:bg-neutral-950/98">
+        <div className="mx-auto max-w-3xl space-y-2">
+          <div className="grid grid-cols-3 gap-1.5">
+            <div className="rounded-[16px] border border-neutral-200 bg-white/90 px-2.5 py-1.5 dark:border-neutral-800 dark:bg-neutral-900/80">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-neutral-500 dark:text-neutral-400">
+                  {t("Table")}
+                </span>
+                <span className="text-xs font-semibold text-neutral-950 dark:text-white">
+                  {tableNumber > 0 ? tableNumber : "—"}
+                </span>
+              </div>
+            </div>
+            <div className="rounded-[16px] border border-neutral-200 bg-white/90 px-2.5 py-1.5 dark:border-neutral-800 dark:bg-neutral-900/80">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-neutral-500 dark:text-neutral-400">
+                  {t("Capacity")}
+                </span>
+                <span className="text-xs font-semibold text-neutral-950 dark:text-white">
+                  {capacity > 0 ? capacity : "—"}
+                </span>
+              </div>
+            </div>
+            <div className="rounded-[16px] border border-neutral-200 bg-white/90 px-2.5 py-1.5 dark:border-neutral-800 dark:bg-neutral-900/80">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-neutral-500 dark:text-neutral-400">
+                  {t("Area")}
+                </span>
+                <span className="truncate text-[11px] font-semibold capitalize text-neutral-950 dark:text-white">
+                  {tableArea}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowGuestComposition(true)}
+            className="w-full rounded-[20px] px-4 py-2 text-sm font-semibold transition"
+            style={{
+              backgroundColor: resolvedAccentColor,
+              color: accentTextColor,
+              boxShadow: "0 18px 45px -24px rgba(15,23,42,0.8)",
+            }}
+          >
+            {t("Choose table")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={[
@@ -73,10 +136,7 @@ export default function TableDetailsSheet({
         {/* Header */}
         <div className={["flex items-start justify-between gap-3", useMobileFullscreen ? "sticky top-0 z-10 bg-inherit pb-2" : ""].join(" ")}>
           <div>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <div className="text-base font-semibold text-neutral-950 dark:text-white">{resolvedTableTitle}</div>
-              <div className="text-sm text-neutral-500 dark:text-neutral-400">{areaLabel}</div>
-            </div>
+            <div className="text-base font-semibold text-neutral-950 dark:text-white">{resolvedTableTitle}</div>
           </div>
           <button
             type="button"
@@ -101,10 +161,10 @@ export default function TableDetailsSheet({
             </div>
             <div className="rounded-[24px] border border-neutral-200 bg-white/90 p-4 dark:border-neutral-800 dark:bg-neutral-900/80">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500 dark:text-neutral-400">
-                {t("Type")}
+                {t("Table Area")}
               </div>
               <div className="mt-3 text-2xl font-semibold capitalize text-neutral-950 dark:text-white">
-                {tableType}
+                {tableArea}
               </div>
             </div>
           </div>

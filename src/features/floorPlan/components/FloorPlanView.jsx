@@ -40,7 +40,6 @@ export default function FloorPlanView({
   scrollMode = "both",
   statusStyleOverrides = null,
 }) {
-  if (!layout) return null;
   const { t } = useTranslation();
   const deemphasizedIdSet = React.useMemo(
     () => new Set((Array.isArray(deemphasizedElementIds) ? deemphasizedElementIds : []).map((value) => String(value))),
@@ -197,6 +196,8 @@ export default function FloorPlanView({
       : scrollMode === "none"
         ? "overflow-visible"
         : "overflow-auto";
+
+  if (!layout) return null;
 
   return (
     <div

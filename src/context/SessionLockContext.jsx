@@ -47,7 +47,6 @@ export function SessionLockProvider({ children }) {
 
   // Manual lock function
   const lock = useCallback((reason = 'manual') => {
-    console.log('🔒 Locking session:', reason);
     setIsLocked(true);
     setLockReason(reason);
     
@@ -62,7 +61,6 @@ export function SessionLockProvider({ children }) {
 
   // Unlock function (called after successful PIN entry)
   const unlock = useCallback(() => {
-    console.log('🔓 Unlocking session');
     setIsLocked(false);
     setLockReason(null);
     lastActivityRef.current = Date.now();
@@ -88,7 +86,6 @@ export function SessionLockProvider({ children }) {
     }, 1000);
 
     lastActivityRef.current = Date.now();
-    console.log('👆 Activity tracked, timer reset');
   }, [sessionSettings.sessionTimeoutEnabled, currentUser]);
 
   // Check for timeout
@@ -97,11 +94,8 @@ export function SessionLockProvider({ children }) {
     
     const timeoutMs = sessionSettings.sessionTimeoutMinutes * 60 * 1000;
     const inactiveTime = Date.now() - lastActivityRef.current;
-    
-    console.log(`⏱️ Timeout check: ${Math.round(inactiveTime / 1000)}s inactive, timeout at ${Math.round(timeoutMs / 1000)}s`);
-    
+
     if (inactiveTime >= timeoutMs) {
-      console.log('🔒 Auto-locking due to timeout!');
       lock('timeout');
     }
   }, [sessionSettings, currentUser, isLocked, lock]);
@@ -133,8 +127,6 @@ export function SessionLockProvider({ children }) {
       return;
     }
 
-    console.log(`⏰ Setting up timeout check: ${sessionSettings.sessionTimeoutMinutes} minutes, enabled: ${sessionSettings.sessionTimeoutEnabled}`);
-    
     // Check every 2 seconds (more responsive for testing)
     timeoutCheckIntervalRef.current = setInterval(checkTimeout, 2000);
 

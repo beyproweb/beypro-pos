@@ -57,6 +57,9 @@ const shouldPreferReservation = (nextReservation, currentReservation) => {
   return nextId > currentId;
 };
 
+const normalizeTableKey = (value) => String(value ?? "").trim();
+const isTable10 = (value) => normalizeTableKey(value) === "10";
+
 const canReuseTableModel = (prev, next) => {
   if (!prev || !next) return false;
   // Fast checks for static table config fields
@@ -108,13 +111,19 @@ export default function useTablesModel({ tableConfigs, ordersByTable, reservatio
     return withPerfTimer("[perf] TableList reservations map", () => {
       const map = new Map();
       for (const reservation of reservationsToday || []) {
-        const tableNumber = Number(
+        const tableKey = normalizeTableKey(
           reservation?.table_number ?? reservation?.tableNumber ?? reservation?.table
         );
-        if (!Number.isFinite(tableNumber)) continue;
-        const existing = map.get(tableNumber);
+        if (!tableKey) continue;
+        const existing = map.get(tableKey);
         if (shouldPreferReservation(reservation, existing)) {
-          map.set(tableNumber, reservation);
+          map.set(tableKey, reservation);
+        }
+      }
+      if (import.meta.env.DEV) {
+        const table10Reservation = map.get("10");
+        if (table10Reservation) {
+          console.warn("[table10-debug][selector][useTablesModel:reservationsByTable]", table10Reservation);
         }
       }
       return map;
@@ -131,9 +140,15 @@ export default function useTablesModel({ tableConfigs, ordersByTable, reservatio
 
       const list = configList.map((cfg) => {
         const parsedCfgNumber = Number(cfg?.number);
+        const cfgTableKey = normalizeTableKey(cfg?.number);
         const prevTable = previousByNumber.get(parsedCfgNumber);
-        const orderRaw = ordersByTable instanceof Map ? ordersByTable.get(parsedCfgNumber) || null : null;
-        const reservationFallback = reservationsByTable.get(parsedCfgNumber) || null;
+        const orderRaw =
+          ordersByTable instanceof Map
+            ? ordersByTable.get(parsedCfgNumber) ||
+              (cfgTableKey ? ordersByTable.get(cfgTableKey) : null) ||
+              null
+            : null;
+        const reservationFallback = cfgTableKey ? reservationsByTable.get(cfgTableKey) || null : null;
 
         const order = orderRaw && isPendingReservationOnlyOrder(orderRaw) ? null : orderRaw;
 
@@ -181,6 +196,15 @@ export default function useTablesModel({ tableConfigs, ordersByTable, reservatio
           isFreeTable: derived.isFreeTable,
           isReservedTable: derived.isReservedTable,
         };
+
+        if (import.meta.env.DEV && isTable10(cfg?.number)) {
+          console.warn("[table10-debug][selector][useTablesModel:table-derived]", {
+            tableNumber: cfg?.number,
+            order,
+            reservationFallback,
+            derived,
+          });
+        }
 
         if (canReuseTableModel(prevTable, nextTable)) {
           nextByNumber.set(parsedCfgNumber, prevTable);

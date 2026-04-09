@@ -480,8 +480,6 @@ export const resolveTableVisualState = (tableLike = {}, prevDerived = null) => {
       // Avoid flipping from having unpaid to free or paid -> free while data hydrates.
       if ((prevDerived.unpaidTotal > 0 && resolved.unpaidTotal === 0) ||
           (prevDerived.isFullyPaid && !resolved.isFullyPaid)) {
-        if (import.meta.env.DEV)
-          console.log("[tableVisuals] resolve: preferring prevDerived due to partial source", { tableNumber: tableLike?.tableNumber, prevDerived, resolved });
         return prevDerived;
       }
     }
@@ -494,15 +492,8 @@ export const resolveTableVisualState = (tableLike = {}, prevDerived = null) => {
       !getCanonicalTableOrderStatus(source);
 
     if (prevDerived && sparseFreeFallback && resolved.isFreeTable && !prevDerived.isFreeTable) {
-      if (import.meta.env.DEV)
-        console.log("[tableVisuals] resolve: preserving prevDerived active state on sparse fallback", {
-          tableNumber: tableLike?.tableNumber,
-          prevDerived,
-          resolved,
-        });
       return prevDerived;
     }
-    if (import.meta.env.DEV) console.log("[tableVisuals] resolve: derived", { tableNumber: tableLike?.tableNumber, resolved });
     return resolved;
   } catch (err) {
     if (import.meta.env.DEV) console.error("[tableVisuals] resolveTableVisualState error", err);

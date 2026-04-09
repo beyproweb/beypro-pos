@@ -76,6 +76,51 @@ const getBookingStatusToneClass = (status) => {
   return "border-amber-200 bg-amber-50 text-amber-700";
 };
 
+const VIEW_BOOKING_TERMINAL_STATUSES = new Set([
+  "checked_out",
+  "closed",
+  "completed",
+  "cancelled",
+  "canceled",
+  "deleted",
+  "void",
+]);
+
+const isTerminalViewBookingRow = (booking = {}) => {
+  const source = String(booking?.booking_source || "").toLowerCase();
+  const isConcertLike = source === "concert" || hasConcertBookingContext(booking);
+  const reservationOrderStatus = normalizeOrderStatus(
+    booking?.reservation_order_status ??
+      booking?.reservationOrderStatus ??
+      booking?.reservation_status ??
+      booking?.reservationStatus ??
+      booking?.status
+  );
+  const reservationStatus = normalizeOrderStatus(
+    booking?.status ?? booking?.reservation_status ?? booking?.reservationStatus
+  );
+  const paymentStatus = String(booking?.payment_status ?? booking?.paymentStatus ?? "")
+    .trim()
+    .toLowerCase();
+  const bookingStatus = String(
+    booking?.booking_status ?? booking?.bookingStatus ?? booking?.status ?? ""
+  )
+    .trim()
+    .toLowerCase();
+
+  if (isConcertLike) {
+    if (paymentStatus === "cancelled" || paymentStatus === "canceled") return true;
+    if (VIEW_BOOKING_TERMINAL_STATUSES.has(reservationOrderStatus)) return true;
+    if (VIEW_BOOKING_TERMINAL_STATUSES.has(bookingStatus)) return true;
+    return false;
+  }
+
+  return (
+    VIEW_BOOKING_TERMINAL_STATUSES.has(reservationOrderStatus) ||
+    VIEW_BOOKING_TERMINAL_STATUSES.has(reservationStatus)
+  );
+};
+
 const hasBookingGuestCompositionValue = (value) =>
   value !== undefined && value !== null && String(value).trim() !== "";
 
@@ -142,30 +187,68 @@ const getConcertDuplicateGroupKey = (booking = {}) => {
       booking?.order_id ??
       booking?.orderId ??
       booking?.reservation_id ??
-      booking?.reservationId ??
-      booking?.id
+      booking?.reservationId
   );
 
-  if (Number.isFinite(reservationOrderId) && reservationOrderId > 0) {
-    return `booking-order:${reservationOrderId}`;
+  if (concertLike) {
+    if (Number.isFinite(reservationOrderId) && reservationOrderId > 0) {
+      return `concert-order:${reservationOrderId}`;
+    }
+    const fallbackKey = getConcertDuplicateFallbackKey(booking);
+    if (fallbackKey) return fallbackKey;
   }
 
-  if (!concertLike) return "";
+  if (source === "reservation" && !concertLike) {
+    const reservationId = Number(
+      booking?.id ??
+        booking?.reservation_id ??
+        booking?.reservationId ??
+        booking?.order_id ??
+        booking?.orderId
+    );
+    if (Number.isFinite(reservationId) && reservationId > 0) {
+      return `reservation-row:${reservationId}`;
+    }
+    const tableNumber = Number(booking?.table_number ?? booking?.tableNumber);
+    const reservationDate = normalizeBookingMatchText(
+      booking?.reservation_date ?? booking?.reservationDate
+    );
+    const reservationTime = normalizeBookingMatchText(
+      booking?.reservation_time ?? booking?.reservationTime
+    ).slice(0, 5);
+    if (
+      Number.isFinite(tableNumber) &&
+      tableNumber > 0 &&
+      reservationDate &&
+      reservationTime
+    ) {
+      return `reservation-fallback:${tableNumber}:${reservationDate}:${reservationTime}`;
+    }
+    return "";
+  }
 
   const concertBookingId = Number(
-    booking?.concert_booking_id ??
-      booking?.concertBookingId ??
-      booking?.id ??
+    booking?.id ??
       booking?.booking_id ??
-      booking?.bookingId
+      booking?.bookingId ??
+      booking?.concert_booking_id ??
+      booking?.concertBookingId
   );
   if (Number.isFinite(concertBookingId) && concertBookingId > 0) {
     return `concert-booking:${concertBookingId}`;
   }
+  if (!concertLike) return "";
   return getConcertDuplicateFallbackKey(booking);
 };
 
 const mergeBookingRecords = (preferred = {}, secondary = {}) => {
+  const pickFirstFilledValue = (...values) =>
+    values.find((value) => {
+      if (value === undefined || value === null) return false;
+      if (typeof value === "string") return value.trim() !== "";
+      return true;
+    });
+
   const pickLifecycleValue = (...values) => {
     const normalized = values
       .map((value) => String(value ?? "").trim().toLowerCase())
@@ -219,21 +302,57 @@ const mergeBookingRecords = (preferred = {}, secondary = {}) => {
       preferred?.reservationStatus ?? secondary?.reservationStatus ?? mergedStatus,
     reservation_order_status: mergedReservationOrderStatus,
     reservationOrderStatus: mergedReservationOrderStatus,
+    event_title: pickFirstFilledValue(
+      preferred?.event_title,
+      preferred?.eventTitle,
+      secondary?.event_title,
+      secondary?.eventTitle
+    ),
+    eventTitle: pickFirstFilledValue(
+      preferred?.eventTitle,
+      preferred?.event_title,
+      secondary?.eventTitle,
+      secondary?.event_title
+    ),
+    artist_name: pickFirstFilledValue(
+      preferred?.artist_name,
+      preferred?.artistName,
+      secondary?.artist_name,
+      secondary?.artistName
+    ),
+    artistName: pickFirstFilledValue(
+      preferred?.artistName,
+      preferred?.artist_name,
+      secondary?.artistName,
+      secondary?.artist_name
+    ),
+    reservation_notes: pickFirstFilledValue(
+      preferred?.reservation_notes,
+      preferred?.reservationNotes,
+      secondary?.reservation_notes,
+      secondary?.reservationNotes
+    ),
+    reservationNotes: pickFirstFilledValue(
+      preferred?.reservationNotes,
+      preferred?.reservation_notes,
+      secondary?.reservationNotes,
+      secondary?.reservation_notes
+    ),
   };
 };
 
 const pickPreferredBooking = (current = {}, candidate = {}) => {
-  const currentHasComposition = bookingHasGuestComposition(current);
-  const candidateHasComposition = bookingHasGuestComposition(candidate);
-  if (candidateHasComposition !== currentHasComposition) {
-    return candidateHasComposition ? candidate : current;
-  }
-
   const currentSource = String(current?.booking_source || "").toLowerCase();
   const candidateSource = String(candidate?.booking_source || "").toLowerCase();
   if (candidateSource !== currentSource) {
     if (candidateSource === "concert") return candidate;
     if (currentSource === "concert") return current;
+  }
+
+  const currentHasComposition = bookingHasGuestComposition(current);
+  const candidateHasComposition = bookingHasGuestComposition(candidate);
+  if (candidateHasComposition !== currentHasComposition) {
+    return candidateHasComposition ? candidate : current;
   }
 
   const currentUpdated = Number(current?.updated_at ? new Date(current.updated_at).getTime() : 0) || 0;
@@ -366,10 +485,48 @@ function TablesView({
       concertLikeByGroup.set(groupKey, mergeBookingRecords(preferred, secondary));
     });
 
-    return [...deduped, ...Array.from(concertLikeByGroup.values())];
+    const primaryMergedRows = [...deduped, ...Array.from(concertLikeByGroup.values())];
+    const finalRows = [];
+    const fallbackIndexByKey = new Map();
+
+    primaryMergedRows.forEach((booking) => {
+      const fallbackKey = getConcertDuplicateFallbackKey(booking);
+      if (!fallbackKey) {
+        finalRows.push(booking);
+        return;
+      }
+
+      const source = String(booking?.booking_source || "").toLowerCase();
+      const isConcertLike = source === "concert" || hasConcertBookingContext(booking);
+      const existingIndex = fallbackIndexByKey.get(fallbackKey);
+      if (existingIndex == null) {
+        fallbackIndexByKey.set(fallbackKey, finalRows.length);
+        finalRows.push(booking);
+        return;
+      }
+
+      const existing = finalRows[existingIndex];
+      const existingSource = String(existing?.booking_source || "").toLowerCase();
+      const existingConcertLike =
+        existingSource === "concert" || hasConcertBookingContext(existing);
+      const shouldMergeCrossSource =
+        source !== existingSource && (isConcertLike || existingConcertLike);
+
+      if (!shouldMergeCrossSource) {
+        finalRows.push(booking);
+        return;
+      }
+
+      const preferred = pickPreferredBooking(existing, booking);
+      const secondary = preferred === existing ? booking : existing;
+      finalRows[existingIndex] = mergeBookingRecords(preferred, secondary);
+    });
+
+    return finalRows;
   }, [concertBookings, reservationBookings]);
   const rangeBookingCount = React.useMemo(() => {
     return combinedBookings.filter((booking) => {
+      if (isTerminalViewBookingRow(booking)) return false;
       const bookingDate = normalizeBookingDate(booking);
       if (!bookingDate) return false;
       if (bookingDateFrom && bookingDate < bookingDateFrom) return false;
@@ -380,6 +537,7 @@ function TablesView({
   const normalizedBookingSearch = bookingSearch.trim().toLowerCase();
   const filteredBookings = React.useMemo(() => {
     return combinedBookings.filter((booking) => {
+      if (isTerminalViewBookingRow(booking)) return false;
       const bookingDate = normalizeBookingDate(booking);
       if (bookingDateFrom && bookingDate && bookingDate < bookingDateFrom) return false;
       if (bookingDateTo && bookingDate && bookingDate > bookingDateTo) return false;
@@ -997,8 +1155,32 @@ function TablesView({
                   )
                     .trim()
                     .toLowerCase();
-                  const bookingStatusLabel = isConcertBooking
-                    ? String(booking.payment_status || "").trim().toLowerCase()
+                  const reservationLifecycleStatus = String(
+                    booking?.reservation_order_status ??
+                      booking?.reservationOrderStatus ??
+                      booking?.reservation_status ??
+                      booking?.reservationStatus ??
+                      ""
+                  )
+                    .trim()
+                    .toLowerCase();
+                  const concertPaymentStatusLabel = String(
+                    booking?.payment_status ??
+                      booking?.paymentStatus ??
+                      ""
+                  )
+                    .trim()
+                    .toLowerCase();
+                  const isFreeConcertBooking =
+                    isConcertLikeBooking &&
+                    Number(totalForDisplay || 0) <= 0 &&
+                    Number(bookingUnitPrice || 0) <= 0;
+                  const bookingStatusLabel = isConcertLikeBooking
+                    ? (
+                        isFreeConcertBooking
+                          ? reservationLifecycleStatus || reservationStatus
+                          : concertPaymentStatusLabel || reservationLifecycleStatus || reservationStatus
+                      )
                     : reservationStatus;
                     const concertPaymentStatus = String(
                       booking?.payment_status ?? booking?.paymentStatus ?? ""

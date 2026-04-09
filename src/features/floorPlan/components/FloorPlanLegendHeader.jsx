@@ -6,7 +6,7 @@ import {
   formatFloorPlanZoneLabel,
 } from "../utils/floorPlan";
 
-const STATUS_KEYS = ["available", "reserved", "occupied", "blocked"];
+const STATUS_KEYS = ["available", "pending_hold", "reserved", "occupied", "blocked"];
 
 function LegendChip({ dotColor, label, value = "", style = {} }) {
   return (

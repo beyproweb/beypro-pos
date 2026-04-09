@@ -99,6 +99,12 @@ export const FLOOR_PLAN_STATUS_STYLES = {
     text: "#ffffff",
     badge: "Available",
   },
+  pending_hold: {
+    fill: "#fef3c7",
+    border: "#d97706",
+    text: "#92400e",
+    badge: "Busy",
+  },
   selected: {
     fill: "#0f172a",
     border: "#0f172a",
@@ -769,28 +775,172 @@ export function resolveEffectiveFloorPlan({ venueLayout, eventLayout, tables = [
   return { layout: buildGeneratedFloorPlan(tables), source: "generated" };
 }
 
-export function buildTableStateMap(tableStates = []) {
-  return new Map(
-    normalizeArray(tableStates)
-      .map((state) => [Number(state?.table_number), state])
-      .filter(([tableNumber]) => Number.isFinite(tableNumber) && tableNumber > 0)
+export function getFloorPlanStateTableNumber(state = {}) {
+  return Number(
+    state?.table_number ??
+      state?.tableNumber ??
+      state?.number ??
+      state?.table ??
+      state?.table_id ??
+      state?.tableId ??
+      state?.reserved_table_number ??
+      state?.reservedTableNumber ??
+      state?.linked_table_number ??
+      state?.linkedTableNumber ??
+      state?.table?.table_number ??
+      state?.table?.tableNumber ??
+      state?.table?.number
   );
+}
+
+export function normalizeFloorPlanTableStatus(value) {
+  const raw = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+  if (!raw) return "available";
+
+  if (
+    raw === "checked_out" ||
+    raw === "checkedout" ||
+    raw === "checkout" ||
+    raw === "closed" ||
+    raw === "completed" ||
+    raw === "cancelled" ||
+    raw === "canceled" ||
+    raw === "deleted" ||
+    raw === "void"
+  ) {
+    return "available";
+  }
+  if (
+    raw === "blocked" ||
+    raw === "lock" ||
+    raw === "locked" ||
+    raw === "unavailable" ||
+    raw === "disabled" ||
+    raw === "hidden" ||
+    raw === "maintenance" ||
+    raw === "out_of_service"
+  ) {
+    return "blocked";
+  }
+  if (
+    raw === "pending_bank_transfer" ||
+    raw === "pending" ||
+    raw === "awaiting_confirm" ||
+    raw === "awaiting_confirmation" ||
+    raw === "pending_confirmation" ||
+    raw === "unconfirmed" ||
+    raw === "hold" ||
+    raw === "held" ||
+    raw === "pending_hold" ||
+    raw === "draft" ||
+    raw === "new" ||
+    raw === "created"
+  ) {
+    return "pending_hold";
+  }
+  if (
+    raw === "occupied" ||
+    raw === "checked_in" ||
+    raw === "checkedin" ||
+    raw === "busy" ||
+    raw === "in_use" ||
+    raw === "active" ||
+    raw === "paid" ||
+    raw === "preparing"
+  ) {
+    return "occupied";
+  }
+  if (
+    raw === "reserved" ||
+    raw === "reserve" ||
+    raw === "reservation" ||
+    raw === "confirmed" ||
+    raw === "booking_confirm"
+  ) {
+    return "reserved";
+  }
+  if (raw === "available" || raw === "free" || raw === "open" || raw === "empty") {
+    return "available";
+  }
+
+  if (raw.includes("block") || raw.includes("lock")) return "blocked";
+  if (raw.includes("occup") || raw.includes("check_in") || raw.includes("checkedin")) return "occupied";
+  if (raw.includes("pending") || raw.includes("unconfirm") || raw.includes("hold")) return "pending_hold";
+  if (raw.includes("reserv") || raw.includes("confirm")) return "reserved";
+  if (raw.includes("unavail")) return "blocked";
+  return "available";
+}
+
+export function buildTableStateMap(tableStates = []) {
+  const map = new Map();
+  normalizeArray(tableStates).forEach((state) => {
+    const tableNumber = getFloorPlanStateTableNumber(state);
+    if (!Number.isFinite(tableNumber) || tableNumber <= 0) return;
+    map.set(tableNumber, {
+      ...(state && typeof state === "object" ? state : {}),
+      table_number: tableNumber,
+      status: normalizeFloorPlanTableStatus(
+        state?.status ??
+          state?.table_status ??
+          state?.tableStatus ??
+          state?.availability_status ??
+          state?.availabilityStatus ??
+          state?.state
+      ),
+    });
+  });
+  return map;
 }
 
 export function buildFloorPlanElements(layout, tables = [], tableStates = []) {
   const normalizedLayout = normalizeFloorPlanLayout(layout) || buildGeneratedFloorPlan(tables);
   const tableMap = new Map(
     normalizeArray(tables)
-      .map((table) => [Number(table?.table_number ?? table?.number), table])
-      .filter(([tableNumber]) => Number.isFinite(tableNumber) && tableNumber > 0)
+      .map((table) => {
+        const tableNumber = Number(
+          table?.table_number ??
+            table?.tableNumber ??
+            table?.number ??
+            table?.table ??
+            table?.id
+        );
+        if (!Number.isFinite(tableNumber) || tableNumber <= 0) return null;
+        return [tableNumber, table];
+      })
+      .filter(Boolean)
   );
   const stateMap = buildTableStateMap(tableStates);
 
   return normalizedLayout.elements.map((element) => {
-    const tableNumber = Number(element.table_number || 0);
+    const tableNumber = Number(element.table_number || element.tableNumber || 0);
     const linkedTableNumber = Number((getNormalizedTableLinkNumber(element) ?? tableNumber) || 0);
     const table = tableMap.get(linkedTableNumber) || null;
-    const state = stateMap.get(linkedTableNumber) || null;
+    const state = stateMap.get(linkedTableNumber) || stateMap.get(tableNumber) || null;
+    const lockLikeState = Boolean(
+      table?.locked ??
+        table?.is_locked ??
+        table?.isLocked ??
+        table?.unavailable ??
+        table?.disabled ??
+        state?.locked ??
+        state?.is_locked ??
+        state?.isLocked
+    );
+    const resolvedStatus =
+      element.kind === "table"
+        ? normalizeFloorPlanTableStatus(
+            state?.status ??
+              state?.table_status ??
+              state?.tableStatus ??
+              state?.availability_status ??
+              state?.availabilityStatus ??
+              state?.state ??
+              (lockLikeState ? "blocked" : "available")
+          )
+        : "available";
     const rawElementName = asText(element.name, "");
     const fallbackTableNumber =
       Number(linkedTableNumber || table?.table_number || table?.number || tableNumber || 0) || 0;
@@ -804,7 +954,7 @@ export function buildFloorPlanElements(layout, tables = [], tableStates = []) {
       table,
       state,
       linked_table_number: linkedTableNumber || null,
-      status: state?.status || (element.kind === "table" ? "available" : "available"),
+      status: resolvedStatus,
       capacity:
         Number(table?.seats || table?.guests || state?.capacity || 0) ||
         Number(element.capacity || 0) ||

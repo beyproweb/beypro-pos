@@ -1,8 +1,10 @@
 import React from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import secureFetch from "../utils/secureFetch";
+import { io } from "socket.io-client";
+import secureFetch, { getAuthToken } from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
+import { SOCKET_BASE } from "../utils/api";
 import { getCheckoutPrefill, useCustomerAuth } from "../features/qrmenu/header-drawer";
 import {
   buildConcertContactPath,
@@ -16,7 +18,11 @@ import BookingSummaryCard from "../features/floorPlan/components/BookingSummaryC
 import FloorPlanPickerModal from "../features/floorPlan/components/FloorPlanPickerModal";
 import QuantityStepperCard from "../features/floorPlan/components/QuantityStepperCard";
 import RegisteredCustomerBadge from "../features/floorPlan/components/RegisteredCustomerBadge";
-import { mergeFloorPlanVisualStyles } from "../features/floorPlan/utils/floorPlan";
+import {
+  getFloorPlanStateTableNumber,
+  mergeFloorPlanVisualStyles,
+  normalizeFloorPlanTableStatus,
+} from "../features/floorPlan/utils/floorPlan";
 import {
   buildGuestComposition,
   buildGuestCountOptions,
@@ -39,12 +45,281 @@ function formatTableLabel(tableLike, fallbackPrefix = "Table") {
     tableLike?.table_number ?? tableLike?.tableNumber ?? tableLike?.number ?? tableLike
   );
   if (!Number.isFinite(number) || number <= 0) return fallbackPrefix;
-  const label = String(tableLike?.label || tableLike?.name || "").trim();
-  return label || `${fallbackPrefix} ${String(number).padStart(2, "0")}`;
+  return `${fallbackPrefix} ${String(number).padStart(2, "0")}`;
 }
 
 function getActiveTables(rows) {
   return (Array.isArray(rows) ? rows : []).filter((row) => row?.active !== false);
+}
+
+function pickDefaultConcertTicketType(eventLike, routeBookingDefaults) {
+  const ticketTypes = Array.isArray(eventLike?.ticket_types) ? eventLike.ticket_types : [];
+  const availableTicketTypes = ticketTypes.filter((row) => Number(row?.available_count || 0) > 0);
+  if (routeBookingDefaults?.requestedTicketTypeId) {
+    return (
+      availableTicketTypes.find(
+        (row) => Number(row?.id) === routeBookingDefaults.requestedTicketTypeId
+      ) ||
+      ticketTypes.find((row) => Number(row?.id) === routeBookingDefaults.requestedTicketTypeId) ||
+      null
+    );
+  }
+  if (routeBookingDefaults?.requestedBookingType === "table") {
+    return (
+      availableTicketTypes.find((row) => row?.is_table_package) ||
+      availableTicketTypes.find((row) => !row?.is_table_package) ||
+      ticketTypes.find((row) => row?.is_table_package) ||
+      ticketTypes[0] ||
+      null
+    );
+  }
+  return (
+    availableTicketTypes.find((row) => !row?.is_table_package) ||
+    availableTicketTypes.find((row) => row?.is_table_package) ||
+    ticketTypes[0] ||
+    null
+  );
+}
+
+function buildConcertTablesPath(identifier, options = {}) {
+  const normalizedIdentifier = String(identifier || "").trim();
+  if (!normalizedIdentifier) return "";
+  const params = new URLSearchParams();
+  const areaName = String(options?.areaName || "").trim();
+  if (areaName) {
+    params.set("table_area", areaName);
+  }
+  const ticketTypeId = Number(options?.ticketTypeId);
+  if (Number.isFinite(ticketTypeId) && ticketTypeId > 0) {
+    params.set("ticket_type_id", String(ticketTypeId));
+  }
+  const cacheBust = String(options?.cacheBust || "").trim();
+  if (cacheBust) {
+    params.set("_ts", cacheBust);
+  }
+  const query = params.toString();
+  return `/public/tables/${encodeURIComponent(normalizedIdentifier)}${query ? `?${query}` : ""}`;
+}
+
+const TABLE_STATUS_PRIORITY = {
+  available: 0,
+  pending_hold: 1,
+  reserved: 2,
+  occupied: 3,
+  blocked: 4,
+};
+const TABLE_STATE_SOURCE_PRIORITY = {
+  fallback: 0,
+  floor_plan_state: 10,
+  unavailable_state: 20,
+  unavailable_list: 60,
+  unavailable_reserved_list: 70,
+  table_lock: 100,
+};
+const LIVE_REFRESH_SOCKET_EVENTS = [
+  "order_confirmed",
+  "orders_updated",
+  "order_cancelled",
+  "order_deleted",
+  "order_closed",
+  "reservation_created",
+  "reservation_updated",
+  "reservation_cancelled",
+  "reservation_deleted",
+  "concert_booking_updated",
+  "concert_booking_confirmed",
+  "concert_booking_cancelled",
+];
+
+function parseRestaurantIdFromIdentifier(identifier) {
+  const raw = String(identifier || "").trim();
+  if (!raw) return null;
+  const parts = raw.split(":");
+  const lastPart = parts[parts.length - 1];
+  const match = String(lastPart).match(/(\d+)$/);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseConcertTableNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function normalizeConcertFloorPlanStatus(value) {
+  const normalized = normalizeFloorPlanTableStatus(value);
+  return normalized === "reserved" ? "occupied" : normalized;
+}
+
+function mergeStateEntryByPriority(
+  map,
+  source = {},
+  fallbackStatus = "available",
+  options = {}
+) {
+  const tableNumber = parseConcertTableNumber(getFloorPlanStateTableNumber(source));
+  if (!tableNumber) return;
+  const sourcePriority =
+    TABLE_STATE_SOURCE_PRIORITY[String(options?.source || "fallback").trim()] || 0;
+  const forceStatus = Boolean(options?.forceStatus);
+
+  const normalizedStatus = normalizeConcertFloorPlanStatus(
+    source?.status ??
+      source?.table_status ??
+      source?.tableStatus ??
+      source?.availability_status ??
+      source?.availabilityStatus ??
+      source?.state ??
+      fallbackStatus
+  );
+
+  const previous = map.get(tableNumber);
+  if (!previous) {
+    map.set(tableNumber, {
+      ...(source && typeof source === "object" ? source : {}),
+      table_number: tableNumber,
+      status: normalizedStatus,
+      __sourcePriority: sourcePriority,
+    });
+    return;
+  }
+
+  const previousStatus = normalizeConcertFloorPlanStatus(previous?.status || "available");
+  const previousSourcePriority = Number(previous?.__sourcePriority || 0);
+  const lockedStatusStays = previousStatus === "blocked" && normalizedStatus !== "blocked";
+  const strongerSource = sourcePriority > previousSourcePriority;
+  const equalSource = sourcePriority === previousSourcePriority;
+
+  const shouldTakeNextStatus =
+    !lockedStatusStays &&
+    (forceStatus ||
+      (strongerSource && normalizedStatus !== previousStatus) ||
+      // For equal-source updates, let latest payload win (including downgrades)
+      // so stale occupied/reserved entries can return to available immediately.
+      (equalSource && normalizedStatus !== previousStatus));
+
+  map.set(tableNumber, {
+    ...previous,
+    ...(source && typeof source === "object" ? source : {}),
+    table_number: tableNumber,
+    status: shouldTakeNextStatus ? normalizedStatus : previousStatus,
+    __sourcePriority: Math.max(previousSourcePriority, sourcePriority),
+  });
+}
+
+function mergeNumberListAsStatus(map, values, status, options = {}) {
+  (Array.isArray(values) ? values : []).forEach((value) => {
+    const tableNumber = parseConcertTableNumber(value);
+    if (!tableNumber) return;
+    mergeStateEntryByPriority(map, { table_number: tableNumber }, status, options);
+  });
+}
+
+function buildMergedConcertTableStates({ floorPlanStates = [], unavailablePayload = null, tables = [] }) {
+  const merged = new Map();
+
+  (Array.isArray(floorPlanStates) ? floorPlanStates : []).forEach((state) =>
+    mergeStateEntryByPriority(merged, state, "available", { source: "floor_plan_state" })
+  );
+
+  if (unavailablePayload && typeof unavailablePayload === "object") {
+    (Array.isArray(unavailablePayload?.table_states) ? unavailablePayload.table_states : []).forEach(
+      (state) =>
+        mergeStateEntryByPriority(merged, state, "available", {
+          source: "unavailable_state",
+        })
+    );
+    (Array.isArray(unavailablePayload?.tables) ? unavailablePayload.tables : []).forEach((state) =>
+      mergeStateEntryByPriority(merged, state, "available", {
+        source: "unavailable_state",
+      })
+    );
+    mergeNumberListAsStatus(merged, unavailablePayload?.table_numbers, "pending_hold", {
+      source: "unavailable_list",
+    });
+    mergeNumberListAsStatus(merged, unavailablePayload?.reserved_table_numbers, "reserved", {
+      source: "unavailable_reserved_list",
+      forceStatus: true,
+    });
+  }
+
+  (Array.isArray(tables) ? tables : []).forEach((table) => {
+    const tableNumber = parseConcertTableNumber(
+      table?.number ?? table?.tableNumber ?? table?.table_number
+    );
+    if (!tableNumber) return;
+    const locked = Boolean(
+      table?.locked ??
+        table?.is_locked ??
+        table?.isLocked ??
+        table?.unavailable ??
+        table?.disabled
+    );
+    if (locked) {
+      mergeStateEntryByPriority(
+        merged,
+        {
+          table_number: tableNumber,
+          reason:
+            table?.lock_reason ??
+            table?.lockReason ??
+            table?.unavailable_reason ??
+            table?.unavailableReason ??
+            "Blocked",
+        },
+        "blocked",
+        { source: "table_lock", forceStatus: true }
+      );
+    }
+  });
+
+  return [...merged.values()]
+    .map((row) => {
+      const { __sourcePriority, ...rest } = row || {};
+      return rest;
+    })
+    .sort((a, b) => {
+    const aNum = parseConcertTableNumber(a?.table_number) || 0;
+    const bNum = parseConcertTableNumber(b?.table_number) || 0;
+    return aNum - bNum;
+    });
+}
+
+async function fetchUnavailableTablesSnapshot(identifier, cacheBustValue = "") {
+  if (!identifier) return null;
+  const cacheBust = String(cacheBustValue || "").trim();
+  const cacheBustParam = cacheBust ? `_ts=${encodeURIComponent(cacheBust)}` : "";
+  const token = getAuthToken();
+  const authorization = token
+    ? token.startsWith("Bearer ")
+      ? token
+      : `Bearer ${token}`
+    : "";
+  const requestOptions = {
+    ...(authorization ? { headers: { Authorization: authorization } } : {}),
+    cache: "no-store",
+  };
+
+  try {
+    return await secureFetch(
+      `/public/unavailable-tables/${encodeURIComponent(identifier)}${
+        cacheBustParam ? `?${cacheBustParam}` : ""
+      }`,
+      requestOptions
+    );
+  } catch (primaryError) {
+    const shouldRetryLegacy = /401|404|405|unauthorized|token missing/i.test(
+      String(primaryError?.message || "")
+    );
+    if (!shouldRetryLegacy) throw primaryError;
+    return secureFetch(
+      `/public/unavailable-tables?identifier=${encodeURIComponent(identifier)}${
+        cacheBustParam ? `&${cacheBustParam}` : ""
+      }`,
+      requestOptions
+    );
+  }
 }
 
 export default function QrConcertBookingPage() {
@@ -98,6 +373,22 @@ export default function QrConcertBookingPage() {
       requestedBookingType,
     };
   }, [location.search]);
+  const prefetchedRouteEvent = React.useMemo(() => {
+    const candidate = location.state?.prefetchedConcertEvent;
+    if (!candidate || typeof candidate !== "object") return null;
+    const routeConcertId = Number(concertId || 0);
+    const candidateId = Number(candidate?.id || 0);
+    if (
+      Number.isFinite(routeConcertId) &&
+      routeConcertId > 0 &&
+      Number.isFinite(candidateId) &&
+      candidateId > 0 &&
+      routeConcertId !== candidateId
+    ) {
+      return null;
+    }
+    return candidate;
+  }, [concertId, location.state]);
   const storage = React.useMemo(() => createQrScopedStorage(identifier), [identifier]);
   const { customer, isLoggedIn } = useCustomerAuth(storage, { fetcher: customerAuthFetcher });
   const isLoggedInEffective = Boolean(isLoggedIn || customer?.id);
@@ -106,11 +397,15 @@ export default function QrConcertBookingPage() {
     const value = String(customerPrefill?.email || "").trim().toLowerCase();
     return !value || EMAIL_REGEX.test(value) ? value : "";
   }, [customerPrefill?.email]);
+  const prefetchedDefaultTicketType = React.useMemo(
+    () => pickDefaultConcertTicketType(prefetchedRouteEvent, routeBookingDefaults),
+    [prefetchedRouteEvent, routeBookingDefaults]
+  );
 
   const [branding, setBranding] = React.useState(null);
-  const [event, setEvent] = React.useState(null);
+  const [event, setEvent] = React.useState(() => prefetchedRouteEvent || null);
   const [tables, setTables] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
+  const [loading, setLoading] = React.useState(() => !prefetchedRouteEvent);
   const [floorPlanLoading, setFloorPlanLoading] = React.useState(false);
   const [floorPlan, setFloorPlan] = React.useState(null);
   const [tableStates, setTableStates] = React.useState([]);
@@ -120,8 +415,14 @@ export default function QrConcertBookingPage() {
   const fieldRefs = React.useRef({});
   const confirmationSectionRef = React.useRef(null);
   const previousConfirmedTableRef = React.useRef("");
+  const [resolvedRestaurantId, setResolvedRestaurantId] = React.useState(() =>
+    parseRestaurantIdFromIdentifier(identifier)
+  );
+  const [floorPlanRefreshTick, setFloorPlanRefreshTick] = React.useState(0);
+  const liveRefreshTimerRef = React.useRef(null);
+  const tableSnapshotRef = React.useRef([]);
   const [form, setForm] = React.useState({
-    ticket_type_id: "",
+    ticket_type_id: prefetchedDefaultTicketType ? String(prefetchedDefaultTicketType.id) : "",
     quantity: "1",
     guests_count: "2",
     male_guests_count: "",
@@ -145,6 +446,10 @@ export default function QrConcertBookingPage() {
     customer?.username,
     storage,
   ]);
+
+  React.useEffect(() => {
+    tableSnapshotRef.current = tables;
+  }, [tables]);
 
   React.useEffect(() => {
     const nextName = customer?.username || customerPrefill?.name || "";
@@ -180,41 +485,80 @@ export default function QrConcertBookingPage() {
   ]);
 
   React.useEffect(() => {
+    const parsed = parseRestaurantIdFromIdentifier(identifier);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      setResolvedRestaurantId(parsed);
+      return;
+    }
+
+    setResolvedRestaurantId(null);
+    if (!identifier) return undefined;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const info = await secureFetch(
+          `/public/restaurant-info?identifier=${encodeURIComponent(identifier)}`
+        );
+        if (cancelled) return;
+        const resolvedId = Number(info?.id);
+        if (!Number.isFinite(resolvedId) || resolvedId <= 0) return;
+        setResolvedRestaurantId(resolvedId);
+      } catch {
+        // Realtime socket is optional; polling continues when this fails.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [identifier]);
+
+  React.useEffect(() => {
+    return () => {
+      if (liveRefreshTimerRef.current) {
+        window.clearTimeout(liveRefreshTimerRef.current);
+        liveRefreshTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (!prefetchedRouteEvent) return;
+    setEvent((prev) => prev || prefetchedRouteEvent);
+    setLoading(false);
+    if (prefetchedDefaultTicketType) {
+      setForm((prev) =>
+        prev.ticket_type_id
+          ? prev
+          : { ...prev, ticket_type_id: String(prefetchedDefaultTicketType.id) }
+      );
+    }
+  }, [prefetchedDefaultTicketType, prefetchedRouteEvent]);
+
+  React.useEffect(() => {
     let cancelled = false;
     async function loadInitial() {
       if (!identifier || !concertId) {
         setLoading(false);
         return;
       }
-      setLoading(true);
+      setLoading((prev) => (prefetchedRouteEvent ? prev : true));
       try {
         const [brandingRes, eventRes, tablesRes] = await Promise.all([
           secureFetch(`/public/qr-menu-customization/${encodeURIComponent(identifier)}`),
           secureFetch(
             `/public/concerts/${encodeURIComponent(identifier)}/events/${encodeURIComponent(concertId)}`
           ),
-          secureFetch(`/public/tables/${encodeURIComponent(identifier)}`),
+          secureFetch(
+            buildConcertTablesPath(identifier, {
+              ticketTypeId: routeBookingDefaults.requestedTicketTypeId,
+            })
+          ),
         ]);
         if (cancelled) return;
         const nextEvent = eventRes?.event || null;
-        const ticketTypes = Array.isArray(nextEvent?.ticket_types) ? nextEvent.ticket_types : [];
-        const availableTicketTypes = ticketTypes.filter((row) => Number(row?.available_count || 0) > 0);
-        const defaultTicketType = routeBookingDefaults.requestedTicketTypeId
-          ? availableTicketTypes.find(
-              (row) => Number(row?.id) === routeBookingDefaults.requestedTicketTypeId
-            ) ||
-            ticketTypes.find((row) => Number(row?.id) === routeBookingDefaults.requestedTicketTypeId) ||
-            null
-          : routeBookingDefaults.requestedBookingType === "table"
-            ? availableTicketTypes.find((row) => row?.is_table_package) ||
-              availableTicketTypes.find((row) => !row?.is_table_package) ||
-              ticketTypes.find((row) => row?.is_table_package) ||
-              ticketTypes[0] ||
-              null
-            : availableTicketTypes.find((row) => !row?.is_table_package) ||
-              availableTicketTypes.find((row) => row?.is_table_package) ||
-              ticketTypes[0] ||
-              null;
+        const defaultTicketType = pickDefaultConcertTicketType(nextEvent, routeBookingDefaults);
         setBranding(brandingRes?.customization || {});
         setEvent(nextEvent);
         setTables(getActiveTables(tablesRes));
@@ -236,7 +580,13 @@ export default function QrConcertBookingPage() {
     return () => {
       cancelled = true;
     };
-  }, [concertId, identifier, routeBookingDefaults.requestedBookingType, routeBookingDefaults.requestedTicketTypeId]);
+  }, [
+    concertId,
+    identifier,
+    prefetchedRouteEvent,
+    routeBookingDefaults.requestedBookingType,
+    routeBookingDefaults.requestedTicketTypeId,
+  ]);
 
   const ticketTypes = Array.isArray(event?.ticket_types) ? event.ticket_types : [];
   const selectedTicketType = React.useMemo(() => {
@@ -315,6 +665,18 @@ export default function QrConcertBookingPage() {
     womenGuests: form.female_guests_count,
     translate: t,
   });
+  const scheduleLiveTableStateRefresh = React.useCallback(
+    (delayMs = 80) => {
+      if (!identifier || !concertId || !isTableBooking) return;
+      if (liveRefreshTimerRef.current) {
+        window.clearTimeout(liveRefreshTimerRef.current);
+      }
+      liveRefreshTimerRef.current = window.setTimeout(() => {
+        setFloorPlanRefreshTick((value) => value + 1);
+      }, Math.max(0, Number(delayMs) || 0));
+    },
+    [concertId, identifier, isTableBooking]
+  );
 
   React.useEffect(() => {
     if (!guestCompositionVisible) {
@@ -358,6 +720,7 @@ export default function QrConcertBookingPage() {
       }
       setFloorPlanLoading(true);
       try {
+        const cacheBust = String(Date.now());
         const params = new URLSearchParams();
         if (selectedTicketType?.id) params.set("ticket_type_id", String(selectedTicketType.id));
         if (selectedTicketType?.area_name) params.set("area_name", String(selectedTicketType.area_name));
@@ -366,14 +729,46 @@ export default function QrConcertBookingPage() {
           params.set("male_guests_count", String(menCount));
           params.set("female_guests_count", String(womenCount));
         }
-        const response = await secureFetch(
-          `/public/concerts/${encodeURIComponent(identifier)}/events/${encodeURIComponent(
-            concertId
-          )}/floor-plan?${params.toString()}`
-        );
+        params.set("_ts", cacheBust);
+        const query = params.toString();
+        const [response, tablesPayload, unavailablePayload] = await Promise.all([
+          secureFetch(
+            `/public/concerts/${encodeURIComponent(identifier)}/events/${encodeURIComponent(
+              concertId
+            )}/floor-plan${query ? `?${query}` : ""}`,
+            { cache: "no-store" }
+          ),
+          secureFetch(
+            buildConcertTablesPath(identifier, {
+              ticketTypeId: selectedTicketType?.id,
+              areaName: selectedTicketType?.area_name,
+              cacheBust,
+            }),
+            {
+              cache: "no-store",
+            }
+          ).catch(() => null),
+          fetchUnavailableTablesSnapshot(identifier, cacheBust).catch((error) => {
+            console.warn("Failed to load unavailable concert tables:", error);
+            return null;
+          }),
+        ]);
         if (cancelled) return;
+        const hasTablesPayload =
+          Array.isArray(tablesPayload) || Array.isArray(tablesPayload?.data);
+        const normalizedTables = hasTablesPayload
+          ? getActiveTables(Array.isArray(tablesPayload) ? tablesPayload : tablesPayload?.data || [])
+          : [];
+        if (hasTablesPayload) setTables(normalizedTables);
         setFloorPlan(mergeFloorPlanVisualStyles(response?.layout || null, branding?.qr_floor_plan_layout));
-        setTableStates(Array.isArray(response?.table_states) ? response.table_states : []);
+        setTableStates(
+          buildMergedConcertTableStates({
+            floorPlanStates: Array.isArray(response?.table_states) ? response.table_states : [],
+            unavailablePayload,
+            tables:
+              hasTablesPayload ? normalizedTables : tableSnapshotRef.current,
+          })
+        );
       } catch (error) {
         if (!cancelled) {
           console.error("Failed to load concert floor plan:", error);
@@ -391,7 +786,7 @@ export default function QrConcertBookingPage() {
       cancelled = true;
     };
   }, [
-    branding,
+    branding?.qr_floor_plan_layout,
     concertId,
     hasGuestCompositionInput,
     identifier,
@@ -400,7 +795,73 @@ export default function QrConcertBookingPage() {
     selectedGuests,
     selectedTicketType?.area_name,
     selectedTicketType?.id,
+    floorPlanRefreshTick,
     womenCount,
+  ]);
+
+  React.useEffect(() => {
+    if (!identifier || !concertId || !isTableBooking) return undefined;
+    const intervalId = window.setInterval(() => {
+      scheduleLiveTableStateRefresh(0);
+    }, 8000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [concertId, identifier, isTableBooking, scheduleLiveTableStateRefresh]);
+
+  React.useEffect(() => {
+    if (!identifier || !concertId || !isTableBooking) return undefined;
+
+    let realtimeSocket = null;
+    const socketRestaurantId = Number(resolvedRestaurantId || 0);
+    const onSocketRefresh = () => scheduleLiveTableStateRefresh(50);
+    const onConnect = () => {
+      if (socketRestaurantId > 0) {
+        realtimeSocket?.emit("join_restaurant", socketRestaurantId);
+      }
+      onSocketRefresh();
+    };
+
+    try {
+      realtimeSocket = io(SOCKET_BASE, {
+        path: "/socket.io",
+        transports: ["polling", "websocket"],
+        upgrade: true,
+        withCredentials: true,
+        timeout: 20000,
+      });
+
+      if (socketRestaurantId > 0) {
+        realtimeSocket.emit("join_restaurant", socketRestaurantId);
+      }
+
+      realtimeSocket.on("connect", onConnect);
+
+      LIVE_REFRESH_SOCKET_EVENTS.forEach((eventName) => {
+        realtimeSocket.on(eventName, onSocketRefresh);
+      });
+    } catch (socketError) {
+      console.warn("Concert booking realtime socket unavailable:", socketError);
+    }
+
+    return () => {
+      if (!realtimeSocket) return;
+      try {
+        LIVE_REFRESH_SOCKET_EVENTS.forEach((eventName) => {
+          realtimeSocket.off(eventName, onSocketRefresh);
+        });
+        realtimeSocket.off("connect", onConnect);
+        realtimeSocket.disconnect();
+      } catch {
+        // Ignore socket cleanup failures.
+      }
+    };
+  }, [
+    concertId,
+    identifier,
+    isTableBooking,
+    resolvedRestaurantId,
+    scheduleLiveTableStateRefresh,
   ]);
 
   React.useEffect(() => {
@@ -411,9 +872,17 @@ export default function QrConcertBookingPage() {
     const selectedNumber = Number(form.table_number || 0);
     if (!selectedNumber) return;
     const state = (Array.isArray(tableStates) ? tableStates : []).find(
-      (item) => Number(item?.table_number) === selectedNumber
+      (item) => Number(getFloorPlanStateTableNumber(item)) === selectedNumber
     );
-    if (!state || String(state.status || "").toLowerCase() !== "available") {
+    const normalizedStateStatus = normalizeConcertFloorPlanStatus(
+      state?.status ??
+        state?.table_status ??
+        state?.tableStatus ??
+        state?.availability_status ??
+        state?.availabilityStatus ??
+        state?.state
+    );
+    if (!state || normalizedStateStatus !== "available") {
       setForm((prev) => ({ ...prev, table_number: "" }));
     }
   }, [form.table_number, isTableBooking, tableStates]);
@@ -421,7 +890,7 @@ export default function QrConcertBookingPage() {
   const selectedTableState = React.useMemo(() => {
     return (
       (Array.isArray(tableStates) ? tableStates : []).find(
-        (state) => Number(state?.table_number) === selectedTableNumber
+        (state) => Number(getFloorPlanStateTableNumber(state)) === selectedTableNumber
       ) || null
     );
   }, [selectedTableNumber, tableStates]);
@@ -637,7 +1106,33 @@ export default function QrConcertBookingPage() {
             : null,
       });
     } catch (error) {
-      window.alert(error?.message || t("Failed to save booking"));
+      const statusCode = Number(error?.details?.status || 0);
+      const errorCode = String(error?.details?.body?.code || "")
+        .trim()
+        .toLowerCase();
+      const errorMessage = String(error?.message || "").trim();
+      const isConflict = statusCode === 409;
+      const tableConflict =
+        isTableBooking &&
+        (errorCode.includes("table") ||
+          errorCode.includes("slot") ||
+          /table|slot|unavailable|already booked|conflict/i.test(errorMessage));
+
+      if (isConflict && tableConflict) {
+        scheduleLiveTableStateRefresh(0);
+        setForm((prev) => ({ ...prev, table_number: "" }));
+        setInvalidField("table_number");
+        setPickerOpen(true);
+        window.alert(
+          errorMessage ||
+            t("Selected table is not available right now. Please choose another table.")
+        );
+      } else if (isConflict) {
+        scheduleLiveTableStateRefresh(0);
+        window.alert(errorMessage || t("Availability changed. Please review and try again."));
+      } else {
+        window.alert(errorMessage || t("Failed to save booking"));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -668,6 +1163,7 @@ export default function QrConcertBookingPage() {
     t,
     womenCount,
     focusInvalidField,
+    scheduleLiveTableStateRefresh,
   ]);
 
   const summaryItems = [
@@ -953,6 +1449,7 @@ export default function QrConcertBookingPage() {
         tableStates={tableStates}
         selectedTableNumber={form.table_number}
         accentColor={accentColor}
+        statusFilterKeys={["available", "pending_hold", "occupied", "blocked"]}
         guestCompositionProps={{
           title: t("Guest Split"),
           description: t("Match the package to the group arriving at the venue."),

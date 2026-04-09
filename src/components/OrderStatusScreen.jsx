@@ -2499,10 +2499,14 @@ const OrderStatusScreen = ({
     !canFinalizeReservation &&
     !isCancelledFlow;
   const hasOrderedItems = items.some((item) => !isCancelledItemStatus(item?.kitchen_status));
+  const isGuestCheckedOutContext =
+    hasCheckedOutSignal ||
+    isCheckedOutReservationStatus(effectiveOrderStatus) ||
+    shouldShowCheckoutCompletedView;
   const canShowRequestSongTab =
     isTableContextOrder &&
     (hasCheckedInSignal || hasOrderedItems) &&
-    !hasCheckedOutSignal &&
+    !isGuestCheckedOutContext &&
     !isCancelledFlow;
   const shouldShowCheckInQrCard =
     Boolean(reservationQrImageUrl) &&

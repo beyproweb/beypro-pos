@@ -11,9 +11,13 @@ const collectStatusCandidates = (source) => {
     source?.status,
     source?.reservation_status,
     source?.reservationStatus,
+    source?.reservation_order_status,
+    source?.reservationOrderStatus,
     reservation?.status,
     reservation?.reservation_status,
     reservation?.reservationStatus,
+    reservation?.reservation_order_status,
+    reservation?.reservationOrderStatus,
   ]
     .map(normalizeStatus)
     .filter(Boolean);
@@ -21,6 +25,8 @@ const collectStatusCandidates = (source) => {
 
 export const getReservationLifecycleStatus = (...sources) => {
   const candidates = sources.flatMap(collectStatusCandidates);
+  if (candidates.includes("checked_out")) return "checked_out";
+  if (candidates.includes("cancelled") || candidates.includes("canceled")) return "cancelled";
   if (candidates.includes("checked_in")) return "checked_in";
   if (candidates.includes("confirmed")) return "confirmed";
   if (candidates.includes("reserved")) return "reserved";

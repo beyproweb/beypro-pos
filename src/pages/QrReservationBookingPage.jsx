@@ -1,8 +1,10 @@
 import React from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import secureFetch from "../utils/secureFetch";
+import { io } from "socket.io-client";
+import secureFetch, { getAuthToken } from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
+import { SOCKET_BASE } from "../utils/api";
 import { getCheckoutPrefill, useCustomerAuth } from "../features/qrmenu/header-drawer";
 import {
   getEffectiveBookingMaxDaysInAdvance,
@@ -15,7 +17,11 @@ import {
   resolvePublicBookingIdentifier,
 } from "../features/qrmenu/publicBookingRoutes";
 import { createQrScopedStorage } from "../features/qrmenu/utils/createQrScopedStorage";
-import { mergeFloorPlanVisualStyles } from "../features/floorPlan/utils/floorPlan";
+import {
+  getFloorPlanStateTableNumber,
+  mergeFloorPlanVisualStyles,
+  normalizeFloorPlanTableStatus,
+} from "../features/floorPlan/utils/floorPlan";
 import BookingPageLayout from "../features/floorPlan/components/BookingPageLayout";
 import BookingSection from "../features/floorPlan/components/BookingSection";
 import BookingSummaryCard from "../features/floorPlan/components/BookingSummaryCard";
@@ -71,6 +77,243 @@ function normalizeHexColor(value, fallback = "#111827") {
     .toUpperCase()}`;
 }
 
+const TABLE_STATUS_PRIORITY = {
+  available: 0,
+  pending_hold: 1,
+  reserved: 2,
+  occupied: 3,
+  blocked: 4,
+};
+const TABLE_STATE_SOURCE_PRIORITY = {
+  fallback: 0,
+  unavailable_list: 20,
+  unavailable_reserved_list: 30,
+  unavailable_state: 40,
+  floor_plan_state: 50,
+  table_lock: 100,
+};
+const LIVE_REFRESH_SOCKET_EVENTS = [
+  "order_confirmed",
+  "orders_updated",
+  "order_cancelled",
+  "order_deleted",
+  "order_closed",
+  "reservation_created",
+  "reservation_updated",
+  "reservation_cancelled",
+  "reservation_deleted",
+];
+
+function parseRestaurantIdFromIdentifier(identifier) {
+  const raw = String(identifier || "").trim();
+  if (!raw) return null;
+  const parts = raw.split(":");
+  const lastPart = parts[parts.length - 1];
+  const match = String(lastPart).match(/(\d+)$/);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseReservationTableNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function normalizeReservationFloorPlanStatus(value) {
+  const normalized = normalizeFloorPlanTableStatus(value);
+  return normalized === "reserved" ? "occupied" : normalized;
+}
+
+function mergeStateEntryByPriority(
+  map,
+  source = {},
+  fallbackStatus = "available",
+  options = {}
+) {
+  const tableNumber = parseReservationTableNumber(getFloorPlanStateTableNumber(source));
+  if (!tableNumber) return;
+  const sourcePriority =
+    TABLE_STATE_SOURCE_PRIORITY[String(options?.source || "fallback").trim()] || 0;
+  const forceStatus = Boolean(options?.forceStatus);
+
+  const normalizedStatus = normalizeReservationFloorPlanStatus(
+    source?.status ??
+      source?.table_status ??
+      source?.tableStatus ??
+      source?.availability_status ??
+      source?.availabilityStatus ??
+      source?.state ??
+      fallbackStatus
+  );
+
+  const previous = map.get(tableNumber);
+  if (!previous) {
+    map.set(tableNumber, {
+      ...(source && typeof source === "object" ? source : {}),
+      table_number: tableNumber,
+      status: normalizedStatus,
+      __sourcePriority: sourcePriority,
+    });
+    return;
+  }
+
+  const previousStatus = normalizeReservationFloorPlanStatus(previous?.status || "available");
+  const previousSourcePriority = Number(previous?.__sourcePriority || 0);
+  const lockedStatusStays = previousStatus === "blocked" && normalizedStatus !== "blocked";
+  const strongerSource = sourcePriority > previousSourcePriority;
+  const equalSource = sourcePriority === previousSourcePriority;
+  const shouldTakeNextStatus =
+    !lockedStatusStays &&
+    (forceStatus ||
+      (strongerSource && normalizedStatus !== previousStatus) ||
+      // For equal-source updates, let latest payload win (including downgrades)
+      // so stale occupied/reserved entries can return to available immediately.
+      (equalSource && normalizedStatus !== previousStatus));
+
+  map.set(tableNumber, {
+    ...previous,
+    ...(source && typeof source === "object" ? source : {}),
+    table_number: tableNumber,
+    status: shouldTakeNextStatus ? normalizedStatus : previousStatus,
+    __sourcePriority: Math.max(previousSourcePriority, sourcePriority),
+  });
+}
+
+function mergeNumberListAsStatus(map, values, status, options = {}) {
+  (Array.isArray(values) ? values : []).forEach((value) => {
+    const tableNumber = parseReservationTableNumber(value);
+    if (!tableNumber) return;
+    mergeStateEntryByPriority(map, { table_number: tableNumber }, status, options);
+  });
+}
+
+function buildMergedReservationTableStates({
+  floorPlanStates = [],
+  unavailablePayload = null,
+  tables = [],
+}) {
+  const merged = new Map();
+
+  (Array.isArray(floorPlanStates) ? floorPlanStates : []).forEach((state) =>
+    mergeStateEntryByPriority(merged, state, "available", { source: "floor_plan_state" })
+  );
+
+  if (unavailablePayload && typeof unavailablePayload === "object") {
+    (Array.isArray(unavailablePayload?.table_states) ? unavailablePayload.table_states : []).forEach(
+      (state) =>
+        mergeStateEntryByPriority(merged, state, "available", {
+          source: "unavailable_state",
+        })
+    );
+    (Array.isArray(unavailablePayload?.tables) ? unavailablePayload.tables : []).forEach((state) =>
+      mergeStateEntryByPriority(merged, state, "available", {
+        source: "unavailable_state",
+      })
+    );
+    mergeNumberListAsStatus(merged, unavailablePayload?.table_numbers, "pending_hold", {
+      source: "unavailable_list",
+      forceStatus: true,
+    });
+    mergeNumberListAsStatus(merged, unavailablePayload?.occupied_table_numbers, "pending_hold", {
+      source: "unavailable_state",
+    });
+    mergeNumberListAsStatus(merged, unavailablePayload?.reserved_table_numbers, "reserved", {
+      source: "unavailable_reserved_list",
+      forceStatus: true,
+    });
+  }
+
+  (Array.isArray(tables) ? tables : []).forEach((table) => {
+    const tableNumber = parseReservationTableNumber(
+      table?.number ?? table?.tableNumber ?? table?.table_number
+    );
+    if (!tableNumber) return;
+    const locked = Boolean(
+      table?.locked ??
+        table?.is_locked ??
+        table?.isLocked ??
+        table?.unavailable ??
+        table?.disabled
+    );
+    if (!locked) return;
+
+    mergeStateEntryByPriority(
+      merged,
+      {
+        table_number: tableNumber,
+        reason:
+          table?.lock_reason ??
+          table?.lockReason ??
+          table?.unavailable_reason ??
+          table?.unavailableReason ??
+          "Blocked",
+      },
+      "blocked",
+      { source: "table_lock", forceStatus: true }
+    );
+  });
+
+  return [...merged.values()]
+    .map((row) => {
+      const { __sourcePriority, ...rest } = row || {};
+      return rest;
+    })
+    .sort((a, b) => {
+      const aNum = parseReservationTableNumber(a?.table_number) || 0;
+      const bNum = parseReservationTableNumber(b?.table_number) || 0;
+      return aNum - bNum;
+    });
+}
+
+function summarizeReservationTableStates(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  const counts = { available: 0, pending_hold: 0, reserved: 0, occupied: 0, blocked: 0, unknown: 0 };
+  list.forEach((row) => {
+    const status = normalizeReservationFloorPlanStatus(row?.status);
+    if (status in counts) counts[status] += 1;
+    else counts.unknown += 1;
+  });
+  return counts;
+}
+
+async function fetchUnavailableTablesSnapshot(identifier, params = {}, cacheBustValue = "") {
+  if (!identifier) return null;
+  const searchParams = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null || String(value).trim() === "") return;
+    searchParams.set(key, String(value));
+  });
+  if (cacheBustValue) searchParams.set("_ts", String(cacheBustValue));
+
+  const token = getAuthToken();
+  const authorization = token
+    ? token.startsWith("Bearer ")
+      ? token
+      : `Bearer ${token}`
+    : "";
+  const requestOptions = {
+    ...(authorization ? { headers: { Authorization: authorization } } : {}),
+    cache: "no-store",
+  };
+
+  const query = searchParams.toString();
+  try {
+    return await secureFetch(
+      `/public/unavailable-tables/${encodeURIComponent(identifier)}${query ? `?${query}` : ""}`,
+      requestOptions
+    );
+  } catch (primaryError) {
+    const shouldRetryLegacy = /401|404|405|unauthorized|token missing/i.test(
+      String(primaryError?.message || "")
+    );
+    if (!shouldRetryLegacy) throw primaryError;
+    const fallbackQuery = new URLSearchParams(query);
+    fallbackQuery.set("identifier", identifier);
+    return secureFetch(`/public/unavailable-tables?${fallbackQuery.toString()}`, requestOptions);
+  }
+}
+
 export default function QrReservationBookingPage() {
   const { t } = useTranslation();
   const { formatCurrency } = useCurrency();
@@ -123,8 +366,14 @@ export default function QrReservationBookingPage() {
   const [tableStates, setTableStates] = React.useState([]);
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
+  const [resolvedRestaurantId, setResolvedRestaurantId] = React.useState(() =>
+    parseRestaurantIdFromIdentifier(identifier)
+  );
+  const [floorPlanRefreshTick, setFloorPlanRefreshTick] = React.useState(0);
   const confirmationSectionRef = React.useRef(null);
   const previousConfirmedTableRef = React.useRef("");
+  const liveRefreshTimerRef = React.useRef(null);
+  const tableSnapshotRef = React.useRef([]);
   const todayIsoDate = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [form, setForm] = React.useState({
     reservation_date: todayIsoDate,
@@ -179,6 +428,49 @@ export default function QrReservationBookingPage() {
     customerPrefill?.phone,
     isLoggedInEffective,
   ]);
+
+  React.useEffect(() => {
+    tableSnapshotRef.current = tables;
+  }, [tables]);
+
+  React.useEffect(() => {
+    const parsed = parseRestaurantIdFromIdentifier(identifier);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      setResolvedRestaurantId(parsed);
+      return;
+    }
+
+    setResolvedRestaurantId(null);
+    if (!identifier) return undefined;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const info = await secureFetch(
+          `/public/restaurant-info?identifier=${encodeURIComponent(identifier)}`
+        );
+        if (cancelled) return;
+        const resolvedId = Number(info?.id);
+        if (!Number.isFinite(resolvedId) || resolvedId <= 0) return;
+        setResolvedRestaurantId(resolvedId);
+      } catch {
+        // Realtime socket remains optional.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [identifier]);
+
+  React.useEffect(() => {
+    return () => {
+      if (liveRefreshTimerRef.current) {
+        window.clearTimeout(liveRefreshTimerRef.current);
+        liveRefreshTimerRef.current = null;
+      }
+    };
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -278,6 +570,18 @@ export default function QrReservationBookingPage() {
     womenGuests: form.reservation_women,
     translate: t,
   });
+  const scheduleLiveTableStateRefresh = React.useCallback(
+    (delayMs = 80) => {
+      if (!identifier) return;
+      if (liveRefreshTimerRef.current) {
+        window.clearTimeout(liveRefreshTimerRef.current);
+      }
+      liveRefreshTimerRef.current = window.setTimeout(() => {
+        setFloorPlanRefreshTick((value) => value + 1);
+      }, Math.max(0, Number(delayMs) || 0));
+    },
+    [identifier]
+  );
 
   React.useEffect(() => {
     if (!guestCompositionVisible) {
@@ -319,15 +623,18 @@ export default function QrReservationBookingPage() {
       }
       setSlotsLoading(true);
       try {
+        const cacheBust = String(Date.now());
         const params = new URLSearchParams({
           date: form.reservation_date,
           slots: "1",
+          _ts: cacheBust,
         });
         if (selectedGuestCount > 0) {
           params.set("guest_count", String(selectedGuestCount));
         }
         const response = await secureFetch(
-          `/public/unavailable-tables/${encodeURIComponent(identifier)}?${params.toString()}`
+          `/public/unavailable-tables/${encodeURIComponent(identifier)}?${params.toString()}`,
+          { cache: "no-store" }
         );
         if (cancelled) return;
         setSlots(normalizeReservationTimeSlotOptions(response?.time_slots || [], t));
@@ -360,9 +667,19 @@ export default function QrReservationBookingPage() {
   React.useEffect(() => {
     let cancelled = false;
     async function loadPlan() {
-      if (!identifier) return;
+      if (!identifier) {
+        console.warn("[qr-reservation:floor-plan:skip] missing identifier");
+        return;
+      }
+      console.warn("[qr-reservation:floor-plan:start]", {
+        identifier,
+        reservationDate: form.reservation_date,
+        reservationTime: form.reservation_time,
+        selectedGuestCount,
+      });
       setFloorPlanLoading(true);
       try {
+        const cacheBust = String(Date.now());
         const params = new URLSearchParams();
         if (form.reservation_date) params.set("date", form.reservation_date);
         if (form.reservation_time) params.set("time", form.reservation_time);
@@ -371,14 +688,75 @@ export default function QrReservationBookingPage() {
           params.set("reservation_men", String(menCount));
           params.set("reservation_women", String(womenCount));
         }
+        params.set("_ts", cacheBust);
         const query = params.toString();
-        const response = await secureFetch(
-          `/public/floor-plan/${encodeURIComponent(identifier)}${query ? `?${query}` : ""}`
-        );
+        const [response, tablesPayload, unavailablePayload] = await Promise.all([
+          secureFetch(
+            `/public/floor-plan/${encodeURIComponent(identifier)}${query ? `?${query}` : ""}`,
+            { cache: "no-store" }
+          ),
+          secureFetch(`/public/tables/${encodeURIComponent(identifier)}?_ts=${cacheBust}`, {
+            cache: "no-store",
+          }).catch(() => null),
+          fetchUnavailableTablesSnapshot(
+            identifier,
+            {
+              date: form.reservation_date,
+              time: form.reservation_time,
+              guest_count: selectedGuestCount > 0 ? selectedGuestCount : "",
+            },
+            cacheBust
+          ).catch((error) => {
+            console.warn("Failed to load unavailable reservation tables:", error);
+            return null;
+          }),
+        ]);
         if (cancelled) return;
+        const hasTablesPayload =
+          Array.isArray(tablesPayload) || Array.isArray(tablesPayload?.data);
+        const normalizedTables = hasTablesPayload
+          ? getActiveTables(Array.isArray(tablesPayload) ? tablesPayload : tablesPayload?.data || [])
+          : [];
+        if (hasTablesPayload) setTables(normalizedTables);
+        console.warn("[qr-reservation:floor-plan:raw]", {
+          identifier,
+          reservationDate: form.reservation_date,
+          reservationTime: form.reservation_time,
+          selectedGuestCount,
+          floorPlanStateCount: Array.isArray(response?.table_states)
+            ? response.table_states.length
+            : 0,
+          unavailableTableNumbers: Array.isArray(unavailablePayload?.table_numbers)
+            ? unavailablePayload.table_numbers
+            : [],
+          unavailableReservedTableNumbers: Array.isArray(unavailablePayload?.reserved_table_numbers)
+            ? unavailablePayload.reserved_table_numbers
+            : [],
+          unavailableOccupiedTableNumbers: Array.isArray(unavailablePayload?.occupied_table_numbers)
+            ? unavailablePayload.occupied_table_numbers
+            : [],
+          unavailableTableStatesCount: Array.isArray(unavailablePayload?.table_states)
+            ? unavailablePayload.table_states.length
+            : 0,
+          activeTablesCount: normalizedTables.length,
+        });
         setFloorPlan(mergeFloorPlanVisualStyles(response?.layout || null, settings?.qr_floor_plan_layout));
         setFloorPlanSource(String(response?.source || "generated"));
-        setTableStates(Array.isArray(response?.table_states) ? response.table_states : []);
+        const mergedStates = buildMergedReservationTableStates({
+          floorPlanStates: Array.isArray(response?.table_states) ? response.table_states : [],
+          unavailablePayload,
+          tables: hasTablesPayload ? normalizedTables : tableSnapshotRef.current,
+        });
+        console.warn("[qr-reservation:floor-plan:merged]", {
+          total: mergedStates.length,
+          counts: summarizeReservationTableStates(mergedStates),
+          sample: mergedStates.slice(0, 20).map((state) => ({
+            table_number: state?.table_number ?? state?.tableNumber ?? state?.number,
+            status: normalizeReservationFloorPlanStatus(state?.status),
+            reason: state?.reason || "",
+          })),
+        });
+        setTableStates(mergedStates);
       } catch (error) {
         if (!cancelled) {
           console.error("Failed to load reservation floor plan:", error);
@@ -401,15 +779,74 @@ export default function QrReservationBookingPage() {
     hasGuestCompositionInput,
     identifier,
     menCount,
-    settings,
+    settings?.qr_floor_plan_layout,
     selectedGuestCount,
     womenCount,
+    floorPlanRefreshTick,
   ]);
+
+  React.useEffect(() => {
+    if (!identifier) return undefined;
+    const intervalId = window.setInterval(() => {
+      scheduleLiveTableStateRefresh(0);
+    }, 8000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [identifier, scheduleLiveTableStateRefresh]);
+
+  React.useEffect(() => {
+    if (!identifier) return undefined;
+
+    let realtimeSocket = null;
+    const socketRestaurantId = Number(resolvedRestaurantId || 0);
+    const onSocketRefresh = () => scheduleLiveTableStateRefresh(50);
+    const onConnect = () => {
+      if (socketRestaurantId > 0) {
+        realtimeSocket?.emit("join_restaurant", socketRestaurantId);
+      }
+      onSocketRefresh();
+    };
+
+    try {
+      realtimeSocket = io(SOCKET_BASE, {
+        path: "/socket.io",
+        transports: ["polling", "websocket"],
+        upgrade: true,
+        withCredentials: true,
+        timeout: 20000,
+      });
+
+      if (socketRestaurantId > 0) {
+        realtimeSocket.emit("join_restaurant", socketRestaurantId);
+      }
+
+      realtimeSocket.on("connect", onConnect);
+      LIVE_REFRESH_SOCKET_EVENTS.forEach((eventName) => {
+        realtimeSocket.on(eventName, onSocketRefresh);
+      });
+    } catch (socketError) {
+      console.warn("Reservation booking realtime socket unavailable:", socketError);
+    }
+
+    return () => {
+      if (!realtimeSocket) return;
+      try {
+        LIVE_REFRESH_SOCKET_EVENTS.forEach((eventName) => {
+          realtimeSocket.off(eventName, onSocketRefresh);
+        });
+        realtimeSocket.off("connect", onConnect);
+        realtimeSocket.disconnect();
+      } catch {
+        // Ignore socket cleanup failures.
+      }
+    };
+  }, [identifier, resolvedRestaurantId, scheduleLiveTableStateRefresh]);
 
   const selectedTableState = React.useMemo(() => {
     return (
       (Array.isArray(tableStates) ? tableStates : []).find(
-        (state) => Number(state?.table_number) === selectedTableNumber
+        (state) => Number(getFloorPlanStateTableNumber(state)) === selectedTableNumber
       ) || null
     );
   }, [selectedTableNumber, tableStates]);
@@ -426,9 +863,22 @@ export default function QrReservationBookingPage() {
     const selectedNumber = Number(form.table_number || 0);
     if (!selectedNumber) return;
     const currentState = (Array.isArray(tableStates) ? tableStates : []).find(
-      (state) => Number(state?.table_number) === selectedNumber
+      (state) => Number(getFloorPlanStateTableNumber(state)) === selectedNumber
     );
-    if (!currentState || String(currentState.status || "").toLowerCase() !== "available") {
+    const normalizedStateStatus = normalizeReservationFloorPlanStatus(
+      currentState?.status ??
+        currentState?.table_status ??
+        currentState?.tableStatus ??
+        currentState?.availability_status ??
+        currentState?.availabilityStatus ??
+        currentState?.state
+    );
+    console.warn("[qr-reservation:selected-table-state]", {
+      selectedNumber,
+      normalizedStateStatus,
+      state: currentState || null,
+    });
+    if (!currentState || normalizedStateStatus !== "available") {
       setForm((prev) => ({ ...prev, table_number: "" }));
     }
   }, [form.table_number, tableStates]);
@@ -790,6 +1240,7 @@ export default function QrReservationBookingPage() {
         tableStates={tableStates}
         selectedTableNumber={form.table_number}
         accentColor={accentColor}
+        statusFilterKeys={["available", "pending_hold", "occupied", "blocked"]}
         guestCompositionProps={{
           title: t("Guest Composition"),
           description: t("Some tables have guest restrictions."),

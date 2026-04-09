@@ -70,6 +70,10 @@ import {
   normalizeQrBookingSettings,
   QR_BOOKING_DEFAULTS,
 } from "../utils/qrBooking";
+import {
+  isReservationCheckinNotFoundError,
+  postReservationCheckinWithFallback,
+} from "../utils/reservationCheckin";
 
 const PERF_DEBUG_ENABLED = isTablePerfDebugEnabled();
 const DEFAULT_STRESS_CONFIG = Object.freeze({
@@ -263,6 +267,9 @@ const isReservationRelevantForTableState = (reservation) => {
       reservation?.orderStatus ??
       ""
   );
+  if (["cancelled", "canceled", "checked_out", "closed", "completed", "deleted", "void"].includes(reservationStatus)) {
+    return false;
+  }
   if (reservationStatus === "checked_in") return true;
 
   const bookingDateYmd = normalizeBookingDateYmd(reservation);
@@ -275,6 +282,13 @@ const isConcertBookingRelevantForTableState = (booking) => {
   const reservationOrderStatus = normalizeOrderStatus(
     booking?.reservation_order_status ?? booking?.reservationOrderStatus ?? ""
   );
+  if (
+    ["cancelled", "canceled", "checked_out", "closed", "completed", "deleted", "void"].includes(
+      reservationOrderStatus
+    )
+  ) {
+    return false;
+  }
   if (reservationOrderStatus === "checked_in") return true;
 
   const bookingDateYmd = normalizeBookingDateYmd(booking);
@@ -390,7 +404,6 @@ const getConcertBookingsOverviewCacheKey = () =>
   getRestaurantScopedCacheKey("tableOverview.viewBooking.concert.v1");
 const getReservationBookingsOverviewCacheKey = () =>
   getRestaurantScopedCacheKey("tableOverview.viewBooking.reservations.v1");
-const VIEW_BOOKING_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const safeParseJson = (raw) => {
   try {
@@ -421,31 +434,6 @@ const writeOpenOrdersCache = (mode = "packet", orders = []) => {
     // ignore cache errors
   }
 };
-
-const readViewBookingOverviewCachePayload = (kind = "concert") => {
-  try {
-    if (typeof window === "undefined") return { savedAt: 0, rows: [] };
-    const key =
-      kind === "reservation"
-        ? getReservationBookingsOverviewCacheKey()
-        : getConcertBookingsOverviewCacheKey();
-    const parsed = safeParseJson(window?.localStorage?.getItem(key));
-    const rows = Array.isArray(parsed)
-      ? parsed
-      : Array.isArray(parsed?.rows)
-      ? parsed.rows
-      : [];
-    return {
-      savedAt: Number(parsed?.savedAt || 0) || 0,
-      rows: rows.filter((row) => row && typeof row === "object"),
-    };
-  } catch {
-    return { savedAt: 0, rows: [] };
-  }
-};
-
-const readViewBookingOverviewCache = (kind = "concert") =>
-  readViewBookingOverviewCachePayload(kind).rows;
 
 const writeViewBookingOverviewCache = (kind = "concert", rows = []) => {
   try {
@@ -582,6 +570,14 @@ const CHECKIN_REGRESSION_STATUSES = new Set([
   "open",
   "in_progress",
 ]);
+const LOCAL_REMOVE_ORDER_STATUSES = new Set([
+  "closed",
+  "completed",
+  "cancelled",
+  "canceled",
+  "deleted",
+  "void",
+]);
 
 const preserveCheckedInStatus = (incomingStatus, previousOrder, incomingPatch = null) => {
   const normalizedIncoming = normalizeOrderStatus(incomingStatus);
@@ -594,6 +590,19 @@ const preserveCheckedInStatus = (incomingStatus, previousOrder, incomingPatch = 
   };
   if (!hasReservationSignal(signalProbe)) return normalizedIncoming;
   return "checked_in";
+};
+
+const TABLE_10_DEBUG_KEY = "10";
+const normalizeTableKey = (value) => String(value ?? "").trim();
+const isSameTableNumber = (tableNumber, tableConfigNumber) => {
+  const left = normalizeTableKey(tableNumber);
+  const right = normalizeTableKey(tableConfigNumber);
+  return left !== "" && right !== "" && left === right;
+};
+const isTable10 = (value) => normalizeTableKey(value) === TABLE_10_DEBUG_KEY;
+const logTable10 = (scope, payload) => {
+  if (!import.meta.env.DEV) return;
+  console.warn(`[table10-debug] ${scope}`, payload);
 };
 
 
@@ -702,19 +711,15 @@ const canSeePacketTab = useHasPermission("packet-orders");
   const canSeePhoneTab = useHasPermission("phone-orders");
   const canSeeRegisterTab = useHasPermission("register");
   const canSeeTakeawayTab = useHasPermission("takeaway");
-const [activeArea, setActiveArea] = useState(() => requestedAreaFromUrl);
+  const [activeArea, setActiveArea] = useState(() => requestedAreaFromUrl);
   const pendingAreaSelectionRef = useRef(null);
-  const [hasUpcomingConcerts, setHasUpcomingConcerts] = useState(
-    () => readViewBookingOverviewCache("concert").length > 0
-  );
-  const [concertBookings, setConcertBookings] = useState(() => readViewBookingOverviewCache("concert"));
+  const [hasUpcomingConcerts, setHasUpcomingConcerts] = useState(false);
+  const [concertBookings, setConcertBookings] = useState([]);
   const [concertBookingsLoading, setConcertBookingsLoading] = useState(false);
   const [concertBookingUpdatingId, setConcertBookingUpdatingId] = useState(null);
   const [clearingBookings, setClearingBookings] = useState(false);
   const [suppressedBookingKeys, setSuppressedBookingKeys] = useState(() => new Set());
-  const [reservationBookingsOverview, setReservationBookingsOverview] = useState(
-    () => readViewBookingOverviewCache("reservation")
-  );
+  const [reservationBookingsOverview, setReservationBookingsOverview] = useState([]);
   const [reservationBookingsLoading, setReservationBookingsLoading] = useState(false);
   const [reservationBookingUpdatingKey, setReservationBookingUpdatingKey] = useState(null);
   const [songRequests, setSongRequests] = useState([]);
@@ -767,14 +772,14 @@ const [activeArea, setActiveArea] = useState(() => requestedAreaFromUrl);
   }, [reservationBookingsOverview]);
 
   const removeBookingFromViewBookingLists = useCallback(({ tableNumber, reservationId, orderId } = {}) => {
-    const normalizedTableNumber = Number(tableNumber);
+    const normalizedTableNumber = normalizeTableKey(tableNumber);
     const normalizedReservationId = Number(reservationId);
     const normalizedOrderId = Number(orderId);
 
     setConcertBookings((prev) => {
       const list = Array.isArray(prev) ? prev : [];
       return list.filter((row) => {
-        const rowTableNumber = Number(
+        const rowTableNumber = normalizeTableKey(
           row?.reserved_table_number ?? row?.reservedTableNumber ?? row?.table_number ?? row?.tableNumber
         );
         const rowReservationId = Number(row?.id ?? row?.booking_id ?? row?.bookingId);
@@ -785,7 +790,7 @@ const [activeArea, setActiveArea] = useState(() => requestedAreaFromUrl);
           return false;
         }
         if (Number.isFinite(normalizedOrderId) && rowOrderId === normalizedOrderId) return false;
-        if (Number.isFinite(normalizedTableNumber) && rowTableNumber === normalizedTableNumber) {
+        if (isSameTableNumber(rowTableNumber, normalizedTableNumber)) {
           return false;
         }
         return true;
@@ -795,14 +800,14 @@ const [activeArea, setActiveArea] = useState(() => requestedAreaFromUrl);
     setReservationBookingsOverview((prev) => {
       const list = Array.isArray(prev) ? prev : [];
       return list.filter((row) => {
-        const rowTableNumber = Number(row?.table_number ?? row?.tableNumber ?? row?.table);
+        const rowTableNumber = normalizeTableKey(row?.table_number ?? row?.tableNumber ?? row?.table);
         const rowReservationId = Number(row?.id ?? row?.reservation_id ?? row?.reservationId);
         const rowOrderId = Number(row?.order_id ?? row?.orderId);
         if (Number.isFinite(normalizedReservationId) && rowReservationId === normalizedReservationId) {
           return false;
         }
         if (Number.isFinite(normalizedOrderId) && rowOrderId === normalizedOrderId) return false;
-        if (Number.isFinite(normalizedTableNumber) && rowTableNumber === normalizedTableNumber) {
+        if (isSameTableNumber(rowTableNumber, normalizedTableNumber)) {
           return false;
         }
         return true;
@@ -812,7 +817,7 @@ const [activeArea, setActiveArea] = useState(() => requestedAreaFromUrl);
 
   const markBookingCheckedInInViewBookingLists = useCallback(
     ({ tableNumber, reservationId, orderId, reservation } = {}) => {
-      const normalizedTableNumber = Number(tableNumber);
+      const normalizedTableNumber = normalizeTableKey(tableNumber);
       const normalizedReservationId = Number(reservationId);
       const normalizedOrderId = Number(orderId);
       const reservationPayload = reservation && typeof reservation === "object" ? reservation : null;
@@ -820,7 +825,7 @@ const [activeArea, setActiveArea] = useState(() => requestedAreaFromUrl);
       setConcertBookings((prev) => {
         const list = Array.isArray(prev) ? prev : [];
         return list.map((row) => {
-          const rowTableNumber = Number(
+          const rowTableNumber = normalizeTableKey(
             row?.reserved_table_number ?? row?.reservedTableNumber ?? row?.table_number ?? row?.tableNumber
           );
           const rowReservationId = Number(row?.id ?? row?.booking_id ?? row?.bookingId);
@@ -830,7 +835,7 @@ const [activeArea, setActiveArea] = useState(() => requestedAreaFromUrl);
           const matches =
             (Number.isFinite(normalizedReservationId) && rowReservationId === normalizedReservationId) ||
             (Number.isFinite(normalizedOrderId) && rowOrderId === normalizedOrderId) ||
-            (Number.isFinite(normalizedTableNumber) && rowTableNumber === normalizedTableNumber);
+            isSameTableNumber(rowTableNumber, normalizedTableNumber);
           if (!matches) return row;
           return {
             ...row,
@@ -855,13 +860,13 @@ const [activeArea, setActiveArea] = useState(() => requestedAreaFromUrl);
       setReservationBookingsOverview((prev) => {
         const list = Array.isArray(prev) ? prev : [];
         return list.map((row) => {
-          const rowTableNumber = Number(row?.table_number ?? row?.tableNumber ?? row?.table);
+          const rowTableNumber = normalizeTableKey(row?.table_number ?? row?.tableNumber ?? row?.table);
           const rowReservationId = Number(row?.id ?? row?.reservation_id ?? row?.reservationId);
           const rowOrderId = Number(row?.order_id ?? row?.orderId);
           const matches =
             (Number.isFinite(normalizedReservationId) && rowReservationId === normalizedReservationId) ||
             (Number.isFinite(normalizedOrderId) && rowOrderId === normalizedOrderId) ||
-            (Number.isFinite(normalizedTableNumber) && rowTableNumber === normalizedTableNumber);
+            isSameTableNumber(rowTableNumber, normalizedTableNumber);
           if (!matches) return row;
           return {
             ...row,
@@ -881,7 +886,7 @@ const [activeArea, setActiveArea] = useState(() => requestedAreaFromUrl);
   );
   const markBookingConfirmedLocally = useCallback(
     ({ tableNumber, reservationId, orderId, reservation } = {}) => {
-      const normalizedTableNumber = Number(tableNumber);
+      const normalizedTableNumber = normalizeTableKey(tableNumber);
       const normalizedReservationId = Number(reservationId);
       const normalizedOrderId = Number(orderId);
       const reservationPayload = reservation && typeof reservation === "object" ? reservation : null;
@@ -889,7 +894,7 @@ const [activeArea, setActiveArea] = useState(() => requestedAreaFromUrl);
       setConcertBookings((prev) => {
         const list = Array.isArray(prev) ? prev : [];
         return list.map((row) => {
-          const rowTableNumber = Number(
+          const rowTableNumber = normalizeTableKey(
             row?.reserved_table_number ?? row?.reservedTableNumber ?? row?.table_number ?? row?.tableNumber
           );
           const rowReservationId = Number(row?.id ?? row?.booking_id ?? row?.bookingId);
@@ -899,7 +904,7 @@ const [activeArea, setActiveArea] = useState(() => requestedAreaFromUrl);
           const matches =
             (Number.isFinite(normalizedReservationId) && rowReservationId === normalizedReservationId) ||
             (Number.isFinite(normalizedOrderId) && rowOrderId === normalizedOrderId) ||
-            (Number.isFinite(normalizedTableNumber) && rowTableNumber === normalizedTableNumber);
+            isSameTableNumber(rowTableNumber, normalizedTableNumber);
           if (!matches) return row;
           return {
             ...row,
@@ -920,13 +925,13 @@ const [activeArea, setActiveArea] = useState(() => requestedAreaFromUrl);
       setReservationBookingsOverview((prev) => {
         const list = Array.isArray(prev) ? prev : [];
         return list.map((row) => {
-          const rowTableNumber = Number(row?.table_number ?? row?.tableNumber ?? row?.table);
+          const rowTableNumber = normalizeTableKey(row?.table_number ?? row?.tableNumber ?? row?.table);
           const rowReservationId = Number(row?.id ?? row?.reservation_id ?? row?.reservationId);
           const rowOrderId = Number(row?.order_id ?? row?.orderId);
           const matches =
             (Number.isFinite(normalizedReservationId) && rowReservationId === normalizedReservationId) ||
             (Number.isFinite(normalizedOrderId) && rowOrderId === normalizedOrderId) ||
-            (Number.isFinite(normalizedTableNumber) && rowTableNumber === normalizedTableNumber);
+            isSameTableNumber(rowTableNumber, normalizedTableNumber);
           if (!matches) return row;
           return {
             ...row,
@@ -945,43 +950,35 @@ const [activeArea, setActiveArea] = useState(() => requestedAreaFromUrl);
       setReservationsToday((prev) =>
         (() => {
           const list = Array.isArray(prev) ? prev : [];
-          let matched = false;
-          const next = list.map((row) => {
-          const rowTableNumber = Number(row?.table_number ?? row?.tableNumber ?? row?.table);
-          const rowReservationId = Number(row?.id ?? row?.reservation_id ?? row?.reservationId);
-          const rowOrderId = Number(row?.order_id ?? row?.orderId);
-          const matches =
-            (Number.isFinite(normalizedReservationId) && rowReservationId === normalizedReservationId) ||
-            (Number.isFinite(normalizedOrderId) && rowOrderId === normalizedOrderId) ||
-            (Number.isFinite(normalizedTableNumber) && rowTableNumber === normalizedTableNumber);
-          if (!matches) return row;
-          matched = true;
-          return {
-            ...row,
-            ...(reservationPayload || {}),
-            status: "confirmed",
-            order_id:
-              row?.order_id ?? row?.orderId ?? reservationPayload?.order_id ?? reservationPayload?.orderId ?? normalizedOrderId,
-            orderId:
-              row?.orderId ?? row?.order_id ?? reservationPayload?.orderId ?? reservationPayload?.order_id ?? normalizedOrderId,
-          };
-          });
-
-          if (!matched && reservationPayload) {
-            next.push({
-              ...reservationPayload,
-              id: reservationPayload?.id ?? normalizedReservationId ?? null,
-              table_number:
-                reservationPayload?.table_number ?? reservationPayload?.tableNumber ?? normalizedTableNumber,
-              order_id:
-                reservationPayload?.order_id ?? reservationPayload?.orderId ?? normalizedOrderId ?? null,
-              orderId:
-                reservationPayload?.orderId ?? reservationPayload?.order_id ?? normalizedOrderId ?? null,
+          return list.map((row) => {
+            const rowTableNumber = normalizeTableKey(
+              row?.table_number ?? row?.tableNumber ?? row?.table
+            );
+            const rowReservationId = Number(row?.id ?? row?.reservation_id ?? row?.reservationId);
+            const rowOrderId = Number(row?.order_id ?? row?.orderId);
+            const matches =
+              (Number.isFinite(normalizedReservationId) && rowReservationId === normalizedReservationId) ||
+              (Number.isFinite(normalizedOrderId) && rowOrderId === normalizedOrderId) ||
+              isSameTableNumber(rowTableNumber, normalizedTableNumber);
+            if (!matches) return row;
+            return {
+              ...row,
+              ...(reservationPayload || {}),
               status: "confirmed",
-            });
-          }
-
-          return next;
+              order_id:
+                row?.order_id ??
+                row?.orderId ??
+                reservationPayload?.order_id ??
+                reservationPayload?.orderId ??
+                normalizedOrderId,
+              orderId:
+                row?.orderId ??
+                row?.order_id ??
+                reservationPayload?.orderId ??
+                reservationPayload?.order_id ??
+                normalizedOrderId,
+            };
+          });
         })()
       );
 
@@ -995,7 +992,7 @@ const [activeArea, setActiveArea] = useState(() => requestedAreaFromUrl);
           const matches =
             (Number.isFinite(normalizedOrderId) && rowId === normalizedOrderId) ||
             (Number.isFinite(normalizedReservationId) && rowReservationId === normalizedReservationId) ||
-            (Number.isFinite(normalizedTableNumber) && rowTableNumber === normalizedTableNumber);
+            isSameTableNumber(rowTableNumber, normalizedTableNumber);
           if (!matches) return row;
           return {
             ...row,
@@ -1221,24 +1218,26 @@ const handleCloseTable = async (orderOrId, options = {}) => {
       }
     }
 
-    // ✅ Fetch current kitchen exclusion settings (same as TransactionScreen)
-    const { excludedItems = [], excludedCategories = [] } =
-      (await secureFetch("kitchen/compile-settings")) || {};
+    if (items.length > 0) {
+      // ✅ Fetch current kitchen exclusion settings (same as TransactionScreen)
+      const { excludedItems = [], excludedCategories = [] } =
+        (await secureFetch("kitchen/compile-settings")) || {};
 
-    // ✅ Allow closing if all items are delivered OR excluded
-    const allDeliveredOrExcluded = items.every(
-      (i) =>
-        i.kitchen_status === "delivered" ||
-        !i.kitchen_status ||
-        excludedItems.includes(i.product_id) ||
-        excludedCategories.includes(i.category)
-    );
+      // ✅ Allow closing if all items are delivered OR excluded
+      const allDeliveredOrExcluded = items.every(
+        (i) =>
+          i.kitchen_status === "delivered" ||
+          !i.kitchen_status ||
+          excludedItems.includes(i.product_id) ||
+          excludedCategories.includes(i.category)
+      );
 
-    if (!allDeliveredOrExcluded) {
-      toast.warning(`⚠️ ${t("Cannot close: some kitchen items not yet delivered!")}`, {
-        style: { background: "#dc2626", color: "#fff" }, // red-600
-      });
-      return false;
+      if (!allDeliveredOrExcluded) {
+        toast.warning(`⚠️ ${t("Cannot close: some kitchen items not yet delivered!")}`, {
+          style: { background: "#dc2626", color: "#fff" }, // red-600
+        });
+        return false;
+      }
     }
 
     const reservationShadowSource =
@@ -1388,10 +1387,10 @@ const handleCloseTable = async (orderOrId, options = {}) => {
       setReservationsToday((prev) => {
         const list = Array.isArray(prev) ? prev : [];
         return list.filter((row) => {
-          const rowTableNumber = Number(row?.table_number ?? row?.tableNumber ?? row?.table);
+          const rowTableNumber = normalizeTableKey(row?.table_number ?? row?.tableNumber ?? row?.table);
           const rowReservationId = Number(row?.id);
           const rowOrderId = Number(row?.order_id ?? row?.orderId);
-          if (Number.isFinite(tableNumber) && rowTableNumber === tableNumber) return false;
+          if (isSameTableNumber(rowTableNumber, tableNumber)) return false;
           if (Number.isFinite(resolvedReservationId) && rowReservationId === resolvedReservationId)
             return false;
           if (Number.isFinite(Number(order?.id ?? orderId)) && rowOrderId === Number(order?.id ?? orderId))
@@ -1409,14 +1408,12 @@ const handleCloseTable = async (orderOrId, options = {}) => {
     // Reset guest count ("seats") for the table once it's closed.
     if (Number.isFinite(tableNumber)) {
       upsertTableConfigLocal(tableNumber, { guests: null });
-      try {
-        await secureFetch(`/tables/${tableNumber}`, {
-          method: "PATCH",
-          body: JSON.stringify({ guests: null }),
-        });
-      } catch (err) {
+      void secureFetch(`/tables/${tableNumber}`, {
+        method: "PATCH",
+        body: JSON.stringify({ guests: null }),
+      }).catch((err) => {
         console.error("❌ Failed to reset table guests after close:", err);
-      }
+      });
     }
 
     return true;
@@ -1591,16 +1588,21 @@ const handleDeleteReservation = useCallback(
       setReservationsToday((prev) => {
         const list = Array.isArray(prev) ? prev : [];
         return list.filter((row) => {
-          const rowTableNumber = Number(row?.table_number ?? row?.tableNumber ?? row?.table);
+          const rowTableNumber = normalizeTableKey(row?.table_number ?? row?.tableNumber ?? row?.table);
           const rowReservationId = Number(row?.id);
           const rowOrderId = Number(row?.order_id ?? row?.orderId);
-          if (Number.isFinite(tableNumber) && rowTableNumber === tableNumber) return false;
+          if (isSameTableNumber(rowTableNumber, tableNumber)) return false;
           if (Number.isFinite(reservationId) && rowReservationId === reservationId) return false;
           if (Number.isFinite(orderId) && rowOrderId === orderId) return false;
           return true;
         });
       });
       removeReservationShadow({
+        reservationId,
+        orderId,
+        tableNumber,
+      });
+      removeBookingFromViewBookingLists({
         reservationId,
         orderId,
         tableNumber,
@@ -1638,7 +1640,15 @@ const handleDeleteReservation = useCallback(
       toast.error(t("Failed to delete reservation"));
     }
   },
-  [fetchOrders, setOpenOrdersById, setOrders, setReservationsToday, t]
+  [
+    fetchOrders,
+    removeBookingFromViewBookingLists,
+    removeReservationShadow,
+    setOpenOrdersById,
+    setOrders,
+    setReservationsToday,
+    t,
+  ]
 );
 
 const handleCheckinReservation = useCallback(
@@ -1866,30 +1876,6 @@ const handleCheckinReservation = useCallback(
     const needsConfirmationFirst =
       needsConcertConfirmationFirst ||
       (isReservationAwaitingConfirmation && !canCheckInReservation);
-    console.log("[reservation-confirm-debug] handleCheckinReservation start", {
-      tableNumber,
-      reservationOwnedOrderId,
-      resolvedOrderId: orderId,
-      reservationId,
-      statusCandidates,
-      hasClosedLikeStatus,
-      hasLiveReservationRecord,
-      isConcertReservation,
-      needsConcertConfirmationFirst,
-      isReservationAwaitingConfirmation,
-      canCheckInReservation,
-      needsConfirmationFirst,
-      tableOrder: table?.order
-        ? {
-            id: table.order.id ?? null,
-            status: table.order.status ?? null,
-            order_type: table.order.order_type ?? table.order.orderType ?? null,
-            reservation_id: table.order.reservation_id ?? table.order.reservationId ?? null,
-          }
-        : null,
-      reservationInfo,
-      reservationFallback: table?.reservationFallback,
-    });
     if (needsConfirmationFirst) {
       let hasUnpaidItemsBeforeBookingConfirm = Boolean(table?.hasUnpaidItems);
       if (!hasUnpaidItemsBeforeBookingConfirm && Array.isArray(table?.order?.items)) {
@@ -1918,11 +1904,6 @@ const handleCheckinReservation = useCallback(
       }
 
       if (hasUnpaidItemsBeforeBookingConfirm) {
-        console.log("[reservation-confirm-debug] confirm blocked by unpaid items", {
-          tableNumber,
-          orderId,
-          reservationId,
-        });
         toast.warning(
           t("Unpaid items found. Please pay or close the current cart before confirming this booking.")
         );
@@ -1997,24 +1978,9 @@ const handleCheckinReservation = useCallback(
         }
 
         if (!Number.isFinite(targetOrderId) || targetOrderId <= 0) {
-          console.log("[reservation-confirm-debug] confirm failed to resolve target", {
-            tableNumber,
-            reservationOwnedOrderId,
-            reservationId,
-            tableOrderId: table?.order?.id ?? null,
-          });
           toast.warning(t("Reservation record not found"));
           return false;
         }
-
-        console.log("[reservation-confirm-debug] confirm request", {
-          tableNumber,
-          targetOrderId,
-          reservationOwnedOrderId,
-          reservationId,
-          tableOrderId: table?.order?.id ?? null,
-          tableOrderStatus: table?.order?.status ?? null,
-        });
 
         try {
           await sendConfirmRequest(targetOrderId);
@@ -2059,11 +2025,6 @@ const handleCheckinReservation = useCallback(
           tableNumber,
           orderId: targetOrderId,
         });
-        console.log("[reservation-confirm-debug] confirm request success", {
-          tableNumber,
-          targetOrderId,
-          confirmedReservation,
-        });
 
         setOrders((prev) =>
           (Array.isArray(prev) ? prev : []).map((row) => {
@@ -2106,7 +2067,9 @@ const handleCheckinReservation = useCallback(
           (Array.isArray(prev) ? prev : []).map((row) => {
             const rowReservationId = Number(row?.id);
             const rowOrderId = Number(row?.order_id ?? row?.orderId);
-            const rowTableNumber = Number(row?.table_number ?? row?.tableNumber ?? row?.table);
+            const rowTableNumber = normalizeTableKey(
+              row?.table_number ?? row?.tableNumber ?? row?.table
+            );
             const targetReservationId = Number(
               confirmedReservation?.id ??
                 reservationInfo?.id ??
@@ -2118,8 +2081,7 @@ const handleCheckinReservation = useCallback(
               (Number.isFinite(rowReservationId) && rowReservationId === targetReservationId) ||
               (Number.isFinite(rowOrderId) && rowOrderId === targetOrderId) ||
               (canFallbackToTableMatch &&
-                Number.isFinite(tableNumber) &&
-                rowTableNumber === tableNumber);
+                isSameTableNumber(rowTableNumber, tableNumber));
             if (!matchesReservation) return row;
             return {
               ...row,
@@ -2256,11 +2218,6 @@ const handleCheckinReservation = useCallback(
         }
 
         toast.success(t("Booking confirmed"));
-        console.log("[reservation-confirm-debug] confirm flow completed", {
-          tableNumber,
-          orderId,
-          reservationId,
-        });
         void Promise.all([
           fetchOrders({ skipHydration: true }),
           loadConcertBookingsForOverview(),
@@ -2275,13 +2232,6 @@ const handleCheckinReservation = useCallback(
       }
       return;
     }
-
-    console.log("[reservation-confirm-debug] proceeding to check-in path", {
-      tableNumber,
-      orderId,
-      reservationId,
-      hasClosedLikeStatus,
-    });
 
     const shouldUseOrderSnapshot =
       !hasClosedLikeStatus &&
@@ -2352,9 +2302,11 @@ const handleCheckinReservation = useCallback(
     try {
       let response = null;
       try {
-        response = Number.isFinite(orderId) && orderId > 0
-          ? await secureFetch(`/orders/${orderId}/reservations/checkin`, { method: "POST" })
-          : await secureFetch(`/orders/reservations/${reservationId}/checkin`, { method: "POST" });
+        response = await postReservationCheckinWithFallback({
+          request: secureFetch,
+          orderId,
+          reservationId,
+        });
       } catch (checkinErr) {
         const statusCode = Number(checkinErr?.details?.status);
         const errorCode = String(checkinErr?.details?.body?.code || "").toLowerCase();
@@ -2366,15 +2318,16 @@ const handleCheckinReservation = useCallback(
           );
           return;
         }
-        const message = String(checkinErr?.message || "").toLowerCase();
-        const shouldRetryAfterRestore =
-          statusCode === 404 &&
-          message.includes("reservation not found or cannot be checked in");
+        const shouldRetryAfterRestore = isReservationCheckinNotFoundError(checkinErr);
         if (!shouldRetryAfterRestore) throw checkinErr;
         const refreshedOrderId = await restoreReservationAndGetOrderId();
         if (!refreshedOrderId) throw checkinErr;
         orderId = refreshedOrderId;
-        response = await secureFetch(`/orders/${orderId}/reservations/checkin`, { method: "POST" });
+        response = await postReservationCheckinWithFallback({
+          request: secureFetch,
+          orderId,
+          reservationId,
+        });
       }
 
       const updatedOrder =
@@ -2455,17 +2408,14 @@ const handleCheckinReservation = useCallback(
       setReservationsToday((prev) => {
         const list = Array.isArray(prev) ? prev : [];
         const filtered = list.filter((row) => {
-          const rowTableNumber = Number(row?.table_number ?? row?.tableNumber ?? row?.table);
+          const rowTableNumber = normalizeTableKey(row?.table_number ?? row?.tableNumber ?? row?.table);
           const rowReservationId = Number(row?.id);
           const rowOrderId = Number(row?.order_id ?? row?.orderId);
-          if (Number.isFinite(tableNumber) && rowTableNumber === tableNumber) return false;
+          if (isSameTableNumber(rowTableNumber, tableNumber)) return false;
           if (Number.isFinite(reservationId) && rowReservationId === reservationId) return false;
           if (Number.isFinite(orderId) && rowOrderId === orderId) return false;
           return true;
         });
-        if (checkedInReservation) {
-          filtered.push(checkedInReservation);
-        }
         return filtered.sort((a, b) => Number(a?.table_number) - Number(b?.table_number));
       });
       if (checkedInReservation) {
@@ -2515,14 +2465,12 @@ const handleCheckinReservation = useCallback(
           }
           return resolved;
         });
-        try {
-          await secureFetch(`/tables/${tableNumber}`, {
-            method: "PATCH",
-            body: JSON.stringify({ guests: checkedInGuests }),
-          });
-        } catch (guestPatchErr) {
+        void secureFetch(`/tables/${tableNumber}`, {
+          method: "PATCH",
+          body: JSON.stringify({ guests: checkedInGuests }),
+        }).catch((guestPatchErr) => {
           console.error("❌ Failed to sync checked-in guests to table config:", guestPatchErr);
-        }
+        });
       }
 
       toast.success(t("Guest checked in"));
@@ -3148,8 +3096,10 @@ const handleTakeawayConcertTicketCheckIn = useCallback(
 
     try {
       setTakeawayCheckInSubmittingId(orderId);
-      const response = await secureFetch(`/orders/${orderId}/reservations/checkin`, {
-        method: "POST",
+      const response = await postReservationCheckinWithFallback({
+        request: secureFetch,
+        orderId,
+        reservationId: order?.reservation_id ?? order?.reservationId,
       });
       const updatedOrder =
         response?.order && typeof response.order === "object" ? response.order : null;
@@ -3218,28 +3168,8 @@ useEffect(() => {
 }, []);
 
   const loadConcertBookingsForOverview = useCallback(async (options = {}) => {
-    const { force = false, silentIfCached = true } = options || {};
-    const cached = readViewBookingOverviewCachePayload("concert");
-    const hasCachedRows = cached.rows.length > 0;
-    const isFresh =
-      hasCachedRows && cached.savedAt > 0 && Date.now() - cached.savedAt < VIEW_BOOKING_CACHE_TTL_MS;
-
-    if (!force && isFresh) {
-      setConcertBookings(cached.rows);
-      if (!hasUpcomingConcerts && hasCachedRows) {
-        setHasUpcomingConcerts(true);
-      }
-      return cached.rows;
-    }
-
-    if (hasCachedRows) {
-      setConcertBookings(cached.rows);
-      if (!hasUpcomingConcerts) {
-        setHasUpcomingConcerts(true);
-      }
-    }
-
-    const showLoading = !(silentIfCached && hasCachedRows);
+    void options;
+    const showLoading = true;
     if (showLoading) setConcertBookingsLoading(true);
     try {
       const eventsRes = await secureFetch("/concerts/events?include_hidden=true");
@@ -3252,11 +3182,6 @@ useEffect(() => {
         });
 
       if (eventsForOverview.length === 0) {
-        if (hasCachedRows && !force) {
-          setHasUpcomingConcerts(true);
-          setConcertBookings(cached.rows);
-          return cached.rows;
-        }
         setHasUpcomingConcerts(false);
         setConcertBookings([]);
         return [];
@@ -3318,46 +3243,22 @@ useEffect(() => {
           const bCreated = parseLooseDateToMs(b?.created_at) || 0;
           return bCreated - aCreated;
         });
-      if (merged.length === 0 && hasCachedRows && !force) {
-        setHasUpcomingConcerts(true);
-        setConcertBookings(cached.rows);
-        return cached.rows;
-      }
       setHasUpcomingConcerts(merged.length > 0);
       setConcertBookings(merged);
       return merged;
     } catch (err) {
       console.error("❌ Failed to load concert bookings for table overview:", err);
-      if (!hasCachedRows) {
-        setHasUpcomingConcerts(false);
-        setConcertBookings([]);
-        return [];
-      }
-      setHasUpcomingConcerts(true);
-      setConcertBookings(cached.rows);
-      return cached.rows;
+      setHasUpcomingConcerts(false);
+      setConcertBookings([]);
+      return [];
     } finally {
       if (showLoading) setConcertBookingsLoading(false);
     }
-  }, [hasUpcomingConcerts]);
+  }, []);
 
   const loadReservationBookingsForOverview = useCallback(async (options = {}) => {
-    const { force = false, silentIfCached = true } = options || {};
-    const cached = readViewBookingOverviewCachePayload("reservation");
-    const hasCachedRows = cached.rows.length > 0;
-    const isFresh =
-      hasCachedRows && cached.savedAt > 0 && Date.now() - cached.savedAt < VIEW_BOOKING_CACHE_TTL_MS;
-
-    if (!force && isFresh) {
-      setReservationBookingsOverview(cached.rows);
-      return cached.rows;
-    }
-
-    if (hasCachedRows) {
-      setReservationBookingsOverview(cached.rows);
-    }
-
-    const showLoading = !(silentIfCached && hasCachedRows);
+    void options;
+    const showLoading = true;
     if (showLoading) setReservationBookingsLoading(true);
     try {
       const response = await secureFetch("/orders/reservations");
@@ -3399,20 +3300,12 @@ useEffect(() => {
           const bCreated = parseLooseDateToMs(b?.created_at) || 0;
           return bCreated - aCreated;
         });
-      if (normalized.length === 0 && hasCachedRows && !force) {
-        setReservationBookingsOverview(cached.rows);
-        return cached.rows;
-      }
       setReservationBookingsOverview(normalized);
       return normalized;
     } catch (err) {
       console.error("❌ Failed to load reservations for table overview booking tab:", err);
-      if (!hasCachedRows) {
-        setReservationBookingsOverview([]);
-        return [];
-      }
-      setReservationBookingsOverview(cached.rows);
-      return cached.rows;
+      setReservationBookingsOverview([]);
+      return [];
     } finally {
       if (showLoading) setReservationBookingsLoading(false);
     }
@@ -3439,28 +3332,18 @@ useEffect(() => {
         }
         cancellationReason = trimmed;
       }
+      const bookingTableNumber = Number(
+        booking?.reserved_table_number ??
+          booking?.reservedTableNumber ??
+          booking?.table_number ??
+          booking?.tableNumber
+      );
+      const bookingOrderId = Number(
+        booking?.reservation_order_id ?? booking?.reservationOrderId ?? booking?.order_id ?? booking?.orderId
+      );
       setConcertBookingUpdatingId(numericBookingId);
       try {
-        await secureFetch(`/concerts/bookings/${numericBookingId}/payment-status`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            payment_status: paymentStatus,
-            ...(cancellationReason
-              ? {
-                  cancellation_reason: cancellationReason,
-                  cancel_reason: cancellationReason,
-                  reason: cancellationReason,
-                }
-              : {}),
-          }),
-        });
         if (normalizedNextStatus === "confirmed") {
-          const bookingTableNumber = Number(
-            booking?.reserved_table_number ?? booking?.reservedTableNumber ?? booking?.table_number ?? booking?.tableNumber
-          );
-          const bookingOrderId = Number(
-            booking?.reservation_order_id ?? booking?.reservationOrderId ?? booking?.order_id ?? booking?.orderId
-          );
           markBookingConfirmedLocally({
             tableNumber: Number.isFinite(bookingTableNumber) ? bookingTableNumber : null,
             reservationId: Number(booking?.id) || null,
@@ -3476,17 +3359,52 @@ useEffect(() => {
               bookingStatus: "confirmed",
             },
           });
+        } else if (isCancelling) {
+          removeBookingFromViewBookingLists({
+            tableNumber: Number.isFinite(bookingTableNumber) ? bookingTableNumber : null,
+            reservationId: numericBookingId,
+            orderId: Number.isFinite(bookingOrderId) ? bookingOrderId : null,
+          });
         }
+
+        await secureFetch(`/concerts/bookings/${numericBookingId}/payment-status`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            payment_status: paymentStatus,
+            ...(cancellationReason
+              ? {
+                  cancellation_reason: cancellationReason,
+                  cancel_reason: cancellationReason,
+                  reason: cancellationReason,
+                }
+              : {}),
+          }),
+        });
         toast.success(t("Saved successfully!"));
-        await Promise.all([loadConcertBookingsForOverview({ force: true }), fetchOrders()]);
+        void Promise.all([loadConcertBookingsForOverview({ force: true }), fetchOrders()]).catch(
+          () => {}
+        );
       } catch (err) {
         console.error("❌ Failed to update concert booking from table overview:", err);
+        await Promise.allSettled([
+          loadConcertBookingsForOverview({ force: true }),
+          loadReservationBookingsForOverview({ force: true }),
+          fetchOrders(),
+        ]);
         toast.error(err?.message || t("Failed to save changes"));
       } finally {
         setConcertBookingUpdatingId(null);
       }
     },
-    [concertBookings, fetchOrders, loadConcertBookingsForOverview, markBookingConfirmedLocally, t]
+    [
+      concertBookings,
+      fetchOrders,
+      loadConcertBookingsForOverview,
+      loadReservationBookingsForOverview,
+      markBookingConfirmedLocally,
+      removeBookingFromViewBookingLists,
+      t,
+    ]
   );
 
   const updateReservationBookingStatusFromOverview = useCallback(
@@ -3520,29 +3438,85 @@ useEffect(() => {
         order: tableOrderSnapshot,
         reservationFallback: booking,
       };
+      const nextStatusNormalized = String(nextStatus || "").toLowerCase();
+      const targetReservationId = Number(
+        booking?.id ?? booking?.reservation_id ?? booking?.reservationId
+      );
+      const candidateOrderIds = Array.from(
+        new Set(
+          [
+            booking?.order_id,
+            booking?.orderId,
+            booking?.reservation_order_id,
+            booking?.reservationOrderId,
+            tableOrderSnapshot?.id,
+            tableOrderSnapshot?.order_id,
+            tableOrderSnapshot?.orderId,
+            tableOrderSnapshot?.reservation?.order_id,
+            tableOrderSnapshot?.reservation?.orderId,
+            tableOrderSnapshot?.reservation?.id,
+            booking?.id,
+          ]
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value) && value > 0)
+        )
+      );
+      const primaryTargetOrderId = candidateOrderIds[0] ?? null;
 
       setReservationBookingUpdatingKey(bookingKey);
       try {
-        if (String(nextStatus || "").toLowerCase() === "confirmed") {
-          const targetOrderId = Number(booking?.order_id ?? booking?.orderId ?? booking?.id);
-          if (!Number.isFinite(targetOrderId) || targetOrderId <= 0) {
+        if (nextStatusNormalized === "confirmed") {
+          if (!Number.isFinite(primaryTargetOrderId) || primaryTargetOrderId <= 0) {
             toast.warning(t("Reservation record not found"));
             return;
           }
-          await secureFetch(`/orders/${targetOrderId}/status`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
+          markBookingConfirmedLocally({
+            tableNumber: Number.isFinite(tableNumber) ? tableNumber : null,
+            reservationId: Number.isFinite(targetReservationId) ? targetReservationId : null,
+            orderId: primaryTargetOrderId,
+            reservation: {
+              ...(booking || {}),
               status: "confirmed",
-              total: Number(tableOrderSnapshot?.total ?? booking?.total ?? 0) || 0,
-              payment_method:
-                tableOrderSnapshot?.payment_method ??
-                tableOrderSnapshot?.paymentMethod ??
-                booking?.payment_method ??
-                booking?.paymentMethod ??
-              "Unknown",
-            }),
+              reservation_status: "confirmed",
+              reservationStatus: "confirmed",
+              order_id: primaryTargetOrderId,
+              orderId: primaryTargetOrderId,
+            },
           });
+          let resolvedConfirmedOrderId = primaryTargetOrderId;
+          let lastResolvableError = null;
+          for (const candidateId of candidateOrderIds) {
+            try {
+              await secureFetch(`/orders/${candidateId}/status`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  status: "confirmed",
+                  total: Number(tableOrderSnapshot?.total ?? booking?.total ?? 0) || 0,
+                  payment_method:
+                    tableOrderSnapshot?.payment_method ??
+                    tableOrderSnapshot?.paymentMethod ??
+                    booking?.payment_method ??
+                    booking?.paymentMethod ??
+                    "Unknown",
+                }),
+              });
+              resolvedConfirmedOrderId = candidateId;
+              lastResolvableError = null;
+              break;
+            } catch (candidateErr) {
+              const statusCode = Number(candidateErr?.details?.status);
+              const message = String(candidateErr?.message || "").toLowerCase();
+              const canRetryWithAnotherCandidate =
+                statusCode === 404 ||
+                message.includes("not found") ||
+                message.includes("cannot");
+              if (!canRetryWithAnotherCandidate) throw candidateErr;
+              lastResolvableError = candidateErr;
+            }
+          }
+          if (lastResolvableError) throw lastResolvableError;
+
           const confirmedReservation = buildReservationShadowRecord({
             reservation: { ...(booking || {}), status: "confirmed" },
             order: tableOrderSnapshot
@@ -3557,7 +3531,7 @@ useEffect(() => {
                 }
               : null,
             tableNumber,
-            orderId: targetOrderId,
+            orderId: resolvedConfirmedOrderId,
           });
           if (confirmedReservation) {
             upsertReservationShadow(confirmedReservation);
@@ -3565,7 +3539,7 @@ useEffect(() => {
           markBookingConfirmedLocally({
             tableNumber,
             reservationId: confirmedReservation?.id ?? Number(booking?.id),
-            orderId: targetOrderId,
+            orderId: resolvedConfirmedOrderId,
             reservation: confirmedReservation,
           });
           setReservationsToday((prev) =>
@@ -3574,7 +3548,7 @@ useEffect(() => {
               const rowOrderId = Number(row?.order_id ?? row?.orderId);
               const matchesReservation =
                 rowReservationId === Number(booking?.id) ||
-                rowOrderId === targetOrderId;
+                rowOrderId === resolvedConfirmedOrderId;
               if (!matchesReservation) return row;
               return {
                 ...row,
@@ -3584,7 +3558,7 @@ useEffect(() => {
             })
           );
           toast.success(t("Saved successfully!"));
-        } else if (String(nextStatus || "").toLowerCase() === "cancelled") {
+        } else if (nextStatusNormalized === "cancelled") {
           const input = window.prompt(t("Enter a cancellation reason."));
           if (input === null) {
             return;
@@ -3599,7 +3573,19 @@ useEffect(() => {
             skipConfirm: true,
           });
         }
-        await Promise.all([loadReservationBookingsForOverview({ force: true }), fetchOrders()]);
+        void Promise.all([
+          loadReservationBookingsForOverview({ force: true }),
+          loadConcertBookingsForOverview({ force: true }),
+          fetchOrders(),
+        ]).catch(() => {});
+      } catch (err) {
+        console.error("❌ Failed to update reservation booking from table overview:", err);
+        await Promise.allSettled([
+          loadReservationBookingsForOverview({ force: true }),
+          loadConcertBookingsForOverview({ force: true }),
+          fetchOrders(),
+        ]);
+        toast.error(err?.message || t("Failed to save changes"));
       } finally {
         setReservationBookingUpdatingKey(null);
       }
@@ -3608,6 +3594,7 @@ useEffect(() => {
       effectiveOrdersByTableRaw,
       fetchOrders,
       handleDeleteReservation,
+      loadConcertBookingsForOverview,
       loadReservationBookingsForOverview,
       markBookingConfirmedLocally,
       t,
@@ -4129,8 +4116,10 @@ useEffect(() => {
     if (!detail || typeof detail !== "object") return false;
     if (detail.kind !== "tableoverview_order_status") return false;
 
-    const tableNumber = Number(detail.table_number);
-    if (!Number.isFinite(tableNumber)) return false;
+    const tableNumberRaw = detail.table_number;
+    const tableNumberKey = normalizeTableKey(tableNumberRaw);
+    if (!tableNumberKey) return false;
+    const tableNumber = Number(tableNumberRaw);
 
     const nextStatus = String(detail.status || "").toLowerCase();
     const markItemsPaid = (items) => {
@@ -4150,37 +4139,48 @@ useEffect(() => {
       }));
     };
     const patchStartedAt = performance.now();
+    let didMutateOrder = false;
     setOrders((prev) => {
       const prevArr = Array.isArray(prev) ? prev : [];
 
-      if (nextStatus === "closed") {
-        const next = prevArr.filter((o) => Number(o?.table_number) !== tableNumber);
+      if (LOCAL_REMOVE_ORDER_STATUSES.has(nextStatus)) {
+        const next = prevArr.filter(
+          (o) =>
+            !isSameTableNumber(
+              o?.table_number ?? o?.tableNumber ?? o?.table_id ?? o?.tableId ?? o?.table,
+              tableNumberKey
+            )
+        );
+        didMutateOrder = next.length !== prevArr.length;
         next.sort((a, b) => Number(a.table_number) - Number(b.table_number));
         return next;
       }
 
-      let found = false;
       const orderId =
         detail.order_id === null || detail.order_id === undefined
           ? null
           : Number(detail.order_id);
 
-    const incomingPatch = detail.patch && typeof detail.patch === "object" ? detail.patch : null;
-    const patch =
-      nextStatus === "paid"
-        ? {
-            payment_status: "paid",
-            is_paid: true,
-            ...(incomingPatch || null),
-          }
-        : {
-            status: detail.status,
-            ...(incomingPatch || null),
-          };
+      const incomingPatch = detail.patch && typeof detail.patch === "object" ? detail.patch : null;
+      const patch =
+        nextStatus === "paid"
+          ? {
+              payment_status: "paid",
+              is_paid: true,
+              ...(incomingPatch || null),
+            }
+          : {
+              status: detail.status,
+              ...(incomingPatch || null),
+            };
 
       const next = prevArr.map((o) => {
-        if (Number(o?.table_number) !== tableNumber) return o;
-        found = true;
+        const sameTable = isSameTableNumber(
+          o?.table_number ?? o?.tableNumber ?? o?.table_id ?? o?.tableId ?? o?.table,
+          tableNumberKey
+        );
+        if (!sameTable) return o;
+        didMutateOrder = true;
         const shouldPreserveCheckedInOnPaid =
           nextStatus === "paid" &&
           normalizeOrderStatus(o?.status) === "checked_in" &&
@@ -4214,24 +4214,9 @@ useEffect(() => {
                 suborders: markSubordersPaid(paidSubordersSource),
               }
             : null),
-          table_number: tableNumber,
+          table_number: Number.isFinite(tableNumber) ? tableNumber : tableNumberRaw,
         };
       });
-
-      if (!found) {
-        next.push({
-          ...(orderId != null && Number.isFinite(orderId) ? { id: orderId } : null),
-          table_number: tableNumber,
-          ...patch,
-          ...(nextStatus === "paid" ? { status: "paid" } : null),
-          ...(nextStatus === "paid"
-            ? {
-                items: markItemsPaid(incomingPatch?.items),
-                suborders: markSubordersPaid(incomingPatch?.suborders),
-              }
-            : null),
-        });
-      }
 
       next.sort((a, b) => Number(a.table_number) - Number(b.table_number));
       return next;
@@ -4285,7 +4270,7 @@ useEffect(() => {
       });
     }
 
-    return true;
+    return didMutateOrder;
   };
 
   const applyLocalKitchenStatusPatch = (detail) => {
@@ -4397,20 +4382,31 @@ useEffect(() => {
       }));
     };
     const normalizedTableNumber = Number(tableNumber);
+    const normalizedTableKey = normalizeTableKey(tableNumber);
     const hasTableNumber = Number.isFinite(normalizedTableNumber);
+    const hasTableKey = Boolean(normalizedTableKey);
     const normalizedOrderId = Number(orderId);
     const hasOrderId = Number.isFinite(normalizedOrderId);
-    if (!hasTableNumber && !hasOrderId) return false;
+    if (!hasTableKey && !hasOrderId) return false;
+    let didMutateOrder = false;
     setOrders((prev) => {
       const prevArr = Array.isArray(prev) ? prev : [];
 
-      if (nextStatus === "closed") {
-        if (hasTableNumber) {
-          const next = prevArr.filter((o) => Number(o?.table_number) !== normalizedTableNumber);
+      if (LOCAL_REMOVE_ORDER_STATUSES.has(nextStatus)) {
+        if (hasTableKey) {
+          const next = prevArr.filter(
+            (o) =>
+              !isSameTableNumber(
+                o?.table_number ?? o?.tableNumber ?? o?.table_id ?? o?.tableId ?? o?.table,
+                normalizedTableKey
+              )
+          );
+          didMutateOrder = next.length !== prevArr.length;
           next.sort((a, b) => Number(a.table_number) - Number(b.table_number));
           return next;
         }
         const next = prevArr.filter((o) => Number(o?.id) !== normalizedOrderId);
+        didMutateOrder = next.length !== prevArr.length;
         next.sort((a, b) => Number(a.table_number) - Number(b.table_number));
         return next;
       }
@@ -4423,12 +4419,16 @@ useEffect(() => {
             }
           : { status: status };
 
-      let found = false;
       const next = prevArr.map((o) => {
-        const sameTable = hasTableNumber && Number(o?.table_number) === normalizedTableNumber;
+        const sameTable =
+          hasTableKey &&
+          isSameTableNumber(
+            o?.table_number ?? o?.tableNumber ?? o?.table_id ?? o?.tableId ?? o?.table,
+            normalizedTableKey
+          );
         const sameOrder = hasOrderId && Number(o?.id) === normalizedOrderId;
         if (!sameTable && !sameOrder) return o;
-        found = true;
+        didMutateOrder = true;
         const shouldPreserveCheckedInOnPaid =
           nextStatus === "paid" &&
           normalizeOrderStatus(o?.status) === "checked_in" &&
@@ -4454,7 +4454,11 @@ useEffect(() => {
             : null;
         return {
           ...o,
-          ...(hasTableNumber ? { table_number: normalizedTableNumber } : null),
+          ...(hasTableNumber
+            ? { table_number: normalizedTableNumber }
+            : hasTableKey
+            ? { table_number: normalizedTableKey }
+            : null),
           ...(hasOrderId ? { id: normalizedOrderId } : null),
           ...basePatch,
           ...(patchObj || null),
@@ -4470,30 +4474,11 @@ useEffect(() => {
         };
       });
 
-      if (!found && hasTableNumber) {
-        const patchObj = patch && typeof patch === "object" ? patch : null;
-        next.push({
-          ...(hasOrderId ? { id: normalizedOrderId } : null),
-          table_number: normalizedTableNumber,
-          ...basePatch,
-          ...(patchObj || null),
-          ...(nextStatus === "paid" ? { status: "paid" } : null),
-          ...(nextStatus === "paid"
-            ? {
-                payment_status: "paid",
-                is_paid: true,
-                items: markItemsPaid(patchObj?.items),
-                suborders: markSubordersPaid(patchObj?.suborders),
-              }
-            : null),
-        });
-      }
-
       next.sort((a, b) => Number(a.table_number) - Number(b.table_number));
       return next;
     });
 
-    return true;
+    return didMutateOrder;
   };
 
   const onOrderConfirmedSocket = (payload) => {
@@ -4512,7 +4497,14 @@ useEffect(() => {
         ...(order?.order_type ? { order_type: order.order_type } : null),
       },
     });
-    if (didPatch) scheduleBackgroundRefetch();
+    if (isTable10(tableNumber)) {
+      logTable10("socket:order_confirmed", { tableNumber, orderId, payload });
+    }
+    if (didPatch) {
+      scheduleBackgroundRefetch();
+      return;
+    }
+    refetch();
   };
 
   const onPaymentMadeSocket = (payload) => {
@@ -4527,6 +4519,9 @@ useEffect(() => {
       orderId,
       patch: { is_paid: true, payment_status: "paid" },
     });
+    if (isTable10(tableNumber)) {
+      logTable10("socket:payment_made", { tableNumber, orderId, payload });
+    }
     if (didPatch) {
       scheduleBackgroundRefetch();
       return;
@@ -4540,18 +4535,28 @@ useEffect(() => {
     if (import.meta.env.DEV) console.log("[socket] order_cancelled", payload?.order ? "with order" : "raw", payload);
     const tableNumber = Number(payload?.table_number ?? payload?.order?.table_number);
     const orderId = Number(payload?.orderId ?? payload?.order_id ?? payload?.order?.id);
+    const nextStatus = normalizeOrderStatus(
+      payload?.status ?? payload?.order?.status ?? "cancelled"
+    );
     const didPatch = patchTableOrderLocally({
-      status: "cancelled",
+      status: nextStatus || "cancelled",
       tableNumber,
       orderId,
       patch: { total: 0 },
     });
-    if (didPatch) scheduleBackgroundRefetch();
+    if (isTable10(tableNumber)) {
+      logTable10("socket:order_cancelled", { tableNumber, orderId, payload });
+    }
+    if (didPatch) {
+      scheduleBackgroundRefetch();
+      return;
+    }
+    refetch();
   };
 
   const onOrderClosedSocket = (payload) => {
-    const tableNumber = Number(payload?.table_number);
-    const orderId = Number(payload?.orderId ?? payload?.order_id);
+    const tableNumber = Number(payload?.table_number ?? payload?.order?.table_number);
+    const orderId = Number(payload?.orderId ?? payload?.order_id ?? payload?.order?.id);
     
     // Clean up recently closed tracking since server confirmed the close
     let cleaned = false;
@@ -4571,6 +4576,9 @@ useEffect(() => {
       tableNumber,
       orderId,
     });
+    if (isTable10(tableNumber)) {
+      logTable10("socket:order_closed", { tableNumber, orderId, payload });
+    }
     
     if (didPatch) {
       scheduleBackgroundRefetch();
@@ -4598,6 +4606,9 @@ useEffect(() => {
         payload?.reservation?.orderId ??
         payload?.order?.id
     );
+    if (isTable10(tableNumber)) {
+      logTable10("socket:reservation_checked_out", { tableNumber, reservationId, orderId, payload });
+    }
     removeReservationShadow({
       reservationId: Number.isFinite(reservationId) ? reservationId : null,
       orderId: Number.isFinite(orderId) ? orderId : null,
@@ -4607,10 +4618,10 @@ useEffect(() => {
     setReservationsToday((prev) => {
       const list = Array.isArray(prev) ? prev : [];
       return list.filter((row) => {
-        const rowTableNumber = Number(row?.table_number ?? row?.tableNumber ?? row?.table);
+        const rowTableNumber = normalizeTableKey(row?.table_number ?? row?.tableNumber ?? row?.table);
         const rowReservationId = Number(row?.id);
         const rowOrderId = Number(row?.order_id ?? row?.orderId);
-        if (rowTableNumber === tableNumber) return false;
+        if (isSameTableNumber(rowTableNumber, tableNumber)) return false;
         if (Number.isFinite(reservationId) && rowReservationId === reservationId) {
           return false;
         }
@@ -4734,7 +4745,16 @@ const ordersByTable = React.useMemo(
             if (Number.isFinite(orderId) && recentlyClosedRef.current.has(`order_${orderId}`)) {
               return false;
             }
-            return !isOrderCancelledOrCanceled(order?.status) && !isEffectivelyFreeOrder(order);
+            const status = normalizeOrderStatus(order?.status);
+            if (
+              status === "closed" ||
+              status === "completed" ||
+              status === "deleted" ||
+              status === "void"
+            ) {
+              return false;
+            }
+            return !isOrderCancelledOrCanceled(status) && !isEffectivelyFreeOrder(order);
           });
           if (visibleOrders.length === 0) return;
           map.set(tableNumber, visibleOrders[0]);
@@ -4754,6 +4774,15 @@ const reservationsForModel = React.useMemo(() => {
     if (normalized === "reserved") return 1;
     return 0;
   };
+  const pendingConcertPaymentStatuses = new Set([
+    "pending",
+    "pending_bank_transfer",
+    "awaiting_confirm",
+    "awaiting_confirmation",
+    "pending_confirmation",
+    "unconfirmed",
+    "unpaid",
+  ]);
 
   (Array.isArray(effectiveReservationsToday) ? effectiveReservationsToday : []).forEach((reservation) => {
     if (!isReservationRelevantForTableState(reservation)) return;
@@ -4762,7 +4791,7 @@ const reservationsForModel = React.useMemo(() => {
       reservation?.table_number ?? reservation?.tableNumber ?? reservation?.table
     );
     if (!Number.isFinite(tableNumber)) return;
-    byTable.set(tableNumber, reservation);
+    byTable.set(normalizeTableKey(tableNumber), reservation);
   });
 
   (Array.isArray(concertBookings) ? concertBookings : []).forEach((booking) => {
@@ -4782,6 +4811,21 @@ const reservationsForModel = React.useMemo(() => {
     const reservationOrderStatus = normalizeOrderStatus(
       booking?.reservation_order_status ?? booking?.reservationOrderStatus
     );
+    const isCheckedIn = reservationOrderStatus === "checked_in";
+    const isBookingConfirmed = bookingStatus === "confirmed";
+    const isPaymentConfirmed = paymentStatus === "confirmed";
+    const isPendingPayment = pendingConcertPaymentStatuses.has(paymentStatus);
+    const isReservedLikeLifecycle =
+      reservationOrderStatus === "reserved" || reservationOrderStatus === "confirmed";
+
+    if (!isCheckedIn && !isBookingConfirmed && !isPaymentConfirmed && !isReservedLikeLifecycle) {
+      return;
+    }
+    // Do not mark the table reserved before the concert booking is confirmed.
+    // Pending bank transfer/awaiting confirmation must stay free in floor plan.
+    if (!isCheckedIn && isPendingPayment && !isBookingConfirmed && !isPaymentConfirmed) {
+      return;
+    }
 
     const synthesizedStatus =
       reservationOrderStatus ||
@@ -4814,9 +4858,9 @@ const reservationsForModel = React.useMemo(() => {
       booking_status: booking?.booking_status ?? booking?.bookingStatus ?? booking?.status ?? null,
     };
 
-    const existing = byTable.get(tableNumber);
+    const existing = byTable.get(normalizeTableKey(tableNumber));
     if (!existing || getReservationPriority(synthesized.status) >= getReservationPriority(existing?.status)) {
-      byTable.set(tableNumber, { ...(existing || {}), ...synthesized });
+      byTable.set(normalizeTableKey(tableNumber), { ...(existing || {}), ...synthesized });
     }
   });
 
@@ -4828,6 +4872,16 @@ const reservationsForModel = React.useMemo(() => {
       const ordersForTable = Array.isArray(tableOrders) ? tableOrders : [];
       const reservationOrder = ordersForTable.find((order) => {
         const status = normalizeOrderStatus(order?.status);
+        if (
+          status === "closed" ||
+          status === "completed" ||
+          status === "deleted" ||
+          status === "void" ||
+          status === "cancelled" ||
+          status === "canceled"
+        ) {
+          return false;
+        }
         if (!hasReservationSignal(order)) return false;
         return status === "reserved" || status === "checked_in" || order?.order_type === "reservation";
       });
@@ -4877,13 +4931,13 @@ const reservationsForModel = React.useMemo(() => {
           "",
       };
 
-      const existing = byTable.get(tableNumber);
+      const existing = byTable.get(normalizeTableKey(tableNumber));
       if (!existing) {
-        byTable.set(tableNumber, synthesized);
+        byTable.set(normalizeTableKey(tableNumber), synthesized);
         return;
       }
 
-      byTable.set(tableNumber, {
+      byTable.set(normalizeTableKey(tableNumber), {
         ...existing,
         table_number: existing?.table_number ?? existing?.tableNumber ?? tableNumber,
         status: normalizeOrderStatus(existing?.status) || synthesized.status,
@@ -4905,8 +4959,32 @@ const reservationsForModel = React.useMemo(() => {
     }
   );
 
-  return Array.from(byTable.values());
+  const derived = Array.from(byTable.values());
+  if (import.meta.env.DEV) {
+    const table10Rows = derived.filter((row) =>
+      isTable10(row?.table_number ?? row?.tableNumber ?? row?.table)
+    );
+    if (table10Rows.length > 0) {
+      logTable10("selector:reservationsForModel", table10Rows);
+    }
+  }
+  return derived;
 }, [concertBookings, effectiveOrdersByTableRaw, effectiveReservationsToday]);
+
+useEffect(() => {
+  if (!import.meta.env.DEV) return;
+  const table10Orders =
+    effectiveOrdersByTableRaw instanceof Map
+      ? effectiveOrdersByTableRaw.get(10) || effectiveOrdersByTableRaw.get("10")
+      : null;
+  const table10Reservations = (Array.isArray(reservationsForModel) ? reservationsForModel : []).filter(
+    (row) => isTable10(row?.table_number ?? row?.tableNumber ?? row?.table)
+  );
+  logTable10("derived:tableoverview", {
+    ordersByTableRaw: table10Orders,
+    reservationsForModel: table10Reservations,
+  });
+}, [effectiveOrdersByTableRaw, reservationsForModel]);
 
 const { tables } = useTablesModel({
   tableConfigs: effectiveTableConfigs,

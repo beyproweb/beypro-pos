@@ -3280,6 +3280,7 @@ function OrderTypeSelect({
   onStatusShortcutToggle,
   reservationEnabled = true,
   tableEnabled = true,
+  onRequestAuthView = null,
 }) {
 
   /* ============================================================
@@ -4911,6 +4912,7 @@ async function load() {
         todayName={todayName}
         shopHours={shopHours}
         loadingShopHours={loadingShopHours}
+        onRequestAuthView={onRequestAuthView}
         languageControl={
           <LanguageSwitcher
             lang={lang}
@@ -9136,7 +9138,12 @@ export default function QrMenu() {
         params.set("ticket_type_id", requestedTicketTypeId);
       }
       const resolvedPath = params.toString() ? `${pathname}?${params.toString()}` : pathname;
-      navigate(resolvedPath);
+      navigate(resolvedPath, {
+        state: {
+          prefetchedConcertEvent: event,
+          prefetchedAt: Date.now(),
+        },
+      });
     },
     [
       id,
@@ -9165,7 +9172,12 @@ export default function QrMenu() {
           search: location.search,
           concertId: event.id,
         });
-        navigate(bookingPath);
+        navigate(bookingPath, {
+          state: {
+            prefetchedConcertEvent: event,
+            prefetchedAt: Date.now(),
+          },
+        });
         return;
       }
       const bookingPath = buildReservationBookingPath({
@@ -9742,6 +9754,7 @@ export default function QrMenu() {
             onStatusShortcutToggle={handleHeaderStatusShortcutToggle}
             reservationEnabled={true}
             tableEnabled={allowTableOrder}
+            onRequestAuthView={openFullScreenAuth}
           />
 
           {!orderType && showOrderTypePrompt && (

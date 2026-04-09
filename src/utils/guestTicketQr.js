@@ -1,5 +1,9 @@
 import secureFetch from "./secureFetch";
 import { PUBLIC_RESTAURANT_BASE_URL } from "./publicRestaurantUrl";
+import {
+  isReservationCheckinNotFoundError,
+  postReservationCheckinWithFallback,
+} from "./reservationCheckin";
 
 const TOKEN_QUERY_KEYS = ["token", "qr_token", "jwt", "table_token"];
 const JWT_TOKEN_REGEX = /([A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+)/;
@@ -188,8 +192,13 @@ export async function checkInGuestTicket(result) {
   }
 
   try {
-    return await secureFetch(`/orders/${targetId}/reservations/checkin`, {
-      method: "POST",
+    return await postReservationCheckinWithFallback({
+      request: secureFetch,
+      orderId: targetId,
+      reservationId:
+        result?.raw?.reservation_id ??
+        result?.raw?.reservationId ??
+        result?.raw?.id,
     });
   } catch (error) {
     const status = Number(error?.details?.status || 0);
@@ -197,7 +206,7 @@ export async function checkInGuestTicket(result) {
     const code = normalizeText(body?.code || error?.code).toLowerCase();
     const message = body?.error || error?.message || "Failed to check in guest";
 
-    if (status === 404) {
+    if (status === 404 || isReservationCheckinNotFoundError(error)) {
       throw buildScanError(message, "booking_not_found", "booking_not_found", error?.details);
     }
     if (status === 409 && code === "concert_booking_unconfirmed") {

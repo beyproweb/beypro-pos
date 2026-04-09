@@ -11,6 +11,10 @@ import {
   isReservationConfirmedForCheckin,
   isReservationPendingConfirmation,
 } from "../../../utils/reservationStatus";
+import {
+  isReservationCheckinNotFoundError,
+  postReservationCheckinWithFallback,
+} from "../../../utils/reservationCheckin";
 
 const CHECKIN_REGRESSION_STATUSES = new Set([
   "reserved",
@@ -384,6 +388,39 @@ export const useReservation = ({
     }
     setReservationLoading(true);
     try {
+      const currentOrderId = Number(order?.id);
+      const currentTableNumber = Number(
+        resolvedTableNumber ?? order?.table_number ?? order?.tableNumber ?? tableId
+      );
+      const existingReservationId = Number(existingReservation?.id);
+      const existingReservationOrderId = Number(
+        existingReservation?.order_id ?? existingReservation?.orderId
+      );
+      const existingReservationTableNumber = Number(
+        existingReservation?.table_number ??
+          existingReservation?.tableNumber ??
+          existingReservation?.table
+      );
+      const matchesCurrentOrder =
+        Number.isFinite(currentOrderId) &&
+        currentOrderId > 0 &&
+        ((Number.isFinite(existingReservationId) &&
+          existingReservationId > 0 &&
+          existingReservationId === currentOrderId) ||
+          (Number.isFinite(existingReservationOrderId) &&
+            existingReservationOrderId > 0 &&
+            existingReservationOrderId === currentOrderId));
+      const matchesCurrentTable =
+        !Number.isFinite(currentTableNumber) ||
+        !Number.isFinite(existingReservationTableNumber) ||
+        existingReservationTableNumber === currentTableNumber;
+      const canUpdateExistingReservation =
+        Boolean(existingReservation) &&
+        Number.isFinite(existingReservationId) &&
+        existingReservationId > 0 &&
+        matchesCurrentOrder &&
+        matchesCurrentTable;
+
       const payload = {
         reservation_date: reservationDate,
         reservation_time: reservationTime,
@@ -392,14 +429,16 @@ export const useReservation = ({
         customer_name: reservationCustomerName.trim(),
         customer_phone: reservationCustomerPhone.trim(),
         order_id: order?.id || null,
+        table_number:
+          Number.isFinite(currentTableNumber) && currentTableNumber > 0 ? currentTableNumber : null,
       };
 
-      const endpoint = existingReservation
-        ? `/orders/reservations/${existingReservation.id}${identifier}`
+      const endpoint = canUpdateExistingReservation
+        ? `/orders/reservations/${existingReservationId}${identifier}`
         : `/orders/reservations${identifier}`;
 
       const response = await txApiRequest(endpoint, {
-        method: existingReservation ? "PUT" : "POST",
+        method: canUpdateExistingReservation ? "PUT" : "POST",
         body: JSON.stringify(payload),
       });
 
@@ -543,6 +582,7 @@ export const useReservation = ({
     resetReservationForm,
     normalizeReservationCandidate,
     reservationDebugEnabled,
+    tableId,
   ]);
 
   const handleDeleteReservation = useCallback(async () => {
@@ -701,11 +741,12 @@ export const useReservation = ({
 
   const handleCheckinReservation = useCallback(async () => {
     if (!existingReservation?.reservation_date) return;
+    const currentOrderId = Number(order?.id);
     let targetOrderId = Number(
-      existingReservation?.order_id ??
+      (Number.isFinite(currentOrderId) && currentOrderId > 0 ? currentOrderId : null) ??
+        existingReservation?.order_id ??
         existingReservation?.orderId ??
-        existingReservation?.id ??
-        order?.id
+        existingReservation?.id
     );
     if (!Number.isFinite(targetOrderId) || targetOrderId <= 0) {
       showToast(t("Reservation record not found"));
@@ -948,8 +989,11 @@ export const useReservation = ({
     try {
       let response = null;
       try {
-        response = await txApiRequest(`/orders/${targetOrderId}/reservations/checkin${identifier}`, {
-          method: "POST",
+        response = await postReservationCheckinWithFallback({
+          request: txApiRequest,
+          orderId: targetOrderId,
+          reservationId: existingReservation?.id,
+          pathSuffix: identifier,
         });
       } catch (checkinErr) {
         const statusCode = Number(checkinErr?.details?.status);
@@ -962,16 +1006,16 @@ export const useReservation = ({
           );
           return;
         }
-        const message = String(checkinErr?.message || "").toLowerCase();
-        const shouldRetryAfterRestore =
-          statusCode === 404 &&
-          message.includes("reservation not found or cannot be checked in");
+        const shouldRetryAfterRestore = isReservationCheckinNotFoundError(checkinErr);
         if (!shouldRetryAfterRestore) throw checkinErr;
         const refreshedTarget = await restoreReservationAndGetTarget();
         if (!refreshedTarget) throw checkinErr;
         targetOrderId = refreshedTarget;
-        response = await txApiRequest(`/orders/${targetOrderId}/reservations/checkin${identifier}`, {
-          method: "POST",
+        response = await postReservationCheckinWithFallback({
+          request: txApiRequest,
+          orderId: targetOrderId,
+          reservationId: existingReservation?.id,
+          pathSuffix: identifier,
         });
       }
       if (response?.success === false) {

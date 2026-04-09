@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { X } from "lucide-react";
+import { Check, ChevronDown, X } from "lucide-react";
 import FloorPlanView from "./FloorPlanView";
 import TableDetailsSheet from "./TableDetailsSheet";
 import {
@@ -23,7 +23,7 @@ function normalizePickerGuestSelection(selectedGuests, options = []) {
   return options.length > 0 ? options[0] : 0;
 }
 
-const STATUS_FILTER_KEYS = ["available", "reserved", "occupied", "blocked"];
+const DEFAULT_STATUS_FILTER_KEYS = ["available", "pending_hold", "reserved", "occupied", "blocked"];
 const ALL_ZONES_KEY = "__all__";
 const PICKER_STATUS_TONES = {
   available: {
@@ -31,6 +31,12 @@ const PICKER_STATUS_TONES = {
     border: "#3b82f6",
     text: "#1d4ed8",
     dot: "#60a5fa",
+  },
+  pending_hold: {
+    fill: "#fff7ed",
+    border: "#ea580c",
+    text: "#9a3412",
+    dot: "#fb923c",
   },
 };
 const PICKER_TABLE_STATUS_STYLES = {
@@ -45,46 +51,6 @@ const PICKER_TABLE_STATUS_STYLES = {
     text: "#eff6ff",
   },
 };
-
-function FilterPill({
-  active,
-  compact = false,
-  dotColor,
-  label,
-  value = "",
-  onClick,
-  tone = {},
-  className = "",
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[
-        "inline-flex items-center gap-2 rounded-full border font-semibold transition",
-        compact ? "min-h-[34px] px-3 py-1.5 text-[11px] sm:min-h-[36px]" : "min-h-[38px] px-3 py-2 text-[11px] sm:min-h-[40px] sm:px-4 sm:text-xs",
-        className,
-      ].join(" ")}
-      style={
-        active
-          ? {
-              backgroundColor: tone.fill,
-              borderColor: tone.border,
-              color: tone.text,
-            }
-          : {
-              backgroundColor: "transparent",
-              borderColor: tone.border,
-              color: tone.border,
-            }
-      }
-    >
-      <span className={compact ? "h-2 w-2 rounded-full" : "h-2.5 w-2.5 rounded-full"} style={{ backgroundColor: dotColor }} />
-      <span>{label}</span>
-      {value ? <span className="opacity-75">{value}</span> : null}
-    </button>
-  );
-}
 
 function translateFloorPlanReason(reason, t) {
   const normalizedReason = String(reason || "").trim();
@@ -112,6 +78,7 @@ export default function FloorPlanPickerModal({
   selectedTableNumber = null,
   accentColor = "#111827",
   guestCompositionProps = null,
+  statusFilterKeys = DEFAULT_STATUS_FILTER_KEYS,
   onClose,
   onConfirm,
 }) {
@@ -122,8 +89,19 @@ export default function FloorPlanPickerModal({
     [layout, tableStates, tables]
   );
   const [activeTable, setActiveTable] = React.useState(null);
-  const [selectedStatuses, setSelectedStatuses] = React.useState(STATUS_FILTER_KEYS);
+  const resolvedStatusFilterKeys = React.useMemo(
+    () =>
+      Array.isArray(statusFilterKeys) && statusFilterKeys.length > 0
+        ? statusFilterKeys
+        : DEFAULT_STATUS_FILTER_KEYS,
+    [statusFilterKeys]
+  );
+  const [selectedStatuses, setSelectedStatuses] = React.useState(resolvedStatusFilterKeys);
   const [selectedZone, setSelectedZone] = React.useState(ALL_ZONES_KEY);
+  const [statusMenuOpen, setStatusMenuOpen] = React.useState(false);
+  const [zoneMenuOpen, setZoneMenuOpen] = React.useState(false);
+  const statusMenuRef = React.useRef(null);
+  const zoneMenuRef = React.useRef(null);
   const hasLiveTables = Array.isArray(tables) && tables.length > 0;
 
   const tableElements = React.useMemo(
@@ -185,10 +163,20 @@ export default function FloorPlanPickerModal({
   React.useEffect(() => {
     if (!open) {
       setActiveTable(null);
-      setSelectedStatuses(STATUS_FILTER_KEYS);
+      setSelectedStatuses(resolvedStatusFilterKeys);
       setSelectedZone(ALL_ZONES_KEY);
+      setStatusMenuOpen(false);
+      setZoneMenuOpen(false);
     }
-  }, [open]);
+  }, [open, resolvedStatusFilterKeys]);
+
+  React.useEffect(() => {
+    setSelectedStatuses((prev) => {
+      const next = prev.filter((value) => resolvedStatusFilterKeys.includes(value));
+      if (next.length > 0) return next;
+      return resolvedStatusFilterKeys;
+    });
+  }, [resolvedStatusFilterKeys]);
 
   React.useEffect(() => {
     if (!activeTable) return;
@@ -209,6 +197,24 @@ export default function FloorPlanPickerModal({
       setActiveTable(nextActiveTable);
     }
   }, [activeTable, tableElements]);
+
+  React.useEffect(() => {
+    if (!statusMenuOpen && !zoneMenuOpen) return undefined;
+    const handlePointerDown = (event) => {
+      if (!statusMenuRef.current?.contains(event.target)) {
+        setStatusMenuOpen(false);
+      }
+      if (!zoneMenuRef.current?.contains(event.target)) {
+        setZoneMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, [statusMenuOpen, zoneMenuOpen]);
 
   if (!open) return null;
 
@@ -244,6 +250,15 @@ export default function FloorPlanPickerModal({
         ),
       }
     : null;
+  const selectedStatusSummary = t("Availability ({{count}})", { count: selectedStatuses.length });
+  const selectedZoneLabel =
+    selectedZone === ALL_ZONES_KEY
+      ? t("Areas ({{count}})", { count: statusFilteredTables.length })
+      : (() => {
+          const zone = zoneOptions.find((option) => option.key === selectedZone);
+          if (!zone) return t("Areas");
+          return `${t(formatFloorPlanZoneLabel(zone.label))} (${zone.count})`;
+        })();
 
   return (
     <div className="fixed inset-0 z-[90] bg-black/55 backdrop-blur-sm">
@@ -269,53 +284,138 @@ export default function FloorPlanPickerModal({
 
         <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col overflow-hidden px-3 py-3 sm:px-4 sm:py-4">
           <div className="min-h-0 flex-1 overflow-y-auto pb-8 sm:pb-10">
-            <div className="sticky top-0 z-10 -mx-1 mb-4 space-y-3 border-b border-black/5 bg-[#fafaf9]/95 px-1 pb-3 backdrop-blur dark:border-white/10 dark:bg-[#09090b]/95">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {STATUS_FILTER_KEYS.map((key) => {
-                  const statusTone = FLOOR_PLAN_STATUS_STYLES[key] || FLOOR_PLAN_STATUS_STYLES.available;
-                  const pickerTone = PICKER_STATUS_TONES[key];
-                  const active = selectedStatuses.includes(key);
-                  return (
-                    <FilterPill
-                      key={key}
-                      compact
-                      active={active}
-                      dotColor={pickerTone?.dot || statusTone.border}
-                      label={t(statusTone.badge)}
-                      className="w-full justify-center"
-                      tone={{
-                        fill: pickerTone?.fill || `${statusTone.fill}22`,
-                        border: pickerTone?.border || statusTone.border,
-                        text: pickerTone?.text || statusTone.border,
-                      }}
-                      onClick={() => {
-                        setSelectedStatuses((prev) => {
-                          if (prev.includes(key)) {
-                            return prev.length === 1 ? prev : prev.filter((value) => value !== key);
-                          }
-                          return [...prev, key];
-                        });
-                      }}
-                    />
-                  );
-                })}
-              </div>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div className="w-full sm:max-w-[260px]">
-                  <select
-                    value={selectedZone}
-                    onChange={(event) => setSelectedZone(event.target.value)}
-                    className="w-full rounded-2xl border border-neutral-200 bg-white px-3 py-2.5 text-sm font-semibold text-neutral-900 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-50"
+            <div className="sticky top-0 z-10 -mx-1 mb-4 border-b border-black/5 bg-[#fafaf9]/95 px-1 pb-3 backdrop-blur dark:border-white/10 dark:bg-[#09090b]/95">
+              <div className="flex items-center justify-center gap-2">
+                <div ref={statusMenuRef} className="relative min-w-0 w-[42.5%]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setZoneMenuOpen(false);
+                      setStatusMenuOpen((prev) => !prev);
+                    }}
+                    className="flex min-h-[38px] w-full items-center justify-between gap-2 rounded-[18px] border border-neutral-200 bg-white px-2.5 py-2 text-[12px] font-semibold text-neutral-900 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-50"
                   >
-                    <option value={ALL_ZONES_KEY}>
-                      {t("Select Areas ({{count}})", { count: statusFilteredTables.length })}
-                    </option>
-                    {zoneOptions.map((zone) => (
-                      <option key={zone.key} value={zone.key}>
-                        {`${t(formatFloorPlanZoneLabel(zone.label))} (${zone.count})`}
-                      </option>
-                    ))}
-                  </select>
+                    <span className="truncate">{selectedStatusSummary}</span>
+                    <ChevronDown
+                      className={[
+                        "h-4 w-4 shrink-0 text-neutral-500 transition-transform dark:text-neutral-400",
+                        statusMenuOpen ? "rotate-180" : "",
+                      ].join(" ")}
+                    />
+                  </button>
+                  {statusMenuOpen ? (
+                    <div className="absolute left-0 right-0 top-full z-20 mt-2 rounded-[18px] border border-neutral-200 bg-white p-2 shadow-[0_20px_60px_rgba(15,23,42,0.16)] dark:border-neutral-800 dark:bg-neutral-950">
+                      <div className="space-y-1">
+                        {resolvedStatusFilterKeys.map((key) => {
+                          const statusTone = FLOOR_PLAN_STATUS_STYLES[key] || FLOOR_PLAN_STATUS_STYLES.available;
+                          const pickerTone = PICKER_STATUS_TONES[key];
+                          const active = selectedStatuses.includes(key);
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => {
+                                setSelectedStatuses((prev) => {
+                                  if (prev.includes(key)) {
+                                    return prev.length === 1 ? prev : prev.filter((value) => value !== key);
+                                  }
+                                  return [...prev, key];
+                                });
+                              }}
+                              className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-left text-[13px] font-medium transition"
+                              style={
+                                active
+                                  ? {
+                                      backgroundColor: pickerTone?.fill || `${statusTone.fill}22`,
+                                      color: pickerTone?.text || statusTone.border,
+                                    }
+                                  : undefined
+                              }
+                            >
+                              <span
+                                className="h-2.5 w-2.5 rounded-full"
+                                style={{ backgroundColor: pickerTone?.dot || statusTone.border }}
+                              />
+                              <span className="min-w-0 flex-1 truncate">{t(statusTone.badge)}</span>
+                              {active ? <Check className="h-4 w-4 shrink-0" /> : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+                <div ref={zoneMenuRef} className="relative min-w-0 w-[42.5%]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStatusMenuOpen(false);
+                      setZoneMenuOpen((prev) => !prev);
+                    }}
+                    className="flex min-h-[38px] w-full items-center justify-between gap-2 rounded-[18px] border border-neutral-200 bg-white px-2.5 py-2 text-[12px] font-semibold text-neutral-900 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-50"
+                  >
+                    <span className="truncate">{selectedZoneLabel}</span>
+                    <ChevronDown
+                      className={[
+                        "h-4 w-4 shrink-0 text-neutral-500 transition-transform dark:text-neutral-400",
+                        zoneMenuOpen ? "rotate-180" : "",
+                      ].join(" ")}
+                    />
+                  </button>
+                  {zoneMenuOpen ? (
+                    <div className="absolute left-0 right-0 top-full z-20 mt-2 rounded-[18px] border border-neutral-200 bg-white p-2 shadow-[0_20px_60px_rgba(15,23,42,0.16)] dark:border-neutral-800 dark:bg-neutral-950">
+                      <div className="space-y-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedZone(ALL_ZONES_KEY);
+                            setZoneMenuOpen(false);
+                          }}
+                          className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-left text-[13px] font-medium transition"
+                          style={
+                            selectedZone === ALL_ZONES_KEY
+                              ? {
+                                  backgroundColor: "#eff6ff",
+                                  color: "#1d4ed8",
+                                }
+                              : undefined
+                          }
+                        >
+                          <span className="min-w-0 flex-1 truncate">
+                            {t("Areas ({{count}})", { count: statusFilteredTables.length })}
+                          </span>
+                          {selectedZone === ALL_ZONES_KEY ? <Check className="h-4 w-4 shrink-0" /> : null}
+                        </button>
+                        {zoneOptions.map((zone) => {
+                          const active = selectedZone === zone.key;
+                          return (
+                            <button
+                              key={zone.key}
+                              type="button"
+                              onClick={() => {
+                                setSelectedZone(zone.key);
+                                setZoneMenuOpen(false);
+                              }}
+                              className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-left text-[13px] font-medium transition"
+                              style={
+                                active
+                                  ? {
+                                      backgroundColor: "#eff6ff",
+                                      color: "#1d4ed8",
+                                    }
+                                  : undefined
+                              }
+                            >
+                              <span className="min-w-0 flex-1 truncate">
+                                {`${t(formatFloorPlanZoneLabel(zone.label))} (${zone.count})`}
+                              </span>
+                              {active ? <Check className="h-4 w-4 shrink-0" /> : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>

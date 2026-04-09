@@ -169,6 +169,13 @@ const isCheckedInReservationStatus = (status) => {
   const normalized = normalizeReservationStatus(status);
   return normalized === "checked_in" || normalized === "checkedin" || normalized === "checkin";
 };
+const normalizeTableNumberKey = (value) => String(value ?? "").trim();
+const isSameTableNumber = (left, right) => {
+  const l = normalizeTableNumberKey(left);
+  const r = normalizeTableNumberKey(right);
+  return l !== "" && r !== "" && l === r;
+};
+const isTable10 = (value) => normalizeTableNumberKey(value) === "10";
 const formatCurrentLocalYmd = () => {
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -451,7 +458,39 @@ const isReservationLikeEntry = (entry) => {
   if (!entry || typeof entry !== "object") return false;
   const nested =
     entry?.reservation && typeof entry.reservation === "object" ? entry.reservation : null;
+  const typeCandidates = [
+    entry?.order_type,
+    entry?.orderType,
+    entry?.booking_type,
+    entry?.bookingType,
+    nested?.order_type,
+    nested?.orderType,
+    nested?.booking_type,
+    nested?.bookingType,
+  ]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean);
+  const statusCandidates = [
+    entry?.status,
+    nested?.status,
+    entry?.reservation_status,
+    entry?.reservationStatus,
+    nested?.reservation_status,
+    nested?.reservationStatus,
+  ]
+    .map((value) => normalizeReservationStatus(value))
+    .filter(Boolean);
+
   return Boolean(
+    typeCandidates.includes("reservation") ||
+      typeCandidates.includes("concert") ||
+      typeCandidates.includes("concert_table") ||
+      statusCandidates.includes("reserved") ||
+      statusCandidates.includes("reservation") ||
+      statusCandidates.includes("pending_bank_transfer") ||
+      statusCandidates.includes("checked_in") ||
+      statusCandidates.includes("checkedin") ||
+      statusCandidates.includes("checkin") ||
     entry?.reservation_id ||
       entry?.reservationId ||
       entry?.reservation_date ||
@@ -2051,6 +2090,9 @@ if (savedTable) {
             .map((row) => Number(row?.number ?? row?.tableNumber ?? row?.table_number))
             .filter((n) => Number.isFinite(n) && n > 0);
           addNumbers(nextOccupiedSet, lockedTableNumbers);
+          if (import.meta.env.DEV && lockedTableNumbers.some((n) => isTable10(n))) {
+            console.warn("[table10-debug][qr-refresh][locked-tables]", lockedTableNumbers);
+          }
           hasAnySource = hasAnySource || lockedTableNumbers.length > 0;
         } catch (lockErr) {
           console.warn("⚠️ Locked tables fetch failed:", lockErr);
@@ -2090,6 +2132,14 @@ if (savedTable) {
           }
           addNumbers(nextOccupiedSet, payload?.table_numbers);
           addNumbers(nextReservedSet, payload?.reserved_table_numbers);
+          if (import.meta.env.DEV) {
+            const table10Payload =
+              toArray(payload?.table_numbers).some((n) => isTable10(n)) ||
+              toArray(payload?.reserved_table_numbers).some((n) => isTable10(n));
+            if (table10Payload) {
+              console.warn("[table10-debug][qr-refresh][public-unavailable]", payload);
+            }
+          }
           hasAnySource = true;
         } catch (err) {
           console.warn("⚠️ Public unavailable tables fetch failed:", err);
@@ -2136,7 +2186,7 @@ if (savedTable) {
             if (!order?.table_number) return false;
             const status = String(order?.status || "").toLowerCase();
             if (isTerminalOrderStatus(status)) return false;
-            if (isReservationLikeEntry(order)) return hasActiveReservationPayload(order);
+            if (isReservationLikeEntry(order)) return isCheckedInReservationEntry(order, status);
             return true;
           })
           .map((order) => Number(order.table_number))
@@ -2145,7 +2195,7 @@ if (savedTable) {
           .filter((reservation) => {
             const status = String(reservation?.status || "").toLowerCase();
             if (isTerminalOrderStatus(status)) return false;
-            return hasActiveReservationPayload(reservation);
+            return isCheckedInReservationEntry(reservation, status);
           })
           .map((reservation) =>
             Number(
@@ -2179,9 +2229,23 @@ if (savedTable) {
           .filter((n) => Number.isFinite(n) && n > 0);
         addNumbers(nextOccupiedSet, occupiedFromOrders);
         addNumbers(nextOccupiedSet, occupiedFromReservations);
-        // Preserve public reserved state and augment it with authenticated data.
         addNumbers(nextReservedSet, reservedFromOrders);
         addNumbers(nextReservedSet, reservedFromReservations);
+        if (import.meta.env.DEV) {
+          const hasTable10Authenticated =
+            occupiedFromOrders.some((n) => isTable10(n)) ||
+            occupiedFromReservations.some((n) => isTable10(n)) ||
+            reservedFromOrders.some((n) => isTable10(n)) ||
+            reservedFromReservations.some((n) => isTable10(n));
+          if (hasTable10Authenticated) {
+            console.warn("[table10-debug][qr-refresh][authenticated-derivation]", {
+              occupiedFromOrders,
+              occupiedFromReservations,
+              reservedFromOrders,
+              reservedFromReservations,
+            });
+          }
+        }
         hasAnySource = true;
       }
 
@@ -2191,14 +2255,28 @@ if (savedTable) {
         return;
       }
       if (!hasAnySource) {
-        // Keep previous availability state when fetch sources are temporarily unavailable.
+        // Never preserve stale previous state when no source was available.
+        setOccupiedTables([]);
+        setReservedTables([]);
         return;
+      }
+      if (import.meta.env.DEV) {
+        const table10Final =
+          Array.from(nextOccupiedSet).some((n) => isTable10(n)) ||
+          Array.from(nextReservedSet).some((n) => isTable10(n));
+        if (table10Final) {
+          console.warn("[table10-debug][qr-refresh][final-sets]", {
+            occupied: Array.from(nextOccupiedSet),
+            reserved: Array.from(nextReservedSet),
+          });
+        }
       }
       setOccupiedTables(Array.from(nextOccupiedSet));
       setReservedTables(Array.from(nextReservedSet));
     } catch (err) {
       console.warn("⚠️ Failed to refresh occupied tables:", err);
-      // Preserve previous known state on transient errors.
+      setOccupiedTables([]);
+      setReservedTables([]);
     }
   }, [appendIdentifier, getStoredToken, restaurantIdentifier, sFetch, toArray]);
 
@@ -2210,15 +2288,17 @@ if (savedTable) {
 
       setTables((prev) =>
         toArray(prev).map((table) =>
-          Number(table?.tableNumber) === tableNumber ? { ...table, isLocked: locked } : table
+          isSameTableNumber(table?.tableNumber ?? table?.table_number ?? table?.number, tableNumber)
+            ? { ...table, isLocked: locked }
+            : table
         )
       );
-      setOccupiedTables((prev) => {
-        const next = new Set(toArray(prev).map(Number));
-        if (locked) next.add(tableNumber);
-        else next.delete(tableNumber);
-        return Array.from(next);
-      });
+      if (import.meta.env.DEV && isTable10(tableNumber)) {
+        console.warn("[table10-debug][qr-socket][table-lock-updated]", {
+          tableNumber,
+          locked,
+        });
+      }
       window.setTimeout(() => refreshOccupiedTablesRef.current?.(), 30);
     };
 
@@ -2293,33 +2373,33 @@ if (savedTable) {
     const upsertOccupied = (tableNo) => {
       const n = Number(tableNo);
       if (!Number.isFinite(n) || n <= 0) return;
-      setOccupiedTables((prev) => {
-        const next = new Set(toArray(prev).map(Number));
-        next.add(n);
-        return Array.from(next);
-      });
+      if (import.meta.env.DEV && isTable10(n)) {
+        console.warn("[table10-debug][qr-socket] upsertOccupied requested", { tableNo: n });
+      }
     };
 
     const removeOccupied = (tableNo) => {
       const n = Number(tableNo);
       if (!Number.isFinite(n) || n <= 0) return;
-      setOccupiedTables((prev) => toArray(prev).map(Number).filter((x) => x !== n));
+      if (import.meta.env.DEV && isTable10(n)) {
+        console.warn("[table10-debug][qr-socket] removeOccupied requested", { tableNo: n });
+      }
     };
 
     const upsertReserved = (tableNo) => {
       const n = Number(tableNo);
       if (!Number.isFinite(n) || n <= 0) return;
-      setReservedTables((prev) => {
-        const next = new Set(toArray(prev).map(Number));
-        next.add(n);
-        return Array.from(next);
-      });
+      if (import.meta.env.DEV && isTable10(n)) {
+        console.warn("[table10-debug][qr-socket] upsertReserved requested", { tableNo: n });
+      }
     };
 
     const removeReserved = (tableNo) => {
       const n = Number(tableNo);
       if (!Number.isFinite(n) || n <= 0) return;
-      setReservedTables((prev) => toArray(prev).map(Number).filter((x) => x !== n));
+      if (import.meta.env.DEV && isTable10(n)) {
+        console.warn("[table10-debug][qr-socket] removeReserved requested", { tableNo: n });
+      }
     };
 
     const matchesActiveReservationPayload = (payload, tableNo) => {
@@ -2355,7 +2435,7 @@ if (savedTable) {
         activeTableNo > 0 &&
         Number.isFinite(normalizedPayloadTableNo) &&
         normalizedPayloadTableNo > 0 &&
-        activeTableNo === normalizedPayloadTableNo;
+        isSameTableNumber(activeTableNo, normalizedPayloadTableNo);
       return (
         orderIdMatches ||
         ((forceActive || hasActiveReservationPayload(currentActiveOrder)) && tableMatches)
@@ -2379,6 +2459,9 @@ if (savedTable) {
         if (Number.isFinite(tno) && tno > 0) orderIdToTableRef.current.set(orderId, tno);
       }
       if (tableNo) {
+        if (import.meta.env.DEV && isTable10(tableNo)) {
+          console.warn("[table10-debug][qr-socket][order_confirmed]", payload);
+        }
         const isReservationLikePayload = isReservationLikeEntry(reservationPayload);
         if (!isReservationLikePayload || hasActiveReservationPayload(reservationPayload)) {
           upsertOccupied(tableNo);
@@ -2397,6 +2480,9 @@ if (savedTable) {
     const onCancelled = (payload) => {
       const orderId = Number(payload?.orderId ?? payload?.id ?? payload?.order?.id);
       const tableNo = payload?.table_number ?? payload?.order?.table_number ?? null;
+      if (import.meta.env.DEV && isTable10(tableNo)) {
+        console.warn("[table10-debug][qr-socket][order_cancelled_or_deleted]", payload);
+      }
       if (tableNo) {
         removeOccupied(tableNo);
         removeReserved(tableNo);
@@ -2451,6 +2537,10 @@ if (savedTable) {
 
     const onClosed = (payload) => {
       const orderId = Number(payload?.orderId ?? payload?.id);
+      const payloadTableNo = payload?.table_number ?? payload?.order?.table_number ?? null;
+      if (import.meta.env.DEV && isTable10(payloadTableNo)) {
+        console.warn("[table10-debug][qr-socket][order_closed]", payload);
+      }
       if (Number.isFinite(orderId)) {
         const cached = orderIdToTableRef.current.get(orderId);
         if (cached) {
@@ -2498,6 +2588,9 @@ if (savedTable) {
         isCheckedInReservationStatus(status)
       );
       if (tableNo) {
+        if (import.meta.env.DEV && isTable10(tableNo)) {
+          console.warn("[table10-debug][qr-socket][reservation_updated]", payload);
+        }
         if (isCheckedInUpdate) {
           upsertOccupied(tableNo);
           removeReserved(tableNo);
@@ -2538,6 +2631,9 @@ if (savedTable) {
         payload?.order?.table_number ??
         null;
       if (tableNo) {
+        if (import.meta.env.DEV && isTable10(tableNo)) {
+          console.warn("[table10-debug][qr-socket][reservation_cancelled_or_deleted]", payload);
+        }
         removeReserved(tableNo);
       }
       const matchesActiveReservation = matchesActiveReservationPayload(payload, tableNo);
@@ -2834,9 +2930,25 @@ const filteredOccupied = useMemo(() => {
       next.add(tableNumber);
     }
   });
-  return Array.from(next);
+  const derived = Array.from(next);
+  if (import.meta.env.DEV && derived.some((value) => isTable10(value))) {
+    console.warn("[table10-debug][qr-selector][filteredOccupied]", derived);
+  }
+  return derived;
 }, [safeOccupiedTables, tables, toArray]);
-const filteredReserved = safeReservedTables;
+const filteredReserved = useMemo(() => {
+  const next = Array.from(
+    new Set(
+      toArray(safeReservedTables)
+        .map((value) => Number(value))
+        .filter((n) => Number.isFinite(n) && n > 0)
+    )
+  );
+  if (import.meta.env.DEV && next.some((value) => isTable10(value))) {
+    console.warn("[table10-debug][qr-selector][filteredReserved]", next);
+  }
+  return next;
+}, [safeReservedTables, toArray]);
 const showTableSelector = !forceHome && orderType === "table" && !table;
 
 
@@ -2955,7 +3067,7 @@ async function handleOrderAnother() {
   );
   const reservedTableContextWhileLocked =
     Number.isFinite(tableForLockCheck) &&
-    safeReservedTables.some((n) => Number(n) === Number(tableForLockCheck));
+    safeReservedTables.some((n) => isSameTableNumber(n, tableForLockCheck));
   const allowOrderAnotherWhileReserved =
     currentStatus === "reserved" ||
     currentStatus === "confirmed" ||

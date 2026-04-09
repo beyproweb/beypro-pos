@@ -9,9 +9,6 @@ import {
   parseLooseDateToMs,
 } from "../tables/tableVisuals";
 import {
-  readInitialTableOrders,
-  readInitialReservationsToday,
-  readReservationShadows,
   writeTableOrdersCache,
   writeReservationsTodayCache,
 } from "./tableOrdersCache";
@@ -195,6 +192,10 @@ const getOrderTableNumber = (order) => {
   return Number.isFinite(parsed) ? parsed : NaN;
 };
 
+const TABLE_10_DEBUG_KEY = "10";
+const toTableKey = (value) => String(value ?? "").trim();
+const isTable10 = (value) => toTableKey(value) === TABLE_10_DEBUG_KEY;
+
 const getNormalizedNonReservationStatus = (order) => {
   const status = getVisibleServiceOrderStatus(order);
   if (status === "reserved" && !hasOrderReservationSignal(order)) return "confirmed";
@@ -234,9 +235,9 @@ const mergeVisibleTableStatus = (...orders) => {
 };
 
 export default function useTableOrdersData() {
-  const [orders, setOrders] = useState(() => readInitialTableOrders());
+  const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
-  const [reservationsToday, setReservationsToday] = useState(() => readInitialReservationsToday());
+  const [reservationsToday, setReservationsToday] = useState([]);
 
   const didInitialOrdersLoadRef = useRef(false);
   const ordersFetchSeqRef = useRef(0);
@@ -374,16 +375,6 @@ export default function useTableOrdersData() {
       const isInitialLoad = !didInitialOrdersLoadRef.current;
       setOrdersLoading(true);
 
-      const cachedOrders = readInitialTableOrders();
-      if (cachedOrders.length > 0 && isInitialLoad && isMountedRef.current) {
-        setOrders(cachedOrders);
-        if (isDev) {
-          console.log(
-            `⚡ [TableOverview] Rendered from cache in ${(performance.now() - t0).toFixed(1)}ms`
-          );
-        }
-      }
-
       const [ordersRes, reservationsRes] = await Promise.allSettled([
         secureFetch("/orders", { signal }),
         (async () => {
@@ -431,132 +422,19 @@ export default function useTableOrdersData() {
               status: r.status,
             }))
           );
+          const table10Reservations = list.filter((row) => isTable10(row?.table_number ?? row?.tableNumber ?? row?.table));
+          console.warn("[table10-debug][fetch][reservations]", table10Reservations);
         }
-        const shadows = readReservationShadows();
-        if (shadows.length === 0) return list;
-
-        const hasActiveReservationContextForShadow = (shadow) => {
-          const shadowOrderId = Number(shadow?.order_id ?? shadow?.orderId ?? shadow?.id);
-          const shadowTableNumber = Number(
-            shadow?.table_number ?? shadow?.tableNumber ?? shadow?.table
-          );
-          return (Array.isArray(data) ? data : []).some((order) => {
-            const orderStatus = normalizeOrderStatus(order?.status);
-            if (orderStatus === "closed") return false;
-            if (isOrderCancelledOrCanceled(orderStatus)) return false;
-            if (isEffectivelyFreeOrder(order)) return false;
-            const orderId = Number(order?.id);
-            const orderTableNumber = getOrderTableNumber(order);
-            if (
-              Number.isFinite(shadowOrderId) &&
-              Number.isFinite(orderId) &&
-              shadowOrderId === orderId
-            ) {
-              return true;
-            }
-            if (
-              Number.isFinite(shadowTableNumber) &&
-              Number.isFinite(orderTableNumber) &&
-              shadowTableNumber === orderTableNumber &&
-              hasOrderReservationSignal(order)
-            ) {
-              return true;
-            }
-            return false;
-          });
-        };
-
-        const merged = [...list];
-        shadows.forEach((shadow) => {
-          const shadowReservationId = Number(shadow?.id);
-          const shadowOrderId = Number(shadow?.order_id ?? shadow?.orderId);
-          const shadowTableNumber = Number(
-            shadow?.table_number ?? shadow?.tableNumber ?? shadow?.table
-          );
-          const normalizedShadowStatus = normalizeOrderStatus(shadow?.status);
-          const shouldDowngradeCheckedInShadow =
-            normalizedShadowStatus === "checked_in" &&
-            !hasActiveReservationContextForShadow(shadow);
-          const normalizedShadow = shouldDowngradeCheckedInShadow
-            ? { ...shadow, status: "checked_out" }
-            : shadow;
-          const shadowHasIdentity =
-            Number.isFinite(shadowReservationId) || Number.isFinite(shadowOrderId);
-          const existingIndex = merged.findIndex((row) => {
-            const rowReservationId = Number(row?.id);
-            const rowOrderId = Number(row?.order_id ?? row?.orderId);
-            const rowTableNumber = Number(row?.table_number ?? row?.tableNumber ?? row?.table);
-            if (
-              Number.isFinite(shadowReservationId) &&
-              Number.isFinite(rowReservationId) &&
-              rowReservationId === shadowReservationId
-            ) {
-              return true;
-            }
-            if (
-              Number.isFinite(shadowOrderId) &&
-              Number.isFinite(rowOrderId) &&
-              rowOrderId === shadowOrderId
-            ) {
-              return true;
-            }
-            const sameTable =
-              Number.isFinite(shadowTableNumber) &&
-              Number.isFinite(rowTableNumber) &&
-              rowTableNumber === shadowTableNumber;
-            if (!sameTable) return false;
-            const rowHasIdentity =
-              Number.isFinite(rowReservationId) || Number.isFinite(rowOrderId);
-            if (shadowHasIdentity && rowHasIdentity) return false;
-            return true;
-          });
-          if (existingIndex < 0) {
-            const hasBackendRowForSameTable = merged.some((row) => {
-              const rowTableNumber = Number(row?.table_number ?? row?.tableNumber ?? row?.table);
-              return (
-                Number.isFinite(shadowTableNumber) &&
-                Number.isFinite(rowTableNumber) &&
-                rowTableNumber === shadowTableNumber
-              );
-            });
-            if (hasBackendRowForSameTable) {
-              return;
-            }
-            merged.push(normalizedShadow);
-            return;
-          }
-          const existing = merged[existingIndex] || {};
-          const mergedCandidate = { ...existing, ...normalizedShadow };
-          const mergedStatus = preserveCheckedInStatus(
-            existing?.status,
-            normalizedShadow?.status,
-            mergedCandidate
-          );
-          merged[existingIndex] = {
-            ...mergedCandidate,
-            status: mergedStatus,
-            order_type:
-              mergedStatus === "checked_in" &&
-              String(mergedCandidate?.order_type || "").toLowerCase() === "reservation"
-                ? "table"
-                : mergedCandidate?.order_type,
-          };
-        });
-        return merged;
+        return list;
       };
 
-      const cachedReservations = readInitialReservationsToday();
       const reservationsList =
         reservationsRes.status === "fulfilled"
           ? normalizeReservationList(reservationsRes.value)
-          : cachedReservations;
+          : [];
 
       if (isMountedRef.current) {
-        if (reservationsList.length > 0 || cachedReservations.length === 0) {
-          setReservationsToday(reservationsList);
-        } else {
-          setReservationsToday(cachedReservations);
-        }
+        setReservationsToday(reservationsList);
       }
 
       const reservationsByOrderId = new Map();
@@ -610,13 +488,18 @@ export default function useTableOrdersData() {
         };
       });
 
+      if (isDev) {
+        const table10Orders = enrichedOrders.filter((order) => isTable10(getOrderTableNumber(order)));
+        console.warn("[table10-debug][fetch][orders]", table10Orders);
+      }
+
       const openTableOrders = enrichedOrders
         .filter((o) => {
           const tableNumber = getOrderTableNumber(o);
           if (!Number.isFinite(tableNumber)) return false;
 
           const status = normalizeOrderStatus(o.status);
-          if (status === "closed") return false;
+          if (status === "closed" || status === "completed" || status === "deleted" || status === "void") return false;
           if (isOrderCancelledOrCanceled(status)) return false;
           if (isPendingReservationOnlyOrder(o)) return false;
           if (isEffectivelyFreeOrder(o)) return false;
@@ -633,6 +516,11 @@ export default function useTableOrdersData() {
             total: parseFloat(order.total || 0),
           };
         });
+
+      if (isDev) {
+        const table10OpenOrders = openTableOrders.filter((order) => isTable10(getOrderTableNumber(order)));
+        console.warn("[table10-debug][fetch][open-table-orders]", table10OpenOrders);
+      }
 
       const visibleTableOrders = openTableOrders;
 
@@ -976,6 +864,10 @@ export default function useTableOrdersData() {
     } catch (err) {
       if (isAbortError(err)) return;
       console.error("❌ Fetch open orders failed:", err);
+      if (isMountedRef.current) {
+        setOrders([]);
+        setReservationsToday([]);
+      }
       toast.error("Could not load open orders");
     } finally {
       if (activeFetchControllerRef.current === controller) {
