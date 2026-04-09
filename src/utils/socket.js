@@ -58,7 +58,7 @@ socket.on("connect", () => {
   if (restaurantId) {
     socket.emit("join_restaurant", restaurantId);
     console.log(`[SOCKET] 👥 Joined restaurant_${restaurantId}`);
-  } else {
+  } else if (!window.__isQrMenuPage) {
     console.warn("[SOCKET] ⚠️ No restaurant_id found in localStorage on connect");
   }
 

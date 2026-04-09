@@ -157,19 +157,13 @@ export function useQrMenuStorage({
 
   useEffect(() => {
     const handler = (e) => {
-      const installSurface = resolveInstallSurface();
-      if (installSurface.platform === "ios") {
-        setDeferredPrompt(null);
-        setCanInstall(false);
-        return;
-      }
-      e.preventDefault();
-      setDeferredPrompt(e);
-      setCanInstall(true);
+      // Temporarily disabled — let the browser handle install natively.
+      setDeferredPrompt(null);
+      setCanInstall(false);
     };
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, [appendIdentifier, resolveInstallSurface]);
+  }, []);
 
   useEffect(() => {
     const isStandalone = isInStandaloneMode();

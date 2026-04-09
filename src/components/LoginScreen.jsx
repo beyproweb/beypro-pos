@@ -9,6 +9,7 @@ import { requestDriverLocationPermission } from "../utils/driverLocationPermissi
 import { DEFAULT_LANGUAGE, persistLanguage } from "../utils/language";
 
 const REMEMBER_ME_PREFERENCE_KEY = "beyproRememberMe";
+const AUTH_STORAGE_KEY = "beypro_auth_storage";
 const GOOGLE_OAUTH_QUERY_KEYS = [
   "google_oauth",
   "transfer_token",
@@ -90,10 +91,12 @@ export default function LoginScreen() {
 
     const shouldRemember = rememberMeRef.current;
     const authStorage = shouldRemember ? window.localStorage : window.sessionStorage;
-    const otherStorage = shouldRemember ? window.sessionStorage : window.localStorage;
+
     try {
-      otherStorage.removeItem("token");
-      otherStorage.removeItem("beyproUser");
+      window.localStorage.removeItem("token");
+      window.localStorage.removeItem("beyproUser");
+      window.sessionStorage.removeItem("token");
+      window.sessionStorage.removeItem("beyproUser");
     } catch {
       // ignore storage errors
     }
@@ -103,6 +106,7 @@ export default function LoginScreen() {
         REMEMBER_ME_PREFERENCE_KEY,
         shouldRemember ? "true" : "false"
       );
+      window.localStorage.setItem(AUTH_STORAGE_KEY, shouldRemember ? "local" : "session");
     } catch {
       // ignore storage errors
     }

@@ -8,6 +8,7 @@ import "./SessionLockOverlay.css";
 import secureFetch from "../utils/secureFetch";
 import { normalizeUser } from "../utils/normalizeUser";
 import { isPublicShellPath, isStandalonePath } from "../utils/routeScope";
+const AUTH_STORAGE_KEY = "beypro_auth_storage";
 
 export default function SessionLockOverlay() {
   const { isLocked, lockReason, unlock } = useSessionLock();
@@ -168,7 +169,10 @@ export default function SessionLockOverlay() {
       }
 
       // Store token and update auth context
+      localStorage.removeItem("token");
+      localStorage.removeItem("beyproUser");
       sessionStorage.setItem("token", token);
+      localStorage.setItem(AUTH_STORAGE_KEY, "session");
       const normalized = normalizeUser(userData);
       if (normalized) {
         sessionStorage.setItem("beyproUser", JSON.stringify(normalized));
@@ -203,6 +207,7 @@ export default function SessionLockOverlay() {
     localStorage.removeItem('lockReason');
     localStorage.removeItem('token');
     localStorage.removeItem('beyproUser');
+    localStorage.removeItem(AUTH_STORAGE_KEY);
     localStorage.removeItem('restaurant_id');
     // Reset current user
     setCurrentUser(null);

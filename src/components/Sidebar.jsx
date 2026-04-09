@@ -89,6 +89,7 @@ const PINNED_SET = new Set(PINNED_KEYS);
 
 const HIDDEN_STORAGE_KEY = "beyproHiddenSidebarItems";
 const ORDER_STORAGE_KEY = "beyproSidebarOrder";
+const AUTH_STORAGE_KEY = "beypro_auth_storage";
 const SIDEBAR_ITEM_DRAG_TYPE = "application/x-sidebar-item";
 const ORDERABLE_KEYS = MENU.map((item) => item.labelKey);
 const ORDERABLE_SET = new Set(ORDERABLE_KEYS);
@@ -421,6 +422,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
     try {
       localStorage.removeItem("token");
       localStorage.removeItem("beyproUser");
+      localStorage.removeItem(AUTH_STORAGE_KEY);
     } catch {}
     try {
       sessionStorage.removeItem("token");

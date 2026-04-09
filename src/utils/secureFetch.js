@@ -16,6 +16,8 @@ const hasLocalStorage = () =>
 const hasSessionStorage = () =>
   typeof window !== "undefined" && typeof window.sessionStorage !== "undefined";
 
+const AUTH_STORAGE_KEY = "beypro_auth_storage";
+
 const isStandalonePath = () =>
   typeof window !== "undefined" &&
   typeof window.location?.pathname === "string" &&
@@ -62,6 +64,26 @@ const cleanToken = (value) => {
   return normalized;
 };
 
+const readTokenFromStorage = (storage) => {
+  if (!storage) return "";
+  try {
+    const direct = cleanToken(storage.getItem("token"));
+    if (direct) return direct;
+
+    const stored = JSON.parse(storage.getItem("beyproUser") || "{}");
+    return (
+      cleanToken(stored?.token) ||
+      cleanToken(stored?.accessToken) ||
+      cleanToken(stored?.user?.token) ||
+      cleanToken(stored?.user?.accessToken) ||
+      cleanToken(stored?.user?.user?.token) ||
+      ""
+    );
+  } catch {
+    return "";
+  }
+};
+
 // Read token properly
 export function getAuthToken() {
   if (!hasLocalStorage() && !hasSessionStorage()) return "";
@@ -79,39 +101,34 @@ export function getAuthToken() {
     return "";
   }
 
-  if (hasSessionStorage()) {
-    const directSession = cleanToken(sessionStorage.getItem("token"));
-    if (directSession) return directSession;
-
+  let preferredStorage = "";
+  if (hasLocalStorage()) {
     try {
-      const storedSession = JSON.parse(sessionStorage.getItem("beyproUser") || "{}");
-      const sessionToken =
-        cleanToken(storedSession?.token) ||
-        cleanToken(storedSession?.accessToken) ||
-        cleanToken(storedSession?.user?.token) ||
-        cleanToken(storedSession?.user?.accessToken) ||
-        cleanToken(storedSession?.user?.user?.token);
-      if (sessionToken) return sessionToken;
+      preferredStorage = cleanToken(localStorage.getItem(AUTH_STORAGE_KEY)).toLowerCase();
     } catch {
-      // ignore
+      preferredStorage = "";
     }
   }
 
-  try {
-    const stored = JSON.parse(localStorage.getItem("beyproUser") || "{}");
-    const userToken =
-      cleanToken(stored?.token) ||
-      cleanToken(stored?.accessToken) ||
-      cleanToken(stored?.user?.token) ||
-      cleanToken(stored?.user?.accessToken) ||
-      cleanToken(stored?.user?.user?.token);
-    if (userToken) return userToken;
-  } catch {
-    // ignore
+  if (preferredStorage === "session" && hasSessionStorage()) {
+    const preferred = readTokenFromStorage(sessionStorage);
+    if (preferred) return preferred;
   }
 
-  const direct = cleanToken(localStorage.getItem("token"));
-  if (direct) return direct;
+  if (preferredStorage === "local" && hasLocalStorage()) {
+    const preferred = readTokenFromStorage(localStorage);
+    if (preferred) return preferred;
+  }
+
+  if (hasSessionStorage()) {
+    const sessionToken = readTokenFromStorage(sessionStorage);
+    if (sessionToken) return sessionToken;
+  }
+
+  if (hasLocalStorage()) {
+    const localToken = readTokenFromStorage(localStorage);
+    if (localToken) return localToken;
+  }
 
   return "";
 }

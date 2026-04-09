@@ -6,6 +6,7 @@ import { safeNavigate } from "../utils/navigation";
 import { isPublicQrPath } from "../utils/routeScope";
 import { API_ORIGIN } from "../utils/api";
 export const AuthContext = createContext();
+const AUTH_STORAGE_KEY = "beypro_auth_storage";
 
 const toDisplayNameFromIdentifier = (value) =>
   String(value || "")
@@ -117,15 +118,53 @@ export const AuthProvider = ({ children }) => {
 
   useSetting("users", setUserSettings, { roles: {} });
 
+  const readTokenFromStorage = (storage) => {
+    if (!storage) return "";
+    try {
+      const direct = String(storage.getItem("token") || "").trim();
+      if (direct) return direct;
+      const parsed = JSON.parse(storage.getItem("beyproUser") || "{}");
+      return String(
+        parsed?.token ||
+          parsed?.accessToken ||
+          parsed?.user?.token ||
+          parsed?.user?.accessToken ||
+          ""
+      ).trim();
+    } catch {
+      return "";
+    }
+  };
+
   const getAuthStorage = () => {
     if (typeof window === "undefined") return null;
+
+    let preferred = "";
     try {
-      if (window.sessionStorage?.getItem("token") || window.sessionStorage?.getItem("beyproUser")) {
+      preferred = String(window.localStorage?.getItem(AUTH_STORAGE_KEY) || "")
+        .trim()
+        .toLowerCase();
+    } catch {
+      preferred = "";
+    }
+
+    if (preferred === "session") {
+      const token = readTokenFromStorage(window.sessionStorage);
+      if (token) return window.sessionStorage;
+    }
+
+    if (preferred === "local") {
+      const token = readTokenFromStorage(window.localStorage);
+      if (token) return window.localStorage;
+    }
+
+    try {
+      if (readTokenFromStorage(window.sessionStorage)) {
         return window.sessionStorage;
       }
     } catch {}
     try {
-      if (window.localStorage) return window.localStorage;
+      if (readTokenFromStorage(window.localStorage)) return window.localStorage;
     } catch {}
     return null;
   };
@@ -133,6 +172,18 @@ export const AuthProvider = ({ children }) => {
   // ✅ Load cached user instantly on mount and normalize it
   useEffect(() => {
     try {
+      const token = getAuthToken();
+      if (!token) {
+        setCurrentUser(null);
+        try {
+          localStorage.removeItem("beyproUser");
+          sessionStorage.removeItem("beyproUser");
+        } catch {}
+        setLoading(false);
+        setInitializing(false);
+        return;
+      }
+
       const storage = getAuthStorage();
       const cachedUser = storage ? JSON.parse(storage.getItem("beyproUser")) : null;
       if (cachedUser) {
@@ -152,7 +203,7 @@ export const AuthProvider = ({ children }) => {
     }
     setLoading(false);
     setInitializing(false);
-  }, []);
+  }, [userSettings]);
 
   // ✅ Persist role settings for permission hooks
   useEffect(() => {
@@ -194,6 +245,7 @@ useEffect(() => {
           try {
             localStorage.removeItem("token");
             localStorage.removeItem("beyproUser");
+            localStorage.removeItem(AUTH_STORAGE_KEY);
           } catch {}
           try {
             sessionStorage.removeItem("token");

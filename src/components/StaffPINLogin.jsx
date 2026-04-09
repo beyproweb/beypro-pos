@@ -11,6 +11,7 @@ import { requestDriverLocationPermission } from "../utils/driverLocationPermissi
 
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_DURATION = 300000; // 5 minutes in ms
+const AUTH_STORAGE_KEY = "beypro_auth_storage";
 
 /**
  * Professional Staff PIN Login Screen
@@ -181,8 +182,11 @@ export default function StaffPINLogin({ switchMode = false }) {
       });
 
       // ✅ Store in sessionStorage (not localStorage for security)
+      localStorage.removeItem("token");
+      localStorage.removeItem("beyproUser");
       sessionStorage.setItem("token", token);
       sessionStorage.setItem("beyproUser", JSON.stringify(userData));
+      localStorage.setItem(AUTH_STORAGE_KEY, "session");
       sessionStorage.removeItem("pin_lockout");
       try {
         localStorage.removeItem("__beypro_skip_me_probe");
