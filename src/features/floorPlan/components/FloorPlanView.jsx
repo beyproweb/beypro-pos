@@ -70,6 +70,7 @@ export default function FloorPlanView({
   }, [viewportPadding]);
   const containerRef = React.useRef(null);
   const [containerWidth, setContainerWidth] = React.useState(0);
+  const hasLayout = Boolean(layout);
   const canvas = React.useMemo(() => resolveFloorPlanCanvas(layout?.canvas), [layout?.canvas]);
   const measurementElements = Array.isArray(boundsElements) && boundsElements.length ? boundsElements : elements;
   const renderSize = React.useMemo(
@@ -178,17 +179,26 @@ export default function FloorPlanView({
 
   React.useEffect(() => {
     const node = containerRef.current;
-    if (!node || typeof ResizeObserver === "undefined") return undefined;
+    if (!node) return undefined;
 
     const measure = () => {
       setContainerWidth(Math.max(0, node.clientWidth - (compactPadding ? 0 : 24)));
     };
 
     measure();
+    const rafId = window.requestAnimationFrame(measure);
+    if (typeof ResizeObserver === "undefined") {
+      return () => {
+        window.cancelAnimationFrame(rafId);
+      };
+    }
     const observer = new ResizeObserver(measure);
     observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      observer.disconnect();
+    };
+  }, [compactPadding, hasLayout]);
 
   const overflowClass =
     scrollMode === "horizontal"

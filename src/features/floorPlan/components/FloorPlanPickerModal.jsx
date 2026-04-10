@@ -284,10 +284,10 @@ export default function FloorPlanPickerModal({
   const selectedStatusSummary = t("Availability ({{count}})", { count: selectedStatuses.length });
   const selectedZoneLabel =
     selectedZone === ALL_ZONES_KEY
-      ? t("All area ({{count}})", { count: statusFilteredTables.length })
+      ? `${t("All Areas")} (${statusFilteredTables.length})`
       : (() => {
           const zone = zoneOptions.find((option) => option.key === selectedZone);
-          if (!zone) return t("All area");
+          if (!zone) return t("All Areas");
           return `${t(formatFloorPlanZoneLabel(zone.label))} (${zone.count})`;
         })();
 
@@ -419,7 +419,7 @@ export default function FloorPlanPickerModal({
                           }
                         >
                           <span className="min-w-0 flex-1 truncate">
-                            {t("All area ({{count}})", { count: statusFilteredTables.length })}
+                            {`${t("All Areas")} (${statusFilteredTables.length})`}
                           </span>
                           {selectedZone === ALL_ZONES_KEY ? <Check className="h-4 w-4 shrink-0" /> : null}
                         </button>

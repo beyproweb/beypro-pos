@@ -1038,24 +1038,32 @@ function TablesView({
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-base font-semibold text-violet-700">{t("View Booking")}</div>
               <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-                <input
-                  type="date"
-                  value={bookingDateFrom}
-                  onChange={(event) => setBookingDateFrom(event.target.value)}
-                  className="w-full rounded-xl border border-violet-200 bg-violet-50/40 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-violet-400 focus:bg-white sm:w-40"
-                />
-                <input
-                  type="date"
-                  value={bookingDateTo}
-                  onChange={(event) => setBookingDateTo(event.target.value)}
-                  className="w-full rounded-xl border border-violet-200 bg-violet-50/40 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-violet-400 focus:bg-white sm:w-40"
-                />
+                <div
+                  className="w-full gap-2 sm:w-auto"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  }}
+                >
+                  <input
+                    type="date"
+                    value={bookingDateFrom}
+                    onChange={(event) => setBookingDateFrom(event.target.value)}
+                    className="w-full min-w-0 rounded-xl border border-violet-200 bg-violet-50/40 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-violet-400 focus:bg-white sm:w-40"
+                  />
+                  <input
+                    type="date"
+                    value={bookingDateTo}
+                    onChange={(event) => setBookingDateTo(event.target.value)}
+                    className="w-full min-w-0 rounded-xl border border-violet-200 bg-violet-50/40 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-violet-400 focus:bg-white sm:w-40"
+                  />
+                </div>
                 <input
                   type="text"
                   value={bookingSearch}
                   onChange={(event) => setBookingSearch(event.target.value)}
                   placeholder={t("Search by name or phone")}
-                  className="w-full rounded-xl border border-violet-200 bg-violet-50/40 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-violet-400 focus:bg-white sm:w-80"
+                  className="w-full min-w-0 rounded-xl border border-violet-200 bg-violet-50/40 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-violet-400 focus:bg-white sm:w-80"
                 />
                 <button
                   type="button"

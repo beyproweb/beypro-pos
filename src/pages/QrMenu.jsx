@@ -1555,6 +1555,7 @@ const DICT = {
     Flexible: "Flexible",
     "Main floor": "Main floor",
     "Select Areas": "Select Areas",
+    "All Areas": "All Areas",
     "Choose your table": "Choose your table",
     "Select table": "Select table",
     "Confirm table": "Confirm table",
@@ -1771,7 +1772,9 @@ const DICT = {
     "Login/Register": "Login/Register",
     "Login/Signup": "Login/Signup",
     "Login to sync profile and orders": "Login to sync profile and orders",
+    "Back to marketplace": "Back to marketplace",
     "Active and past orders": "Active and past orders",
+    "Open your latest order details": "Open your latest order details",
     "Saved checkout details": "Saved checkout details",
     "Sign out from this device": "Sign out from this device",
     "Access your account": "Access your account",
@@ -1932,6 +1935,7 @@ const DICT = {
     Flexible: "Esnek",
     "Main floor": "Ana salon",
     "Select Areas": "Alan Seçin",
+    "All Areas": "Tüm Alanlar",
     "Choose your table": "Masanızı seçin",
     "Select table": "Masa seçin",
     "Confirm table": "Masayı onayla",
@@ -2148,7 +2152,9 @@ const DICT = {
     "Login/Register": "Giriş/Kayıt",
     "Login/Signup": "Giriş/Kayıt Ol",
     "Login to sync profile and orders": "Profilinizi ve siparişlerinizi senkronize etmek için giriş yapın",
+    "Back to marketplace": "Pazaryerine dön",
     "Active and past orders": "Aktif ve geçmiş siparişler",
+    "Open your latest order details": "Son sipariş detaylarını aç",
     "Saved checkout details": "Kayıtlı ödeme ve teslimat bilgileri",
     "Sign out from this device": "Bu cihazdan çıkış yap",
     "Access your account": "Hesabınıza erişin",
@@ -2321,6 +2327,7 @@ const DICT = {
     Flexible: "Flexibel",
     "Main floor": "Hauptbereich",
     "Select Areas": "Bereiche wählen",
+    "All Areas": "Alle Bereiche",
     "Choose your table": "Wählen Sie Ihren Tisch",
     "Select table": "Tisch auswählen",
     "Confirm table": "Tisch bestätigen",
@@ -2417,7 +2424,9 @@ const DICT = {
     "Login/Register": "Anmelden/Registrieren",
     "Login/Signup": "Anmelden/Registrieren",
     "Login to sync profile and orders": "Zum Synchronisieren von Profil und Bestellungen anmelden",
+    "Back to marketplace": "Zurück zum Marktplatz",
     "Active and past orders": "Aktive und vergangene Bestellungen",
+    "Open your latest order details": "Letzte Bestelldetails öffnen",
     "Saved checkout details": "Gespeicherte Checkout-Daten",
     "Sign out from this device": "Von diesem Gerät abmelden",
     "Access your account": "Auf Ihr Konto zugreifen",
@@ -2600,6 +2609,7 @@ const DICT = {
     Flexible: "Flexible",
     "Main floor": "Salle principale",
     "Select Areas": "Sélectionner des zones",
+    "All Areas": "Toutes les zones",
     "Choose your table": "Choisissez votre table",
     "Select table": "Sélectionner une table",
     "Confirm table": "Confirmer la table",
@@ -2692,7 +2702,9 @@ const DICT = {
     "Login/Register": "Connexion/Inscription",
     "Login/Signup": "Connexion/Inscription",
     "Login to sync profile and orders": "Connectez-vous pour synchroniser votre profil et vos commandes",
+    "Back to marketplace": "Retour au marketplace",
     "Active and past orders": "Commandes actives et passées",
+    "Open your latest order details": "Ouvrir les détails de votre dernière commande",
     "Saved checkout details": "Informations de commande enregistrées",
     "Sign out from this device": "Se déconnecter de cet appareil",
     "Access your account": "Accéder à votre compte",
@@ -8051,6 +8063,15 @@ export default function QrMenu() {
     }
     if (isCustomerAuthRestoring) return;
     if (phoneVerificationModalState.open) return;
+    if (
+      autoPhoneVerificationPromptedRef.current &&
+      isAutoPhoneVerificationChecking
+    ) {
+      // Recover from interrupted async checks (e.g. auth/session race on relogin)
+      // so the UI never gets stuck in a hidden state.
+      autoPhoneVerificationPromptedRef.current = false;
+      setIsAutoPhoneVerificationChecking(false);
+    }
     if (autoPhoneVerificationPromptedRef.current) return;
 
     autoPhoneVerificationPromptedRef.current = true;
@@ -8104,7 +8125,6 @@ export default function QrMenu() {
 
   const shouldHideMenuContent =
     suppressMenuFlash ||
-    isAutoPhoneVerificationChecking ||
     (phoneVerificationModalState.open &&
       String(phoneVerificationModalState.origin || "").trim().toLowerCase() === "account_auto");
 
