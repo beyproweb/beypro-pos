@@ -2201,19 +2201,29 @@ const handleCheckinReservation = useCallback(
             const didConfirmReservation = await confirmReservationOrder();
             if (!didConfirmReservation) return;
           } else {
+            let concertPatchSucceeded = false;
             try {
               await secureFetch(`/concerts/bookings/${targetConcertBookingId}/payment-status`, {
                 method: "PATCH",
                 body: JSON.stringify({ payment_status: "confirmed" }),
               });
+              concertPatchSucceeded = true;
             } catch (confirmConcertErr) {
               const statusCode = Number(confirmConcertErr?.details?.status);
               const errorText = String(confirmConcertErr?.message || "").toLowerCase();
               const isBookingNotFound =
                 statusCode === 404 && errorText.includes("booking not found");
               if (!isBookingNotFound) throw confirmConcertErr;
-              const didConfirmReservation = await confirmReservationOrder();
-              if (!didConfirmReservation) return;
+            }
+            const didConfirmReservation = await confirmReservationOrder();
+            if (!didConfirmReservation && !concertPatchSucceeded) return;
+            if (!didConfirmReservation && concertPatchSucceeded) {
+              markBookingConfirmedLocally({
+                tableNumber,
+                reservationId,
+                orderId,
+                reservation: reservationInfo || table?.reservationFallback,
+              });
             }
           }
         } else {
@@ -3287,7 +3297,8 @@ useEffect(() => {
           }
           return (
             status === "reserved" ||
-            status === "confirmed"
+            status === "confirmed" ||
+            status === "checked_in"
           );
         })
         .sort((a, b) => {

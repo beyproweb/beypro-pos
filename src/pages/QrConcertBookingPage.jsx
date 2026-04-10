@@ -25,6 +25,12 @@ import {
   normalizeFloorPlanTableStatus,
 } from "../features/floorPlan/utils/floorPlan";
 import {
+  getOrderTableNumberKey,
+  isActiveTableOrderStatus,
+  isSameTableNumberKey,
+  normalizeTableNumberKey,
+} from "../utils/activeTableState";
+import {
   buildGuestComposition,
   buildGuestCountOptions,
   EMAIL_REGEX,
@@ -115,8 +121,27 @@ const TABLE_STATE_SOURCE_PRIORITY = {
   unavailable_state: 20,
   unavailable_list: 60,
   unavailable_reserved_list: 70,
+  active_order: 90,
   table_lock: 100,
 };
+const TABLE_10_DEBUG_KEY = "10";
+const TERMINAL_FLOOR_MAP_ORDER_STATUSES = new Set([
+  "checked_out",
+  "checkedout",
+  "checkout",
+  "closed",
+  "completed",
+  "cancelled",
+  "canceled",
+  "deleted",
+  "void",
+  "archived",
+]);
+const RESERVATION_LIKE_ORDER_TYPES = new Set([
+  "reservation",
+  "concert",
+  "concert_table",
+]);
 const LIVE_REFRESH_SOCKET_EVENTS = [
   "order_confirmed",
   "orders_updated",
@@ -148,9 +173,116 @@ function parseConcertTableNumber(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function parseConcertOrdersPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.orders)) return payload.orders;
+  return [];
+}
+
+function normalizeConcertDateYmd(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const datePrefix = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  return datePrefix ? datePrefix[1] : "";
+}
+
+function getConcertOrderStatus(order) {
+  return String(
+    order?.status ??
+      order?.order_status ??
+      order?.orderStatus ??
+      order?.reservation_order_status ??
+      order?.reservationOrderStatus ??
+      order?.reservation?.status ??
+      order?.reservation?.reservation_status ??
+      order?.reservation?.reservationStatus ??
+      ""
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function getConcertOrderDateYmd(order) {
+  return normalizeConcertDateYmd(
+    order?.reservation_date ??
+      order?.reservationDate ??
+      order?.event_date ??
+      order?.eventDate ??
+      order?.reservation?.reservation_date ??
+      order?.reservation?.reservationDate ??
+      order?.reservation?.event_date ??
+      order?.reservation?.eventDate
+  );
+}
+
+function hasConcertReservationPayload(order) {
+  return Boolean(
+    order?.reservation_id ??
+      order?.reservationId ??
+      order?.reservation_date ??
+      order?.reservationDate ??
+      order?.reservation_time ??
+      order?.reservationTime ??
+      order?.reservation?.id ??
+      order?.reservation?.reservation_id ??
+      order?.reservation?.reservationId ??
+      order?.reservation?.reservation_date ??
+      order?.reservation?.reservationDate ??
+      order?.reservation?.reservation_time ??
+      order?.reservation?.reservationTime
+  );
+}
+
+function isReservationLikeConcertOrder(order, normalizedStatus = "") {
+  const orderType = String(
+    order?.order_type ??
+      order?.orderType ??
+      order?.reservation?.order_type ??
+      order?.reservation?.orderType ??
+      ""
+  )
+    .trim()
+    .toLowerCase();
+  if (RESERVATION_LIKE_ORDER_TYPES.has(orderType)) return true;
+  if (hasConcertReservationPayload(order)) return true;
+  return normalizedStatus === "reserved" || normalizedStatus === "checked_in";
+}
+
+function isOrderOccupyingForConcertDate(order, concertDateYmd = "") {
+  const normalizedStatus = getConcertOrderStatus(order);
+  if (!normalizedStatus) return false;
+  if (TERMINAL_FLOOR_MAP_ORDER_STATUSES.has(normalizedStatus)) return false;
+  if (isActiveTableOrderStatus(normalizedStatus)) return true;
+  if (!isReservationLikeConcertOrder(order, normalizedStatus)) return false;
+  if (normalizedStatus === "checked_in") return true;
+
+  const orderDateYmd = getConcertOrderDateYmd(order);
+  if (!concertDateYmd || !orderDateYmd) return true;
+  return orderDateYmd === concertDateYmd;
+}
+
+function isConcertTable10(value) {
+  return normalizeTableNumberKey(value) === TABLE_10_DEBUG_KEY;
+}
+
+function resolveConcertTableNumberFromTables(tables = [], rawValue) {
+  const targetKey = normalizeTableNumberKey(rawValue);
+  if (!targetKey) return null;
+  const matched = (Array.isArray(tables) ? tables : []).find((table) =>
+    isSameTableNumberKey(
+      targetKey,
+      table?.number ?? table?.tableNumber ?? table?.table_number
+    )
+  );
+  const resolvedRaw = matched
+    ? matched?.number ?? matched?.tableNumber ?? matched?.table_number
+    : rawValue;
+  return parseConcertTableNumber(resolvedRaw);
+}
+
 function normalizeConcertFloorPlanStatus(value) {
-  const normalized = normalizeFloorPlanTableStatus(value);
-  return normalized === "reserved" ? "occupied" : normalized;
+  return normalizeFloorPlanTableStatus(value);
 }
 
 function mergeStateEntryByPriority(
@@ -163,9 +295,10 @@ function mergeStateEntryByPriority(
   if (!tableNumber) return;
   const sourcePriority =
     TABLE_STATE_SOURCE_PRIORITY[String(options?.source || "fallback").trim()] || 0;
+  const sourceName = String(options?.source || "fallback").trim();
   const forceStatus = Boolean(options?.forceStatus);
 
-  const normalizedStatus = normalizeConcertFloorPlanStatus(
+  let normalizedStatus = normalizeConcertFloorPlanStatus(
     source?.status ??
       source?.table_status ??
       source?.tableStatus ??
@@ -174,6 +307,17 @@ function mergeStateEntryByPriority(
       source?.state ??
       fallbackStatus
   );
+  if (normalizedStatus === "reserved") {
+    normalizedStatus = "occupied";
+  }
+  if (
+    sourceName !== "active_order" &&
+    sourceName !== "unavailable_state" &&
+    sourceName !== "unavailable_reserved_list" &&
+    (normalizedStatus === "occupied" || normalizedStatus === "reserved")
+  ) {
+    normalizedStatus = "available";
+  }
 
   const previous = map.get(tableNumber);
   if (!previous) {
@@ -217,36 +361,111 @@ function mergeNumberListAsStatus(map, values, status, options = {}) {
   });
 }
 
-function buildMergedConcertTableStates({ floorPlanStates = [], unavailablePayload = null, tables = [] }) {
+function buildMergedConcertTableStates({
+  floorPlanStates = [],
+  activeOrders = [],
+  unavailablePayload = null,
+  tables = [],
+  concertDateYmd = "",
+}) {
   const merged = new Map();
 
   (Array.isArray(floorPlanStates) ? floorPlanStates : []).forEach((state) =>
-    mergeStateEntryByPriority(merged, state, "available", { source: "floor_plan_state" })
+    mergeStateEntryByPriority(
+      merged,
+      {
+        ...(state && typeof state === "object" ? state : {}),
+        table_number: resolveConcertTableNumberFromTables(
+          tables,
+          getFloorPlanStateTableNumber(state)
+        ),
+      },
+      "available",
+      { source: "floor_plan_state" }
+    )
   );
 
   if (unavailablePayload && typeof unavailablePayload === "object") {
     (Array.isArray(unavailablePayload?.table_states) ? unavailablePayload.table_states : []).forEach(
       (state) =>
-        mergeStateEntryByPriority(merged, state, "available", {
-          source: "unavailable_state",
-        })
+        mergeStateEntryByPriority(
+          merged,
+          {
+            ...(state && typeof state === "object" ? state : {}),
+            table_number: resolveConcertTableNumberFromTables(
+              tables,
+              getFloorPlanStateTableNumber(state)
+            ),
+          },
+          "available",
+          {
+            source: "unavailable_state",
+          }
+        )
     );
     (Array.isArray(unavailablePayload?.tables) ? unavailablePayload.tables : []).forEach((state) =>
-      mergeStateEntryByPriority(merged, state, "available", {
-        source: "unavailable_state",
-      })
+      mergeStateEntryByPriority(
+        merged,
+        {
+          ...(state && typeof state === "object" ? state : {}),
+          table_number: resolveConcertTableNumberFromTables(
+            tables,
+            getFloorPlanStateTableNumber(state)
+          ),
+        },
+        "available",
+        {
+          source: "unavailable_state",
+        }
+      )
     );
-    mergeNumberListAsStatus(merged, unavailablePayload?.table_numbers, "pending_hold", {
-      source: "unavailable_list",
-    });
-    mergeNumberListAsStatus(merged, unavailablePayload?.reserved_table_numbers, "reserved", {
-      source: "unavailable_reserved_list",
-      forceStatus: true,
-    });
+    mergeNumberListAsStatus(
+      merged,
+      (Array.isArray(unavailablePayload?.table_numbers) ? unavailablePayload.table_numbers : []).map(
+        (value) => resolveConcertTableNumberFromTables(tables, value)
+      ),
+      "pending_hold",
+      {
+        source: "unavailable_list",
+      }
+    );
+    mergeNumberListAsStatus(
+      merged,
+      (Array.isArray(unavailablePayload?.reserved_table_numbers)
+        ? unavailablePayload.reserved_table_numbers
+        : []
+      ).map((value) => resolveConcertTableNumberFromTables(tables, value)),
+      "occupied",
+      {
+        source: "unavailable_reserved_list",
+        forceStatus: true,
+      }
+    );
   }
 
+  (Array.isArray(activeOrders) ? activeOrders : []).forEach((order) => {
+    if (!isOrderOccupyingForConcertDate(order, concertDateYmd)) return;
+    const tableNumber = resolveConcertTableNumberFromTables(
+      tables,
+      getOrderTableNumberKey(order)
+    );
+    if (!tableNumber) return;
+    mergeStateEntryByPriority(
+      merged,
+      {
+        table_number: tableNumber,
+      },
+      "occupied",
+      {
+        source: "active_order",
+        forceStatus: true,
+      }
+    );
+  });
+
   (Array.isArray(tables) ? tables : []).forEach((table) => {
-    const tableNumber = parseConcertTableNumber(
+    const tableNumber = resolveConcertTableNumberFromTables(
+      tables,
       table?.number ?? table?.tableNumber ?? table?.table_number
     );
     if (!tableNumber) return;
@@ -732,7 +951,7 @@ export default function QrConcertBookingPage() {
         }
         params.set("_ts", cacheBust);
         const query = params.toString();
-        const [response, tablesPayload, unavailablePayload] = await Promise.all([
+        const [response, tablesPayload, unavailablePayload, ordersPayload] = await Promise.all([
           secureFetch(
             `/public/concerts/${encodeURIComponent(identifier)}/events/${encodeURIComponent(
               concertId
@@ -753,6 +972,9 @@ export default function QrConcertBookingPage() {
             console.warn("Failed to load unavailable concert tables:", error);
             return null;
           }),
+          secureFetch(`/orders?_ts=${encodeURIComponent(cacheBust)}`, {
+            cache: "no-store",
+          }).catch(() => []),
         ]);
         if (cancelled) return;
         const hasTablesPayload =
@@ -761,15 +983,94 @@ export default function QrConcertBookingPage() {
           ? getActiveTables(Array.isArray(tablesPayload) ? tablesPayload : tablesPayload?.data || [])
           : [];
         if (hasTablesPayload) setTables(normalizedTables);
-        setFloorPlan(mergeFloorPlanVisualStyles(response?.layout || null, branding?.qr_floor_plan_layout));
-        setTableStates(
-          buildMergedConcertTableStates({
-            floorPlanStates: Array.isArray(response?.table_states) ? response.table_states : [],
-            unavailablePayload,
-            tables:
-              hasTablesPayload ? normalizedTables : tableSnapshotRef.current,
-          })
+        const normalizedOrders = parseConcertOrdersPayload(ordersPayload);
+        const concertDateYmd = normalizeConcertDateYmd(
+          event?.event_date ?? event?.eventDate
         );
+        const activeOrderTableKeys = new Set();
+        const table10RawOrders = [];
+        (Array.isArray(normalizedOrders) ? normalizedOrders : []).forEach((order) => {
+          const tableKey = getOrderTableNumberKey(order);
+          const status = getConcertOrderStatus(order);
+          const occupiesNow = isOrderOccupyingForConcertDate(order, concertDateYmd);
+          if (isConcertTable10(tableKey)) {
+            table10RawOrders.push({
+              id: order?.id ?? null,
+              status,
+              table_number:
+                order?.table_number ??
+                order?.tableNumber ??
+                order?.reserved_table_number ??
+                order?.reservedTableNumber ??
+                order?.table_id ??
+                order?.tableId ??
+                order?.table ??
+                order?.reservation?.table_number ??
+                order?.reservation?.tableNumber ??
+                null,
+              reservation_date: getConcertOrderDateYmd(order),
+              occupiesNow,
+            });
+          }
+          if (!tableKey || !occupiesNow) return;
+          activeOrderTableKeys.add(normalizeTableNumberKey(tableKey));
+        });
+        const table10RawUnavailableRows = [
+          ...(Array.isArray(unavailablePayload?.table_states) ? unavailablePayload.table_states : []),
+          ...(Array.isArray(unavailablePayload?.tables) ? unavailablePayload.tables : []),
+        ]
+          .filter((row) => isConcertTable10(getFloorPlanStateTableNumber(row)))
+          .map((row) => ({
+            table_number: getFloorPlanStateTableNumber(row),
+            status:
+              row?.status ??
+              row?.table_status ??
+              row?.tableStatus ??
+              row?.availability_status ??
+              row?.availabilityStatus ??
+              row?.state ??
+              "unknown",
+          }));
+        const table10UnavailableReservedNumbers = (
+          Array.isArray(unavailablePayload?.reserved_table_numbers)
+            ? unavailablePayload.reserved_table_numbers
+            : []
+        ).filter((value) => isConcertTable10(value));
+        setFloorPlan(mergeFloorPlanVisualStyles(response?.layout || null, branding?.qr_floor_plan_layout));
+        const mergedStates = buildMergedConcertTableStates({
+          floorPlanStates: Array.isArray(response?.table_states) ? response.table_states : [],
+          activeOrders: normalizedOrders,
+          unavailablePayload,
+          tables:
+            hasTablesPayload ? normalizedTables : tableSnapshotRef.current,
+          concertDateYmd,
+        });
+        if (import.meta.env.DEV) {
+          const table10State =
+            (Array.isArray(mergedStates) ? mergedStates : []).find((state) =>
+              isConcertTable10(getFloorPlanStateTableNumber(state))
+            ) || null;
+          if (
+            table10RawOrders.length > 0 ||
+            table10RawUnavailableRows.length > 0 ||
+            activeOrderTableKeys.has(TABLE_10_DEBUG_KEY) ||
+            table10State
+          ) {
+            console.warn("[table10-debug][concert-floor-map][raw-api]", {
+              orders: table10RawOrders,
+              unavailableRows: table10RawUnavailableRows,
+              unavailableReservedNumbers: table10UnavailableReservedNumbers,
+            });
+            console.warn("[table10-debug][concert-floor-map][derived-occupied]", {
+              activeOrderTableKeys: Array.from(activeOrderTableKeys),
+              table10Occupied: activeOrderTableKeys.has(TABLE_10_DEBUG_KEY),
+            });
+            console.warn("[table10-debug][concert-floor-map][derived-state]", {
+              table10State,
+            });
+          }
+        }
+        setTableStates(mergedStates);
       } catch (error) {
         if (!cancelled) {
           console.error("Failed to load concert floor plan:", error);
@@ -789,6 +1090,8 @@ export default function QrConcertBookingPage() {
   }, [
     branding?.qr_floor_plan_layout,
     concertId,
+    event?.event_date,
+    event?.eventDate,
     hasGuestCompositionInput,
     identifier,
     isTableBooking,
@@ -873,7 +1176,11 @@ export default function QrConcertBookingPage() {
     const selectedNumber = Number(form.table_number || 0);
     if (!selectedNumber) return;
     const state = (Array.isArray(tableStates) ? tableStates : []).find(
-      (item) => Number(getFloorPlanStateTableNumber(item)) === selectedNumber
+      (item) =>
+        isSameTableNumberKey(
+          getFloorPlanStateTableNumber(item),
+          selectedNumber
+        )
     );
     const normalizedStateStatus = normalizeConcertFloorPlanStatus(
       state?.status ??
@@ -891,7 +1198,11 @@ export default function QrConcertBookingPage() {
   const selectedTableState = React.useMemo(() => {
     return (
       (Array.isArray(tableStates) ? tableStates : []).find(
-        (state) => Number(getFloorPlanStateTableNumber(state)) === selectedTableNumber
+        (state) =>
+          isSameTableNumberKey(
+            getFloorPlanStateTableNumber(state),
+            selectedTableNumber
+          )
       ) || null
     );
   }, [selectedTableNumber, tableStates]);
@@ -899,7 +1210,10 @@ export default function QrConcertBookingPage() {
     return (
       (Array.isArray(tables) ? tables : []).find(
         (table) =>
-          Number(table?.number ?? table?.tableNumber ?? table?.table_number) === selectedTableNumber
+          isSameTableNumberKey(
+            table?.number ?? table?.tableNumber ?? table?.table_number,
+            selectedTableNumber
+          )
       ) || null
     );
   }, [selectedTableNumber, tables]);

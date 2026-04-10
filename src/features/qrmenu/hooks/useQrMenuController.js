@@ -168,7 +168,7 @@ const isCancelledLikeStatus = (status) =>
     String(status || "").toLowerCase()
   );
 const isTerminalOrderStatus = (status) =>
-  ["closed", "completed", "cancelled", "canceled", "deleted", "void"].includes(
+  ["closed", "completed", "cancelled", "canceled", "deleted", "void", "archived"].includes(
     String(status || "").toLowerCase()
   );
 const isCheckedInReservationStatus = (status) => {
@@ -2090,9 +2090,18 @@ if (savedTable) {
       toArray(orders).forEach((order) => {
         const tableKey = getOrderTableNumberKey(order);
         if (!tableKey) return;
-        const normalizedStatus = String(order?.status ?? order?.order_status ?? "")
-          .trim()
-          .toLowerCase();
+        const normalizedStatus = resolveReservationAwareStatus(
+          order,
+          String(order?.status ?? order?.order_status ?? "")
+            .trim()
+            .toLowerCase()
+        );
+        const reservationLike = isReservationLikeEntry(order);
+        const reservationActive = reservationLike && hasActiveReservationPayload(order);
+        const reservationOccupiesNow =
+          reservationActive &&
+          !isTerminalOrderStatus(normalizedStatus) &&
+          !isCancelledLikeStatus(normalizedStatus);
         if (isTable10(tableKey)) {
           table10Input.push({
             id: order?.id ?? null,
@@ -2104,9 +2113,12 @@ if (savedTable) {
               order?.tableId ??
               order?.table ??
               null,
+            reservationLike,
+            reservationActive,
+            reservationOccupiesNow,
           });
         }
-        if (!isActiveTableOrderStatus(normalizedStatus)) return;
+        if (!isActiveTableOrderStatus(normalizedStatus) && !reservationOccupiesNow) return;
         nextOccupiedKeys.add(tableKey);
       });
 
@@ -2245,33 +2257,58 @@ if (savedTable) {
       s.emit("join_restaurant", socketRestaurantId);
     } catch {}
 
+    const normalizeSocketTableNo = (value) => {
+      const n = Number(value);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+    const normalizeSocketTableList = (values) =>
+      Array.from(
+        new Set(
+          toArray(values)
+            .map((value) => Number(value))
+            .filter((n) => Number.isFinite(n) && n > 0)
+        )
+      );
+
     const upsertOccupied = (tableNo) => {
-      const n = Number(tableNo);
-      if (!Number.isFinite(n) || n <= 0) return;
+      const n = normalizeSocketTableNo(tableNo);
+      if (!n) return;
+      setOccupiedTables((prev) => {
+        const next = normalizeSocketTableList(prev);
+        if (!next.includes(n)) next.push(n);
+        return next;
+      });
       if (import.meta.env.DEV && isTable10(n)) {
         console.warn("[table10-debug][qr-socket] upsertOccupied requested", { tableNo: n });
       }
     };
 
     const removeOccupied = (tableNo) => {
-      const n = Number(tableNo);
-      if (!Number.isFinite(n) || n <= 0) return;
+      const n = normalizeSocketTableNo(tableNo);
+      if (!n) return;
+      setOccupiedTables((prev) => normalizeSocketTableList(prev).filter((value) => value !== n));
       if (import.meta.env.DEV && isTable10(n)) {
         console.warn("[table10-debug][qr-socket] removeOccupied requested", { tableNo: n });
       }
     };
 
     const upsertReserved = (tableNo) => {
-      const n = Number(tableNo);
-      if (!Number.isFinite(n) || n <= 0) return;
+      const n = normalizeSocketTableNo(tableNo);
+      if (!n) return;
+      setReservedTables((prev) => {
+        const next = normalizeSocketTableList(prev);
+        if (!next.includes(n)) next.push(n);
+        return next;
+      });
       if (import.meta.env.DEV && isTable10(n)) {
         console.warn("[table10-debug][qr-socket] upsertReserved requested", { tableNo: n });
       }
     };
 
     const removeReserved = (tableNo) => {
-      const n = Number(tableNo);
-      if (!Number.isFinite(n) || n <= 0) return;
+      const n = normalizeSocketTableNo(tableNo);
+      if (!n) return;
+      setReservedTables((prev) => normalizeSocketTableList(prev).filter((value) => value !== n));
       if (import.meta.env.DEV && isTable10(n)) {
         console.warn("[table10-debug][qr-socket] removeReserved requested", { tableNo: n });
       }
@@ -2416,6 +2453,10 @@ if (savedTable) {
       if (import.meta.env.DEV && isTable10(payloadTableNo)) {
         console.warn("[table10-debug][qr-socket][order_closed]", payload);
       }
+      if (payloadTableNo) {
+        removeOccupied(payloadTableNo);
+        removeReserved(payloadTableNo);
+      }
       if (Number.isFinite(orderId)) {
         const cached = orderIdToTableRef.current.get(orderId);
         if (cached) {
@@ -2509,6 +2550,7 @@ if (savedTable) {
         if (import.meta.env.DEV && isTable10(tableNo)) {
           console.warn("[table10-debug][qr-socket][reservation_cancelled_or_deleted]", payload);
         }
+        removeOccupied(tableNo);
         removeReserved(tableNo);
       }
       const matchesActiveReservation = matchesActiveReservationPayload(payload, tableNo);
@@ -2584,6 +2626,7 @@ if (savedTable) {
     s.on("order_closed", onClosed);
     s.on("reservation_created", onReservationCreated);
     s.on("reservation_updated", onReservationUpdated);
+    s.on("reservation_checked_in", onReservationUpdated);
     s.on("reservation_cancelled", onReservationCancelled);
     s.on("reservation_deleted", onReservationCancelled);
 
@@ -2602,6 +2645,7 @@ if (savedTable) {
         s.off("order_closed", onClosed);
         s.off("reservation_created", onReservationCreated);
         s.off("reservation_updated", onReservationUpdated);
+        s.off("reservation_checked_in", onReservationUpdated);
         s.off("reservation_cancelled", onReservationCancelled);
         s.off("reservation_deleted", onReservationCancelled);
         s.disconnect();

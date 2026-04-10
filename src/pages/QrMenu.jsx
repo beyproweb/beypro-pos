@@ -8,6 +8,7 @@ import RequestSongTab from "../features/qrmenu/components/RequestSongTab";
 import ProductModal from "../features/qrmenu/components/modals/ProductModal";
 import CartModal from "../features/qrmenu/components/modals/CartModal";
 import CheckoutModal from "../features/qrmenu/components/modals/CheckoutModal";
+import PhoneVerificationModal from "../features/qrmenu/components/modals/PhoneVerificationModal";
 import useQrMenuController from "../features/qrmenu/hooks/useQrMenuController";
 import { Header as QrMenuHeader } from "../features/qrmenu/header";
 import {
@@ -15,6 +16,7 @@ import {
   getCheckoutPrefill,
   LoginPage,
   RegisterPage,
+  saveCheckoutPrefill,
   useCustomerAuth,
   useHeaderDrawer,
 } from "../features/qrmenu/header-drawer";
@@ -3281,6 +3283,7 @@ function OrderTypeSelect({
   reservationEnabled = true,
   tableEnabled = true,
   onRequestAuthView = null,
+  onRequirePhoneVerification = null,
 }) {
 
   /* ============================================================
@@ -4380,6 +4383,18 @@ async function load() {
       alert(t("Please enter a valid email address"));
       return;
     }
+    const concertPhoneVerification =
+      typeof onRequirePhoneVerification === "function"
+        ? await onRequirePhoneVerification({
+            phone: concertForm.customer_phone,
+            flowLabel: concertMode === "table" ? t("Concert Booking") : t("Ticket Purchase"),
+          })
+        : {
+            ok: true,
+            phone: normalizeQrPhone(concertForm.customer_phone),
+            phoneVerificationToken: "",
+          };
+    if (!concertPhoneVerification?.ok) return;
     if (concertMode === "table") {
       const selectedTableNumber = Number(concertForm.table_number);
       if (!Number.isFinite(selectedTableNumber) || selectedTableNumber <= 0) {
@@ -4447,10 +4462,13 @@ async function load() {
           ? concertFemaleGuestsCount
           : null,
       customer_name: concertForm.customer_name.trim(),
-      customer_phone: concertForm.customer_phone.trim(),
+      customer_phone:
+        concertPhoneVerification?.phone || normalizeQrPhone(concertForm.customer_phone),
       customer_email: customerEmail || null,
       customer_note: concertForm.customer_note.trim(),
       bank_reference: concertForm.bank_reference.trim(),
+      phone_verification_token:
+        concertPhoneVerification?.phoneVerificationToken || null,
       area_name: selectedConcertTicketType?.area_name || null,
     };
 
@@ -4572,6 +4590,7 @@ async function load() {
     selectedConcertTicketType?.area_name,
     selectedConcertTableStockAvailable,
     selectedConcertTablePackageTicketAvailable,
+    onRequirePhoneVerification,
     t,
   ]);
 
@@ -7782,6 +7801,7 @@ export default function QrMenu() {
     activeOrder,
     orderScreenStatus,
     setOrderScreenStatus,
+    customerInfo,
     setCustomerInfo,
   } = useQrMenuController({
     slug,
@@ -7837,8 +7857,11 @@ export default function QrMenu() {
     loginWithApple: loginCustomerWithApple,
     loginWithGoogle: loginCustomerWithGoogle,
     requestEmailOtp: requestCustomerEmailOtp,
+    requestPhoneOtp: requestCustomerPhoneOtp,
     register: registerCustomerSession,
     verifyEmailOtp: verifyCustomerEmailOtp,
+    verifyPhoneOtp: verifyCustomerPhoneOtp,
+    getPhoneVerificationStatus: getCustomerPhoneVerificationStatus,
   } = useCustomerAuth(storage, {
     fetcher: customerAuthFetcher,
     identifier: restaurantIdentifier,
@@ -7852,6 +7875,13 @@ export default function QrMenu() {
   const [authWelcomeView, setAuthWelcomeView] = useState("login");
   const callWaiterFeedbackTimeoutRef = useRef(null);
   const authPromptWasLoggedInRef = useRef(isCustomerLoggedInEffective);
+  const autoPhoneVerificationPromptedRef = useRef(false);
+  const phoneVerificationResolverRef = useRef(null);
+  const [phoneVerificationModalState, setPhoneVerificationModalState] = useState({
+    open: false,
+    phone: "",
+    flowLabel: "",
+  });
 
   const handleCloseAppHeaderDrawer = useCallback(() => {
     closeAppHeaderDrawer();
@@ -7894,7 +7924,108 @@ export default function QrMenu() {
     setIsAuthWelcomeDismissed(true);
   }, []);
 
+  const resolvePhoneVerificationRequest = useCallback((result = null) => {
+    const resolver = phoneVerificationResolverRef.current;
+    phoneVerificationResolverRef.current = null;
+    if (typeof resolver === "function") {
+      resolver(
+        result || {
+          verified: false,
+          phone: "",
+          phoneVerificationToken: "",
+          source: "dismissed",
+        }
+      );
+    }
+  }, []);
+
+  const closePhoneVerificationModal = useCallback(
+    (result = null) => {
+      setPhoneVerificationModalState({
+        open: false,
+        phone: "",
+        flowLabel: "",
+      });
+      resolvePhoneVerificationRequest(result);
+    },
+    [resolvePhoneVerificationRequest]
+  );
+
+  const requestPhoneVerificationModal = useCallback(
+    ({ phone, flowLabel = "" }) =>
+      new Promise((resolve) => {
+        phoneVerificationResolverRef.current = resolve;
+        setPhoneVerificationModalState({
+          open: true,
+          phone: normalizeQrPhone(phone),
+          flowLabel: String(flowLabel || "").trim(),
+        });
+      }),
+    []
+  );
+
+  useEffect(
+    () => () => {
+      resolvePhoneVerificationRequest();
+    },
+    [resolvePhoneVerificationRequest]
+  );
+
   useEffect(() => {
+    if (!isCustomerLoggedInEffective) {
+      autoPhoneVerificationPromptedRef.current = false;
+      return;
+    }
+    if (isCustomerAuthRestoring) return;
+    if (phoneVerificationModalState.open) return;
+    if (autoPhoneVerificationPromptedRef.current) return;
+
+    autoPhoneVerificationPromptedRef.current = true;
+
+    const sessionPhone = normalizeQrPhone(qrCustomerSession?.phone || "");
+    let cancelled = false;
+
+    (async () => {
+      let alreadyVerified = false;
+
+      if (QR_PHONE_REGEX.test(sessionPhone)) {
+        try {
+          const status = await getCustomerPhoneVerificationStatus({
+            phone: sessionPhone,
+          });
+          if (cancelled) return;
+          alreadyVerified = status?.verified === true;
+        } catch {
+          alreadyVerified = qrCustomerSession?.phone_verified === true;
+        }
+      }
+
+      if (cancelled || alreadyVerified) return;
+
+      setIsManualAuthModalOpen(false);
+      await requestPhoneVerificationModal({
+        phone: sessionPhone,
+        flowLabel: t("Account Verification"),
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    getCustomerPhoneVerificationStatus,
+    isCustomerAuthRestoring,
+    isCustomerLoggedInEffective,
+    phoneVerificationModalState.open,
+    qrCustomerSession?.phone,
+    qrCustomerSession?.phone_verified,
+    requestPhoneVerificationModal,
+    t,
+  ]);
+
+  useEffect(() => {
+    if (isCustomerLoggedInEffective) return;
+
     const authParamRaw = String(
       new URLSearchParams(location.search || "").get("auth") || ""
     )
@@ -7918,7 +8049,7 @@ export default function QrMenu() {
     setIsAuthWelcomeDismissed(false);
     setIsManualAuthModalOpen(true);
     handleCloseAppHeaderDrawer();
-  }, [handleCloseAppHeaderDrawer, location.search]);
+  }, [handleCloseAppHeaderDrawer, isCustomerLoggedInEffective, location.search]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -8854,6 +8985,121 @@ export default function QrMenu() {
     }),
     [savedCustomerPrefill, takeaway]
   );
+  const persistVerifiedPhoneForCheckout = useCallback(
+    (phone) => {
+      const normalizedPhone = normalizeQrPhone(phone);
+      if (!QR_PHONE_REGEX.test(normalizedPhone)) return "";
+      setCustomerInfo((prev) => ({ ...(prev || {}), phone: normalizedPhone }));
+      setTakeaway((prev) => ({ ...(prev || {}), phone: normalizedPhone }));
+      saveCheckoutPrefill({ phone: normalizedPhone }, storage);
+      return normalizedPhone;
+    },
+    [setCustomerInfo, setTakeaway, storage]
+  );
+
+  async function ensureVerifiedPhoneForFlow({ phone, flowLabel = "" }) {
+    const normalizedPhone = normalizeQrPhone(phone);
+
+    if (QR_PHONE_REGEX.test(normalizedPhone)) {
+      try {
+        const status = await getCustomerPhoneVerificationStatus({
+          phone: normalizedPhone,
+        });
+        if (status?.verified) {
+          return {
+            ok: true,
+            phone: normalizedPhone,
+            phoneVerificationToken: String(status?.phoneVerificationToken || "").trim(),
+          };
+        }
+      } catch {
+        // If status check fails we still allow OTP modal fallback.
+      }
+    }
+
+    const modalResult = await requestPhoneVerificationModal({
+      phone: normalizedPhone,
+      flowLabel,
+    });
+    if (modalResult?.verified) {
+      return {
+        ok: true,
+        phone: normalizeQrPhone(modalResult.phone || normalizedPhone),
+        phoneVerificationToken: String(modalResult.phoneVerificationToken || "").trim(),
+      };
+    }
+    return { ok: false, phone: normalizedPhone };
+  }
+
+  const handleSubmitOrderWithPhoneVerification = useCallback(
+    async (overrideItems = null, options = {}) => {
+      const providedToken = String(options?.phoneVerificationToken || "").trim();
+      if (providedToken) {
+        await handleSubmitOrder(overrideItems, options);
+        return;
+      }
+
+      const currentOrderType = String(
+        orderType || storage.getItem("qr_orderType") || ""
+      ).toLowerCase();
+      const takeawayMode = String(takeaway?.mode || "").toLowerCase();
+      const requiresPhoneVerification =
+        currentOrderType === "online" ||
+        (currentOrderType === "takeaway" && takeawayMode !== "reservation");
+
+      if (!requiresPhoneVerification) {
+        await handleSubmitOrder(overrideItems, options);
+        return;
+      }
+
+      if (currentOrderType === "online") {
+        const deliveryPhone = normalizeQrPhone(
+          customerInfo?.phone || savedCustomerPrefill?.phone || ""
+        );
+        const verification = await ensureVerifiedPhoneForFlow({
+          phone: deliveryPhone,
+          flowLabel: t("Delivery"),
+        });
+        if (!verification?.ok) return;
+        const verifiedPhone = persistVerifiedPhoneForCheckout(
+          verification.phone || deliveryPhone
+        );
+        await handleSubmitOrder(overrideItems, {
+          ...options,
+          customerPhoneOverride: verifiedPhone || verification.phone || deliveryPhone,
+          phoneVerificationToken: verification.phoneVerificationToken || "",
+        });
+        return;
+      }
+
+      const pickupPhone = normalizeQrPhone(takeaway?.phone || savedCustomerPrefill?.phone || "");
+      const verification = await ensureVerifiedPhoneForFlow({
+        phone: pickupPhone,
+        flowLabel: t("Pickup"),
+      });
+      if (!verification?.ok) return;
+      const verifiedPhone = persistVerifiedPhoneForCheckout(
+        verification.phone || pickupPhone
+      );
+      await handleSubmitOrder(overrideItems, {
+        ...options,
+        customerPhoneOverride: verifiedPhone || verification.phone || pickupPhone,
+        phoneVerificationToken: verification.phoneVerificationToken || "",
+      });
+    },
+    [
+      customerInfo?.phone,
+      persistVerifiedPhoneForCheckout,
+      ensureVerifiedPhoneForFlow,
+      handleSubmitOrder,
+      orderType,
+      savedCustomerPrefill?.phone,
+      storage,
+      takeaway?.mode,
+      takeaway?.phone,
+      t,
+    ]
+  );
   const qrBookingSettings = useMemo(
     () => normalizeQrBookingSettings(orderSelectCustomization || {}),
     [orderSelectCustomization]
@@ -9251,7 +9497,7 @@ export default function QrMenu() {
   );
 
   const handleVoiceDraftConfirmOrder = useCallback(async (draftItems = [], options = {}) => {
-    if (typeof handleSubmitOrder === "function") {
+    if (typeof handleSubmitOrderWithPhoneVerification === "function") {
       const directItems = (Array.isArray(draftItems) ? draftItems : []).map((item, index) => ({
         id: item?.productId ?? null,
         product_id: item?.productId ?? null,
@@ -9271,14 +9517,14 @@ export default function QrMenu() {
           item?.key ||
           `${item?.productId || "voice"}-direct-${Date.now().toString(36)}-${index}`,
       }));
-      await handleSubmitOrder(directItems, {
+      await handleSubmitOrderWithPhoneVerification(directItems, {
         paymentMethodOverride:
           typeof options?.paymentMethodOverride === "string"
             ? options.paymentMethodOverride
             : undefined,
       });
     }
-  }, [handleSubmitOrder, t]);
+  }, [handleSubmitOrderWithPhoneVerification, t]);
 
   const handleVoiceRequireOrderType = useCallback(() => {
     setShowStatus(false);
@@ -9756,6 +10002,7 @@ export default function QrMenu() {
             reservationEnabled={true}
             tableEnabled={allowTableOrder}
             onRequestAuthView={openFullScreenAuth}
+            onRequirePhoneVerification={ensureVerifiedPhoneForFlow}
           />
 
           {!orderType && showOrderTypePrompt && (
@@ -9847,7 +10094,7 @@ export default function QrMenu() {
                     <CartModal
                       cart={safeCart}
                       setCart={setCart}
-                      onSubmitOrder={handleSubmitOrder}
+                      onSubmitOrder={handleSubmitOrderWithPhoneVerification}
                       orderType={orderType}
                       paymentMethod={paymentMethod}
                       setPaymentMethod={setPaymentMethod}
@@ -9902,7 +10149,7 @@ export default function QrMenu() {
         <CartModal
           cart={safeCart}
           setCart={setCart}
-          onSubmitOrder={handleSubmitOrder}
+          onSubmitOrder={handleSubmitOrderWithPhoneVerification}
           orderType={orderType}
           paymentMethod={paymentMethod}
           setPaymentMethod={setPaymentMethod}
@@ -10429,6 +10676,30 @@ export default function QrMenu() {
           setPaymentMethod={setPaymentMethod}
         />
       )}
+
+      <PhoneVerificationModal
+        open={phoneVerificationModalState.open}
+        t={t}
+        accentColor={takeawaySubmitButtonColor}
+        initialPhone={phoneVerificationModalState.phone}
+        flowLabel={phoneVerificationModalState.flowLabel}
+        onClose={() => closePhoneVerificationModal()}
+        onRequestOtp={requestCustomerPhoneOtp}
+        onVerifyOtp={verifyCustomerPhoneOtp}
+        onVerified={(result) => {
+          const verifiedPhone = persistVerifiedPhoneForCheckout(
+            result?.phone || phoneVerificationModalState.phone
+          );
+          closePhoneVerificationModal({
+            verified: true,
+            phone: verifiedPhone || result?.phone || phoneVerificationModalState.phone,
+            phoneVerificationToken: String(
+              result?.phoneVerificationToken || ""
+            ).trim(),
+            source: result?.source || "otp_verified",
+          });
+        }}
+      />
 
       {suppressMenuFlash && (
         <div className="fixed inset-0 z-[120] bg-white" aria-hidden="true" />

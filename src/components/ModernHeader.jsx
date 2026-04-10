@@ -1365,14 +1365,14 @@ export default function ModernHeader({
           40% { transform: rotate(0deg) scale(1); }
         }`}
       </style>
-      <header className="sticky top-0 z-40 w-full px-3 md:px-6 h-auto md:h-16 py-2 md:py-0 flex items-center bg-white/80 dark:bg-zinc-900/70 backdrop-blur-xl shadow-2xl border-b border-blue-100 dark:border-zinc-800">
+      <header className="sticky top-0 z-40 flex w-full items-center bg-white/80 px-3 py-2 shadow-2xl backdrop-blur-xl border-b border-blue-100 dark:border-zinc-800 dark:bg-zinc-900/70 md:h-16 md:flex-nowrap md:px-6 md:py-0">
       {/* Left: Drawer toggle */}
-      <div className="flex items-center min-w-0 flex-shrink-0 gap-3">
+      <div className="flex min-w-0 flex-shrink-0 items-center gap-3">
         {onSidebarToggle && (
           <button
             type="button"
             onClick={onSidebarToggle}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-accent/20 bg-accent text-white shadow-sm transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-accent/40"
+            className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-2xl border border-accent/20 bg-accent text-white shadow-sm transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-accent/40"
             aria-label="Toggle navigation"
           >
             <Menu className="w-5 h-5" />
@@ -1382,7 +1382,7 @@ export default function ModernHeader({
           <button
             type="button"
             onClick={handleBackClick}
-            className="group inline-flex h-10 items-center justify-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white/90 px-3 text-sm font-semibold text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:text-indigo-600 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-indigo-500/50 dark:hover:text-indigo-300"
+            className="group inline-flex h-[42px] items-center justify-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white/95 px-3 text-sm font-semibold text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:text-indigo-600 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-indigo-500/50 dark:hover:text-indigo-300"
             aria-label={t("Go Back")}
             title={t("Go Back")}
           >
@@ -1395,8 +1395,8 @@ export default function ModernHeader({
       </div>
 
       {/* Center: sticky subtitle (no flicker) */}
-      <div className="flex-1 flex flex-col items-center justify-center min-w-0 px-2 md:px-4 gap-2">
-        <div className={isTransactionRoute ? "hidden md:block" : ""}>
+      <div className="flex min-w-0 flex-1 items-center justify-center px-2 md:px-4">
+        <div className={isTransactionRoute || isTableOverviewRoute ? "hidden" : ""}>
           <StickySubtitle text={subtitle} />
         </div>
         <div
@@ -1404,6 +1404,15 @@ export default function ModernHeader({
           className="relative flex w-full justify-end md:max-w-2xl md:justify-center"
         >
           <div className="flex w-auto items-center justify-end gap-2 md:w-full">
+            <button
+              type="button"
+              onClick={() => navigate("/dashboard")}
+              className={headerIconButtonClass(isDashboardRoute)}
+              aria-label={t("Dashboard")}
+              title={t("Dashboard")}
+            >
+              <Home className="h-4.5 w-4.5" />
+            </button>
             <div className="relative hidden flex-1 md:block">
               <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
               <button
@@ -1464,18 +1473,9 @@ export default function ModernHeader({
                     ? t("Listening...")
                     : t("Search anything: low stock, reservations, printer")
                 }
-                className="w-full rounded-2xl border border-slate-200/80 bg-white/95 py-2.5 pl-11 pr-12 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-100"
+                className="h-[42px] w-full rounded-2xl border border-slate-200/80 bg-white/95 pl-11 pr-12 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-100"
               />
             </div>
-            <button
-              type="button"
-              onClick={() => navigate("/dashboard")}
-              className={headerIconButtonClass(isDashboardRoute)}
-              aria-label={t("Dashboard")}
-              title={t("Dashboard")}
-            >
-              <Home className="h-4.5 w-4.5" />
-            </button>
             <button
               type="button"
               onClick={handleOrdersIconClick}
@@ -1853,17 +1853,17 @@ export default function ModernHeader({
       </div>
 
       {/* Right: Title + lock + bell + other right content */}
-      <div className="flex items-center gap-4 min-w-0 flex-shrink-0">
-        {tableNav && <div className="ml-2 hidden md:block">{tableNav}</div>}
+      <div className="flex min-w-0 flex-shrink-0 items-center gap-2.5 md:gap-3">
+        {tableNav && <div className="ml-1 hidden items-center md:flex">{tableNav}</div>}
 
         {title && (
-          <div className="hidden items-center gap-3 md:flex">
+          <div className="hidden items-center gap-2.5 md:flex">
             {isTableOverviewRoute && freeTablesCount !== null && (
-              <span className="inline-flex items-center px-3 py-1 rounded-full border border-indigo-600 bg-gradient-to-r from-indigo-600 to-blue-500 text-sm font-semibold text-white shadow-lg shadow-indigo-500/40">
+              <span className="inline-flex h-[42px] items-center rounded-2xl border border-indigo-600 bg-gradient-to-r from-indigo-600 to-blue-500 px-4 text-sm font-semibold text-white shadow-lg shadow-indigo-500/40">
                 {freeTablesCount} {t("Free")}
               </span>
             )}
-            <span className="mr-1 text-base font-bold tracking-tight text-slate-900 drop-shadow md:text-xl dark:text-slate-100">
+            <span className="inline-flex h-[42px] items-center text-lg font-bold tracking-tight text-slate-900 drop-shadow dark:text-slate-100">
               {title}
             </span>
           </div>

@@ -26,7 +26,13 @@ export const getOrderTableNumberKey = (order) =>
   normalizeTableNumberKey(
     order?.table_number ??
       order?.tableNumber ??
+      order?.reserved_table_number ??
+      order?.reservedTableNumber ??
       order?.table_id ??
       order?.tableId ??
+      order?.table?.table_number ??
+      order?.table?.tableNumber ??
+      order?.reservation?.table_number ??
+      order?.reservation?.tableNumber ??
       order?.table
   );

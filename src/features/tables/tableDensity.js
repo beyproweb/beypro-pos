@@ -9,7 +9,7 @@ export const DEFAULT_TABLE_DENSITY = TABLE_DENSITY.COMFORTABLE;
 export const TABLE_DENSITY_OPTIONS = Object.freeze([
   { id: TABLE_DENSITY.COMFORTABLE, label: "Comfortable" },
   { id: TABLE_DENSITY.COMPACT, label: "Compact" },
-  { id: TABLE_DENSITY.DENSE, label: "Dense ⚡" },
+  { id: TABLE_DENSITY.DENSE, label: "Dense" },
 ]);
 
 export const normalizeTableDensity = (value) => {

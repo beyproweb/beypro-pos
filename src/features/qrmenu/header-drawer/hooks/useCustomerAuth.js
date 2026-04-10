@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   completeCustomerOAuthFromUrl,
+  getCustomerPhoneVerificationStatus,
   getCustomerSession,
   loginCustomer,
   logoutCustomer,
   requestCustomerEmailOtp,
+  requestCustomerPhoneOtp,
   registerCustomer,
   restoreCustomerSession,
   startAppleOAuthLogin,
   startGoogleOAuthLogin,
+  updateCustomerPhoneNumber,
   updateCustomerProfile,
+  verifyCustomerPhoneOtp,
   verifyCustomerEmailOtp,
 } from "../services/customerService";
 
@@ -140,6 +144,28 @@ export default function useCustomerAuth(storage, options = {}) {
     [authContext]
   );
 
+  const requestPhoneOtp = useCallback(
+    async (payload) => {
+      setOauthError("");
+      return requestCustomerPhoneOtp(payload, authContext);
+    },
+    [authContext]
+  );
+
+  const verifyPhoneOtp = useCallback(
+    async (payload) => {
+      setOauthError("");
+      const result = await verifyCustomerPhoneOtp(payload, authContext);
+      if (result?.customer) {
+        setCustomer(result.customer);
+      } else {
+        setCustomer(getCustomerSession(storage));
+      }
+      return result;
+    },
+    [authContext, storage]
+  );
+
   const logout = useCallback(() => {
     setOauthError("");
     logoutCustomer(authContext);
@@ -152,6 +178,24 @@ export default function useCustomerAuth(storage, options = {}) {
       const next = await updateCustomerProfile(payload, authContext);
       setCustomer(next);
       return next;
+    },
+    [authContext]
+  );
+
+  const updatePhone = useCallback(
+    async (payload) => {
+      setOauthError("");
+      const result = await updateCustomerPhoneNumber(payload, authContext);
+      setCustomer(result?.customer || null);
+      return result;
+    },
+    [authContext]
+  );
+
+  const getPhoneVerificationStatus = useCallback(
+    async (payload) => {
+      setOauthError("");
+      return getCustomerPhoneVerificationStatus(payload, authContext);
     },
     [authContext]
   );
@@ -186,9 +230,13 @@ export default function useCustomerAuth(storage, options = {}) {
     loginWithApple,
     loginWithGoogle,
     requestEmailOtp,
+    requestPhoneOtp,
     register,
     verifyEmailOtp,
+    verifyPhoneOtp,
     logout,
     updateProfile,
+    updatePhone,
+    getPhoneVerificationStatus,
   };
 }

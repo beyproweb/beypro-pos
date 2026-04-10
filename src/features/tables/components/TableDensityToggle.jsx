@@ -17,11 +17,11 @@ function TableDensityToggle({
   const isSmall = size === "sm";
 
   const wrapperClassName = isSmall
-    ? "inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white/90 p-1 shadow-sm"
+    ? "inline-flex h-[42px] items-center gap-1 rounded-2xl border border-slate-200 bg-white/95 p-1 shadow-sm"
     : "inline-flex items-center gap-1 rounded-2xl border border-slate-200 bg-white/90 p-1.5 shadow-sm";
 
   const buttonClassName = isSmall
-    ? "rounded-lg px-2.5 py-1 text-xs"
+    ? "inline-flex h-[34px] items-center rounded-xl px-3 text-sm"
     : "rounded-xl px-3.5 py-2 text-sm";
 
   return (
@@ -41,7 +41,7 @@ function TableDensityToggle({
             }`}
             title={option.label}
           >
-            {option.id === "dense" ? `${t("Dense")} ⚡` : t(option.label)}
+            {t(option.label)}
           </button>
         );
       })}

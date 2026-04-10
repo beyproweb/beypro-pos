@@ -84,6 +84,7 @@ const VIEW_BOOKING_TERMINAL_STATUSES = new Set([
   "canceled",
   "deleted",
   "void",
+  "archived",
 ]);
 
 const isTerminalViewBookingRow = (booking = {}) => {
@@ -858,10 +859,158 @@ function TablesView({
   const getAreaTabClassName = React.useCallback(
     (isActive, activeClassName, inactiveClassName) =>
       [
-        "shrink-0 whitespace-nowrap px-5 py-2 rounded-full font-semibold shadow transition-all duration-150 text-xs",
+        "shrink-0 whitespace-nowrap rounded-full px-4 py-2 font-semibold shadow transition-all duration-150 text-sm sm:px-5",
         isActive ? activeClassName : inactiveClassName,
       ].join(" "),
     []
+  );
+
+  const renderAreaFooterTabs = React.useCallback(
+    () => (
+      <>
+        {showStandardAreaTabs ? (
+          <>
+            <button
+              ref={(node) => {
+                if (node) areaTabRefs.current.set(AREA_FILTER_ALL, node);
+                else areaTabRefs.current.delete(AREA_FILTER_ALL);
+              }}
+              onClick={() => handleAreaTabClick(AREA_FILTER_ALL)}
+              className={getAreaTabClassName(
+                activeArea === AREA_FILTER_ALL,
+                "bg-indigo-600 text-white scale-[1.03] shadow-lg",
+                "bg-white text-gray-700 border border-gray-300 hover:bg-gray-100"
+              )}
+            >
+              {t("All Areas")}
+            </button>
+
+            {Object.keys(groupedTables).map((area) => (
+              <button
+                key={area}
+                ref={(node) => {
+                  if (node) areaTabRefs.current.set(area, node);
+                  else areaTabRefs.current.delete(area);
+                }}
+                onClick={() => handleAreaTabClick(area)}
+                className={getAreaTabClassName(
+                  activeArea === area,
+                  "bg-blue-600 text-white scale-[1.03] shadow-lg",
+                  "bg-white text-gray-700 border border-gray-300 hover:bg-blue-50"
+                )}
+              >
+                {formatAreaLabel(area)}
+              </button>
+            ))}
+            <button
+              ref={(node) => {
+                if (node) areaTabRefs.current.set(AREA_FILTER_RESERVED, node);
+                else areaTabRefs.current.delete(AREA_FILTER_RESERVED);
+              }}
+              onClick={() => handleAreaTabClick(AREA_FILTER_RESERVED)}
+              className={getAreaTabClassName(
+                activeArea === AREA_FILTER_RESERVED,
+                "bg-amber-600 text-white scale-[1.03] shadow-lg",
+                "bg-white text-gray-700 border border-gray-300 hover:bg-amber-50"
+              )}
+            >
+              {t("Reserved")} ({reservedTablesCount})
+            </button>
+            <button
+              ref={(node) => {
+                if (node) areaTabRefs.current.set(AREA_FILTER_UNPAID, node);
+                else areaTabRefs.current.delete(AREA_FILTER_UNPAID);
+              }}
+              onClick={() => handleAreaTabClick(AREA_FILTER_UNPAID)}
+              className={getAreaTabClassName(
+                activeArea === AREA_FILTER_UNPAID,
+                "bg-red-600 text-white scale-[1.03] shadow-lg",
+                "bg-white text-gray-700 border border-gray-300 hover:bg-red-50"
+              )}
+            >
+              {t("Unpaid")} ({unpaidTablesCount})
+            </button>
+            <button
+              ref={(node) => {
+                if (node) areaTabRefs.current.set(AREA_FILTER_PAID, node);
+                else areaTabRefs.current.delete(AREA_FILTER_PAID);
+              }}
+              onClick={() => handleAreaTabClick(AREA_FILTER_PAID)}
+              className={getAreaTabClassName(
+                activeArea === AREA_FILTER_PAID,
+                "bg-emerald-600 text-white scale-[1.03] shadow-lg",
+                "bg-white text-gray-700 border border-gray-300 hover:bg-emerald-50"
+              )}
+            >
+              {t("Paid")} ({paidTablesCount})
+            </button>
+            <button
+              ref={(node) => {
+                if (node) areaTabRefs.current.set(AREA_FILTER_FREE, node);
+                else areaTabRefs.current.delete(AREA_FILTER_FREE);
+              }}
+              onClick={() => handleAreaTabClick(AREA_FILTER_FREE)}
+              className={getAreaTabClassName(
+                activeArea === AREA_FILTER_FREE,
+                "bg-sky-600 text-white scale-[1.03] shadow-lg",
+                "bg-white text-gray-700 border border-gray-300 hover:bg-sky-50"
+              )}
+            >
+              {t("Free")} ({freeTablesCount})
+            </button>
+          </>
+        ) : null}
+        {showViewBookingTab ? (
+          <button
+            ref={(node) => {
+              if (node) areaTabRefs.current.set(AREA_FILTER_VIEW_BOOKING, node);
+              else areaTabRefs.current.delete(AREA_FILTER_VIEW_BOOKING);
+            }}
+            onClick={() => handleAreaTabClick(AREA_FILTER_VIEW_BOOKING)}
+            className={getAreaTabClassName(
+              activeArea === AREA_FILTER_VIEW_BOOKING,
+              "bg-violet-600 text-white scale-[1.03] shadow-lg",
+              "bg-white text-gray-700 border border-gray-300 hover:bg-violet-50"
+            )}
+          >
+            {t("View Booking")} ({rangeBookingCount})
+          </button>
+        ) : null}
+        {showSongRequestTab ? (
+          <button
+            ref={(node) => {
+              if (node) areaTabRefs.current.set(AREA_FILTER_SONG_REQUEST, node);
+              else areaTabRefs.current.delete(AREA_FILTER_SONG_REQUEST);
+            }}
+            onClick={() => handleAreaTabClick(AREA_FILTER_SONG_REQUEST)}
+            className={getAreaTabClassName(
+              activeArea === AREA_FILTER_SONG_REQUEST,
+              "bg-fuchsia-600 text-white scale-[1.03] shadow-lg",
+              "bg-white text-gray-700 border border-gray-300 hover:bg-fuchsia-50"
+            )}
+          >
+            {t("Song Request")} ({Array.isArray(songRequests) ? songRequests.length : 0})
+          </button>
+        ) : null}
+      </>
+    ),
+    [
+      activeArea,
+      getAreaTabClassName,
+      groupedTables,
+      handleAreaTabClick,
+      paidTablesCount,
+      rangeBookingCount,
+      reservedTablesCount,
+      showSongRequestTab,
+      showStandardAreaTabs,
+      showViewBookingTab,
+      songRequests,
+      t,
+      unpaidTablesCount,
+      freeTablesCount,
+      formatAreaLabel,
+    ]
   );
 
   const renderTable = React.useCallback(
@@ -877,159 +1026,14 @@ function TablesView({
 
   return (
     <React.Profiler id="TableList" onRender={onTableListProfileRender}>
-      <div className="w-full flex flex-col items-center">
+      <div className="flex w-full flex-col items-center pb-28 sm:pb-32">
         {showRenderCounter && (
           <div className="mb-2 flex w-full justify-end px-4 sm:px-8">
             <RenderCounter label="TableList" value={renderCount} />
           </div>
         )}
-      {showAreaTabs && (
-        <div className="mt-4 mb-8 w-full px-4 sm:mb-10 sm:px-8">
-          <div
-            ref={areaTabsRailRef}
-            className="flex gap-3 overflow-x-auto scroll-smooth scrollbar-hide px-0.5 sm:flex-wrap sm:justify-center sm:overflow-visible"
-          >
-          {showStandardAreaTabs ? (
-            <>
-              <button
-                ref={(node) => {
-                  if (node) areaTabRefs.current.set(AREA_FILTER_ALL, node);
-                  else areaTabRefs.current.delete(AREA_FILTER_ALL);
-                }}
-                onClick={() => handleAreaTabClick(AREA_FILTER_ALL)}
-                className={getAreaTabClassName(
-                  activeArea === AREA_FILTER_ALL,
-                  "bg-indigo-600 text-white scale-[1.03] shadow-lg",
-                  "bg-white text-gray-700 border border-gray-300 hover:bg-gray-100"
-                )}
-              >
-                {t("All Areas")}
-              </button>
-
-              {Object.keys(groupedTables).map((area) => (
-                <button
-                  key={area}
-                  ref={(node) => {
-                    if (node) areaTabRefs.current.set(area, node);
-                    else areaTabRefs.current.delete(area);
-                  }}
-                  onClick={() => handleAreaTabClick(area)}
-                  className={getAreaTabClassName(
-                    activeArea === area,
-                    "bg-blue-600 text-white scale-[1.03] shadow-lg",
-                    "bg-white text-gray-700 border border-gray-300 hover:bg-blue-50"
-                  )}
-                >
-                  {area === "Hall"
-                    ? ""
-                    : area === "Main Hall"
-                    ? ""
-                    : area === "Terrace"
-                    ? ""
-                    : area === "Garden"
-                    ? ""
-                    : area === "VIP"
-                    ? ""
-                  : ""}{" "}
-                  {formatAreaLabel(area)}
-                </button>
-              ))}
-              <button
-                ref={(node) => {
-                  if (node) areaTabRefs.current.set(AREA_FILTER_RESERVED, node);
-                  else areaTabRefs.current.delete(AREA_FILTER_RESERVED);
-                }}
-                onClick={() => handleAreaTabClick(AREA_FILTER_RESERVED)}
-                className={getAreaTabClassName(
-                  activeArea === AREA_FILTER_RESERVED,
-                  "bg-amber-600 text-white scale-[1.03] shadow-lg",
-                  "bg-white text-gray-700 border border-gray-300 hover:bg-amber-50"
-                )}
-              >
-                {t("Reserved")} ({reservedTablesCount})
-              </button>
-              <button
-                ref={(node) => {
-                  if (node) areaTabRefs.current.set(AREA_FILTER_UNPAID, node);
-                  else areaTabRefs.current.delete(AREA_FILTER_UNPAID);
-                }}
-                onClick={() => handleAreaTabClick(AREA_FILTER_UNPAID)}
-                className={getAreaTabClassName(
-                  activeArea === AREA_FILTER_UNPAID,
-                  "bg-red-600 text-white scale-[1.03] shadow-lg",
-                  "bg-white text-gray-700 border border-gray-300 hover:bg-red-50"
-                )}
-              >
-                {t("Unpaid")} ({unpaidTablesCount})
-              </button>
-              <button
-                ref={(node) => {
-                  if (node) areaTabRefs.current.set(AREA_FILTER_PAID, node);
-                  else areaTabRefs.current.delete(AREA_FILTER_PAID);
-                }}
-                onClick={() => handleAreaTabClick(AREA_FILTER_PAID)}
-                className={getAreaTabClassName(
-                  activeArea === AREA_FILTER_PAID,
-                  "bg-emerald-600 text-white scale-[1.03] shadow-lg",
-                  "bg-white text-gray-700 border border-gray-300 hover:bg-emerald-50"
-                )}
-              >
-                {t("Paid")} ({paidTablesCount})
-              </button>
-              <button
-                ref={(node) => {
-                  if (node) areaTabRefs.current.set(AREA_FILTER_FREE, node);
-                  else areaTabRefs.current.delete(AREA_FILTER_FREE);
-                }}
-                onClick={() => handleAreaTabClick(AREA_FILTER_FREE)}
-                className={getAreaTabClassName(
-                  activeArea === AREA_FILTER_FREE,
-                  "bg-sky-600 text-white scale-[1.03] shadow-lg",
-                  "bg-white text-gray-700 border border-gray-300 hover:bg-sky-50"
-                )}
-              >
-                {t("Free")} ({freeTablesCount})
-              </button>
-            </>
-          ) : null}
-          {showViewBookingTab ? (
-            <button
-              ref={(node) => {
-                if (node) areaTabRefs.current.set(AREA_FILTER_VIEW_BOOKING, node);
-                else areaTabRefs.current.delete(AREA_FILTER_VIEW_BOOKING);
-              }}
-              onClick={() => handleAreaTabClick(AREA_FILTER_VIEW_BOOKING)}
-            className={getAreaTabClassName(
-                activeArea === AREA_FILTER_VIEW_BOOKING,
-                "bg-violet-600 text-white scale-[1.03] shadow-lg",
-                "bg-white text-gray-700 border border-gray-300 hover:bg-violet-50"
-              )}
-            >
-              {t("View Booking")} ({rangeBookingCount})
-            </button>
-          ) : null}
-          {showSongRequestTab ? (
-            <button
-              ref={(node) => {
-                if (node) areaTabRefs.current.set(AREA_FILTER_SONG_REQUEST, node);
-                else areaTabRefs.current.delete(AREA_FILTER_SONG_REQUEST);
-              }}
-              onClick={() => handleAreaTabClick(AREA_FILTER_SONG_REQUEST)}
-              className={getAreaTabClassName(
-                activeArea === AREA_FILTER_SONG_REQUEST,
-                "bg-fuchsia-600 text-white scale-[1.03] shadow-lg",
-                "bg-white text-gray-700 border border-gray-300 hover:bg-fuchsia-50"
-              )}
-            >
-              {t("Song Request")} ({Array.isArray(songRequests) ? songRequests.length : 0})
-            </button>
-          ) : null}
-          </div>
-        </div>
-      )}
-
       {activeArea === AREA_FILTER_VIEW_BOOKING ? (
-        <div className="w-full max-w-6xl px-4 sm:px-8 pb-4">
+        <div className="w-full max-w-6xl px-4 pb-4 sm:px-8">
           <div className="rounded-2xl border border-violet-200 bg-white p-4 shadow-sm">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-base font-semibold text-violet-700">{t("View Booking")}</div>
@@ -1454,7 +1458,7 @@ function TablesView({
       ) : null}
 
       {activeArea === AREA_FILTER_SONG_REQUEST ? (
-        <div className="w-full max-w-7xl px-4 sm:px-8 pb-4">
+        <div className="w-full max-w-7xl px-4 pb-4 sm:px-8">
           <SongRequestsAdminTab
             t={t}
             requests={songRequests}
@@ -1482,6 +1486,18 @@ function TablesView({
           rowGap={tableDensityLayout.rowGap}
           containerMaxWidth={tableDensityLayout.containerMaxWidth}
         />
+      ) : null}
+      {showAreaTabs ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-3 pb-0 sm:px-4 sm:pb-0">
+          <div className="pointer-events-auto mx-auto w-full max-w-7xl rounded-[20px] border border-white/60 bg-white/90 p-3 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] backdrop-blur-xl">
+            <div
+              ref={areaTabsRailRef}
+              className="flex gap-2 overflow-x-auto scroll-smooth scrollbar-hide px-0.5 sm:flex-wrap sm:justify-center sm:overflow-visible"
+            >
+              {renderAreaFooterTabs()}
+            </div>
+          </div>
+        </div>
       ) : null}
       </div>
     </React.Profiler>

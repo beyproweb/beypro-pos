@@ -763,14 +763,14 @@ function TableCard({
                 title={isLockedTable ? t("Unlock table") : t("Mark table occupied")}
                 className={cx(
                   "inline-flex items-center justify-center rounded border border-slate-200 leading-none transition hover:bg-slate-100",
-                  isLargeCompact ? "h-6 w-6 text-xs" : "h-5 w-5 text-[11px]",
+                  isLargeCompact ? "h-6 w-6 text-[15px]" : "h-5 w-5 text-[14px]",
                   isLockedTable ? "bg-yellow-100 text-slate-900" : "bg-white text-slate-600"
                 )}
               >
                 {isLockedTable ? "🔓" : "🔒"}
               </button>
             ) : isLockedTable ? (
-              <span className="text-[11px]" title={t("Locked")}>
+              <span className="text-[14px]" title={t("Locked")}>
                 🔒
               </span>
             ) : null}
@@ -982,7 +982,7 @@ function TableCard({
                     : "w-9 sm:w-8"
                 )}
               >
-                <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <rect x="5" y="11" width="14" height="10" rx="2" ry="2" />
                   {isLockedTable ? (
                     <path d="M8 11V8a4 4 0 1 1 8 0v3" />

@@ -180,7 +180,17 @@ export function useQrMenuCheckout({
   );
 
   const buildOrderPayload = useCallback(
-    ({ orderType, table, items, total, customer, takeaway, paymentMethod, tableGeo }) => {
+    ({
+      orderType,
+      table,
+      items,
+      total,
+      customer,
+      takeaway,
+      paymentMethod,
+      tableGeo,
+      phoneVerificationToken = "",
+    }) => {
       const itemsPayload = (items || []).map((i) => ({
         product_id: i.id,
         quantity: i.quantity,
@@ -246,6 +256,7 @@ export function useQrMenuCheckout({
           : isTakeaway
             ? takeaway?.payment_method || null
             : null,
+        phone_verification_token: String(phoneVerificationToken || "").trim() || null,
         reservation_date: isTakeawayReservation ? pickupDate || null : null,
         reservation_time: isTakeawayReservation ? pickupTime || null : null,
         reservation_clients: isTakeawayReservation || isTable ? selectedGuests : null,
@@ -289,6 +300,14 @@ export function useQrMenuCheckout({
         typeof options?.paymentMethodOverride === "string"
           ? options.paymentMethodOverride
           : null;
+      const phoneVerificationToken =
+        typeof options?.phoneVerificationToken === "string"
+          ? options.phoneVerificationToken
+          : "";
+      const customerPhoneOverride =
+        typeof options?.customerPhoneOverride === "string"
+          ? options.customerPhoneOverride.trim()
+          : "";
       const effectivePaymentMethod = paymentMethodOverride || paymentMethod;
       const type = orderType || storage.getItem("qr_orderType");
       const isTakeawayReservation =
@@ -375,14 +394,14 @@ export function useQrMenuCheckout({
         type === "online"
           ? {
               username: deliveryInfo?.name || customerInfo?.name || "",
-              phone: deliveryInfo?.phone || customerInfo?.phone || "",
+              phone: customerPhoneOverride || deliveryInfo?.phone || customerInfo?.phone || "",
               email: deliveryInfo?.email || customerInfo?.email || "",
               address: deliveryInfo?.address || customerInfo?.address || "",
             }
           : type === "takeaway"
           ? {
               username: takeaway?.name || "",
-              phone: takeaway?.phone || "",
+              phone: customerPhoneOverride || takeaway?.phone || "",
               email: takeaway?.email || "",
               address: "",
             }
@@ -557,7 +576,7 @@ export function useQrMenuCheckout({
                 : null,
             reservation_notes: takeaway?.notes || null,
             customer_name: takeaway?.name || null,
-            customer_phone: takeaway?.phone || null,
+            customer_phone: customerPhoneOverride || takeaway?.phone || null,
             customer_email: takeaway?.email || null,
           });
         }
@@ -630,10 +649,27 @@ export function useQrMenuCheckout({
           table,
           items: newItems,
           total,
-          customer: type === "online" ? deliveryInfo || customerInfo : null,
-          takeaway: type === "takeaway" ? takeaway : null,
+          customer:
+            type === "online"
+              ? {
+                  ...(deliveryInfo || customerInfo || {}),
+                  phone:
+                    customerPhoneOverride ||
+                    deliveryInfo?.phone ||
+                    customerInfo?.phone ||
+                    "",
+                }
+              : null,
+          takeaway:
+            type === "takeaway"
+              ? {
+                  ...(takeaway || {}),
+                  phone: customerPhoneOverride || takeaway?.phone || "",
+                }
+              : null,
           paymentMethod: effectivePaymentMethod,
           tableGeo,
+          phoneVerificationToken,
         })
       );
 
@@ -669,7 +705,7 @@ export function useQrMenuCheckout({
               : null,
           reservation_notes: takeaway?.notes || null,
           customer_name: takeaway?.name || null,
-          customer_phone: takeaway?.phone || null,
+          customer_phone: customerPhoneOverride || takeaway?.phone || null,
           customer_email: takeaway?.email || null,
         });
       }

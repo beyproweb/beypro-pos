@@ -25,6 +25,7 @@ function normalizePickerGuestSelection(selectedGuests, options = []) {
 
 const DEFAULT_STATUS_FILTER_KEYS = ["available", "pending_hold", "reserved", "occupied", "blocked"];
 const ALL_ZONES_KEY = "__all__";
+const TABLE_10_DEBUG_KEY = "10";
 const PICKER_STATUS_TONES = {
   available: {
     fill: "#eff6ff",
@@ -39,6 +40,10 @@ const PICKER_STATUS_TONES = {
     dot: "#fb923c",
   },
 };
+
+function isTable10(value) {
+  return String(value ?? "").trim() === TABLE_10_DEBUG_KEY;
+}
 const PICKER_TABLE_STATUS_STYLES = {
   available: {
     fill: "#dbeafe",
@@ -216,6 +221,32 @@ export default function FloorPlanPickerModal({
     };
   }, [statusMenuOpen, zoneMenuOpen]);
 
+  React.useEffect(() => {
+    if (!import.meta.env.DEV || !open) return;
+    const table10Element =
+      tableElements.find((table) =>
+        isTable10(getFloorPlanLinkedTableNumber(table) ?? table?.table_number)
+      ) || null;
+    if (!table10Element && !isTable10(selectedTableNumber)) return;
+    console.warn("[table10-debug][qr-floor-map][render]", {
+      selectedTableNumber,
+      table10Rendered: table10Element
+        ? {
+            id: table10Element?.id ?? null,
+            table_number:
+              getFloorPlanLinkedTableNumber(table10Element) ??
+              table10Element?.table_number ??
+              null,
+            status: String(table10Element?.status || "").toLowerCase() || "available",
+            reason:
+              table10Element?.state?.reason ??
+              table10Element?.reason ??
+              "",
+          }
+        : null,
+    });
+  }, [open, selectedTableNumber, tableElements]);
+
   if (!open) return null;
 
   const activeStatus = String(activeTable?.status || "").toLowerCase();
@@ -253,10 +284,10 @@ export default function FloorPlanPickerModal({
   const selectedStatusSummary = t("Availability ({{count}})", { count: selectedStatuses.length });
   const selectedZoneLabel =
     selectedZone === ALL_ZONES_KEY
-      ? t("Areas ({{count}})", { count: statusFilteredTables.length })
+      ? t("All area ({{count}})", { count: statusFilteredTables.length })
       : (() => {
           const zone = zoneOptions.find((option) => option.key === selectedZone);
-          if (!zone) return t("Areas");
+          if (!zone) return t("All area");
           return `${t(formatFloorPlanZoneLabel(zone.label))} (${zone.count})`;
         })();
 
@@ -388,7 +419,7 @@ export default function FloorPlanPickerModal({
                           }
                         >
                           <span className="min-w-0 flex-1 truncate">
-                            {t("Areas ({{count}})", { count: statusFilteredTables.length })}
+                            {t("All area ({{count}})", { count: statusFilteredTables.length })}
                           </span>
                           {selectedZone === ALL_ZONES_KEY ? <Check className="h-4 w-4 shrink-0" /> : null}
                         </button>

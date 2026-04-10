@@ -173,6 +173,10 @@ function asText(value, fallback = "") {
   return next || fallback;
 }
 
+function toTableKey(value) {
+  return String(value ?? "").trim();
+}
+
 function asNumber(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -877,11 +881,26 @@ export function normalizeFloorPlanTableStatus(value) {
 export function buildTableStateMap(tableStates = []) {
   const map = new Map();
   normalizeArray(tableStates).forEach((state) => {
+    const tableKey = toTableKey(
+      state?.table_number ??
+        state?.tableNumber ??
+        state?.number ??
+        state?.table ??
+        state?.table_id ??
+        state?.tableId ??
+        state?.reserved_table_number ??
+        state?.reservedTableNumber ??
+        state?.linked_table_number ??
+        state?.linkedTableNumber ??
+        state?.table?.table_number ??
+        state?.table?.tableNumber ??
+        state?.table?.number
+    );
+    if (!tableKey) return;
     const tableNumber = getFloorPlanStateTableNumber(state);
-    if (!Number.isFinite(tableNumber) || tableNumber <= 0) return;
-    map.set(tableNumber, {
+    map.set(tableKey, {
       ...(state && typeof state === "object" ? state : {}),
-      table_number: tableNumber,
+      table_number: Number.isFinite(tableNumber) && tableNumber > 0 ? tableNumber : state?.table_number ?? null,
       status: normalizeFloorPlanTableStatus(
         state?.status ??
           state?.table_status ??
@@ -900,15 +919,15 @@ export function buildFloorPlanElements(layout, tables = [], tableStates = []) {
   const tableMap = new Map(
     normalizeArray(tables)
       .map((table) => {
-        const tableNumber = Number(
+        const tableKey = toTableKey(
           table?.table_number ??
             table?.tableNumber ??
             table?.number ??
             table?.table ??
             table?.id
         );
-        if (!Number.isFinite(tableNumber) || tableNumber <= 0) return null;
-        return [tableNumber, table];
+        if (!tableKey) return null;
+        return [tableKey, table];
       })
       .filter(Boolean)
   );
@@ -917,8 +936,15 @@ export function buildFloorPlanElements(layout, tables = [], tableStates = []) {
   return normalizedLayout.elements.map((element) => {
     const tableNumber = Number(element.table_number || element.tableNumber || 0);
     const linkedTableNumber = Number((getNormalizedTableLinkNumber(element) ?? tableNumber) || 0);
-    const table = tableMap.get(linkedTableNumber) || null;
-    const state = stateMap.get(linkedTableNumber) || stateMap.get(tableNumber) || null;
+    const linkedTableKey = toTableKey(
+      getNormalizedTableLinkNumber(element) ??
+        element.table_number ??
+        element.tableNumber ??
+        tableNumber
+    );
+    const directTableKey = toTableKey(element.table_number ?? element.tableNumber ?? tableNumber);
+    const table = tableMap.get(linkedTableKey) || tableMap.get(directTableKey) || null;
+    const state = stateMap.get(linkedTableKey) || stateMap.get(directTableKey) || null;
     const lockLikeState = Boolean(
       table?.locked ??
         table?.is_locked ??

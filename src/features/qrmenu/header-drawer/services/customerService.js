@@ -7,6 +7,7 @@ const STORAGE_KEYS = {
   users: "qr_customer_users",
   checkoutInfo: "qr_delivery_info",
   orderHistory: "qr_customer_orders",
+  phoneVerificationTrust: "qr_phone_verification_trust",
 };
 
 const ACTIVE_ORDER_STATUSES = new Set([
@@ -69,6 +70,25 @@ function normalizePhone(value) {
 function normalizeLanguage(value) {
   const raw = normalizeText(value).split(",")[0];
   return raw ? raw.slice(0, 32) : "";
+}
+
+function normalizeBoolean(value) {
+  return value === true;
+}
+
+function decodeJwtExpiryMs(token) {
+  const normalizedToken = normalizeText(token);
+  if (!normalizedToken) return 0;
+  const parts = normalizedToken.split(".");
+  if (parts.length < 2) return 0;
+  try {
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+    const expSeconds = Number(payload?.exp || 0);
+    if (!Number.isFinite(expSeconds) || expSeconds <= 0) return 0;
+    return expSeconds * 1000;
+  } catch {
+    return 0;
+  }
 }
 
 function resolveLanguage(payload) {
@@ -221,6 +241,8 @@ function sanitizeCustomer(user) {
     email: normalizeEmail(source.email),
     username: normalizeText(source.username || source.name),
     phone: normalizePhone(source.phone),
+    phone_verified: normalizeBoolean(source.phone_verified),
+    phone_verified_at: source.phone_verified_at || null,
     address: normalizeText(source.address),
     language: normalizeLanguage(source.language),
     createdAt: source.createdAt || source.created_at || null,
@@ -271,6 +293,7 @@ function clearSessionState(storageArg) {
   if (!storage) return;
   storage.removeItem(STORAGE_KEYS.session);
   storage.removeItem(STORAGE_KEYS.token);
+  storage.removeItem(STORAGE_KEYS.phoneVerificationTrust);
   emitSessionChange(null);
 }
 
@@ -285,6 +308,65 @@ function getSessionToken(storageArg) {
   const storage = getStorage(storageArg);
   if (!storage) return "";
   return normalizeText(storage.getItem(STORAGE_KEYS.token));
+}
+
+function readPhoneVerificationTrust(storageArg) {
+  const storage = getStorage(storageArg);
+  if (!storage) return null;
+  const parsed = parseJSON(storage.getItem(STORAGE_KEYS.phoneVerificationTrust) || "null", null);
+  if (!parsed || typeof parsed !== "object") return null;
+  const phone = normalizePhone(parsed.phone);
+  const token = normalizeText(parsed.token);
+  const expiresAtMs = Number(parsed.expiresAtMs || 0);
+  if (!phone || !token || !Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+    storage.removeItem(STORAGE_KEYS.phoneVerificationTrust);
+    return null;
+  }
+  return {
+    phone,
+    token,
+    source: normalizeText(parsed.source || "otp"),
+    expiresAtMs,
+  };
+}
+
+function savePhoneVerificationTrust(payload, storageArg) {
+  const storage = getStorage(storageArg);
+  if (!storage) return null;
+  const phone = normalizePhone(payload?.phone);
+  const token = normalizeText(payload?.token);
+  const source = normalizeText(payload?.source || "otp") || "otp";
+  const expiresAtMs =
+    Number(payload?.expiresAtMs || 0) ||
+    decodeJwtExpiryMs(token) ||
+    Date.now() + 30 * 60 * 1000;
+  if (!phone || !token || !Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+    storage.removeItem(STORAGE_KEYS.phoneVerificationTrust);
+    return null;
+  }
+  const record = {
+    phone,
+    token,
+    source,
+    expiresAtMs,
+    savedAt: new Date().toISOString(),
+  };
+  storage.setItem(STORAGE_KEYS.phoneVerificationTrust, JSON.stringify(record));
+  return record;
+}
+
+function clearPhoneVerificationTrust(storageArg, phoneToKeep = "") {
+  const storage = getStorage(storageArg);
+  if (!storage) return;
+  const normalizedKeepPhone = normalizePhone(phoneToKeep);
+  if (!normalizedKeepPhone) {
+    storage.removeItem(STORAGE_KEYS.phoneVerificationTrust);
+    return;
+  }
+  const current = readPhoneVerificationTrust(storage);
+  if (!current || current.phone !== normalizedKeepPhone) {
+    storage.removeItem(STORAGE_KEYS.phoneVerificationTrust);
+  }
 }
 
 function upsertCheckoutInfo(customer, storageArg) {
@@ -354,6 +436,18 @@ function persistCustomerAuthResponse(response, context = {}) {
     context?.storage
   );
   upsertCheckoutInfo(customer, context?.storage);
+  if (normalizeText(response?.phone_verification_token) && customer?.phone) {
+    savePhoneVerificationTrust(
+      {
+        phone: customer.phone,
+        token: response.phone_verification_token,
+        source: "auth_response",
+      },
+      context?.storage
+    );
+  } else if (customer?.phone_verified === true && customer?.phone) {
+    clearPhoneVerificationTrust(context?.storage, customer.phone);
+  }
   return customer;
 }
 
@@ -464,6 +558,10 @@ export function getCustomerSession(storageArg) {
 
 export function getCustomerSessionToken(storageArg) {
   return getSessionToken(storageArg);
+}
+
+export function getPhoneVerificationTrust(storageArg) {
+  return readPhoneVerificationTrust(storageArg);
 }
 
 export async function restoreCustomerSession(context = {}) {
@@ -661,6 +759,164 @@ export async function verifyCustomerEmailOtp(payload, context = {}) {
   return persistCustomerAuthResponse(response, context);
 }
 
+export async function requestCustomerPhoneOtp(payload, context = {}) {
+  const phone = normalizePhone(payload?.phone || payload?.customer_phone);
+  if (!phone) {
+    throw createAuthError("Please enter a valid phone number.");
+  }
+
+  const response = await requestCustomerAuth(
+    "/public/customer-auth/phone-otp/send",
+    {
+      method: "POST",
+      headers: buildAuthHeaders(context),
+      body: JSON.stringify({ phone }),
+    },
+    context
+  );
+
+  return {
+    phone,
+    sent: Boolean(response?.sent),
+    alreadyVerified: Boolean(response?.already_verified),
+    message: normalizeText(response?.message),
+    retryAfterSeconds: Number(response?.retry_after_seconds || 0) || 0,
+    expiresInSeconds: Number(response?.expires_in_seconds || 0) || 0,
+    mockCode: normalizeText(response?.mock_code || ""),
+    phoneVerificationToken: normalizeText(response?.phone_verification_token || ""),
+  };
+}
+
+export async function verifyCustomerPhoneOtp(payload, context = {}) {
+  const phone = normalizePhone(payload?.phone || payload?.customer_phone);
+  const code = normalizeText(payload?.code);
+  if (!phone || !code) {
+    throw createAuthError("Please enter your phone number and verification code.");
+  }
+
+  const response = await requestCustomerAuth(
+    "/public/customer-auth/phone-otp/verify",
+    {
+      method: "POST",
+      headers: buildAuthHeaders(context),
+      body: JSON.stringify({ phone, code }),
+    },
+    context
+  );
+
+  let customer = getSession(context?.storage);
+  if (response?.customer || response?.token) {
+    customer = persistCustomerAuthResponse(response, context);
+  } else if (customer?.phone && customer.phone !== phone) {
+    customer = saveSessionState(
+      {
+        customer: { ...customer, phone },
+        token: getSessionToken(context?.storage),
+      },
+      context?.storage
+    );
+  }
+
+  const verificationToken = normalizeText(response?.phone_verification_token || "");
+  if (verificationToken) {
+    savePhoneVerificationTrust(
+      {
+        phone,
+        token: verificationToken,
+        source: "otp_verify",
+      },
+      context?.storage
+    );
+  }
+
+  return {
+    verified: Boolean(response?.verified ?? true),
+    phone,
+    customer,
+    phoneVerificationToken: verificationToken,
+  };
+}
+
+export async function getCustomerPhoneVerificationStatus(payload = {}, context = {}) {
+  const candidatePhone = normalizePhone(payload?.phone || payload?.customer_phone);
+  const session = getSession(context?.storage);
+  const phone = candidatePhone || normalizePhone(session?.phone);
+  if (!phone) {
+    throw createAuthError("Please enter a valid phone number.");
+  }
+
+  const trusted = readPhoneVerificationTrust(context?.storage);
+  const query = new URLSearchParams();
+  query.set("phone", phone);
+  if (trusted?.phone === phone && trusted?.token) {
+    query.set("phone_verification_token", trusted.token);
+  }
+
+  const response = await requestCustomerAuth(
+    `/public/customer-auth/phone-verification-status?${query.toString()}`,
+    {
+      method: "GET",
+      headers: buildAuthHeaders(context),
+    },
+    context
+  );
+
+  const verified = response?.verified === true;
+  const verificationToken = normalizeText(response?.phone_verification_token || "");
+  if (verified && verificationToken) {
+    savePhoneVerificationTrust(
+      {
+        phone,
+        token: verificationToken,
+        source: normalizeText(response?.source || "status"),
+      },
+      context?.storage
+    );
+  } else if (!verified) {
+    clearPhoneVerificationTrust(context?.storage, phone);
+  }
+
+  return {
+    phone,
+    verified,
+    source: normalizeText(response?.source || ""),
+    phoneVerificationToken: verificationToken,
+    marketplacePhoneVerified: response?.marketplace_phone_verified === true,
+    marketplacePhoneVerifiedAt: response?.marketplace_phone_verified_at || null,
+  };
+}
+
+export async function updateCustomerPhoneNumber(payload, context = {}) {
+  const phone = normalizePhone(payload?.phone || payload?.customer_phone);
+  if (!phone) {
+    throw createAuthError("Please enter a valid phone number.");
+  }
+
+  const response = await requestCustomerAuth(
+    "/public/customer-auth/phone-number",
+    {
+      method: "PATCH",
+      headers: buildAuthHeaders(context),
+      body: JSON.stringify({ phone }),
+    },
+    context
+  );
+
+  const customer = saveSessionState(
+    {
+      customer: response?.customer,
+      token: response?.token || getSessionToken(context?.storage),
+    },
+    context?.storage
+  );
+  clearPhoneVerificationTrust(context?.storage, phone);
+  upsertCheckoutInfo(customer, context?.storage);
+  return {
+    customer,
+    phoneVerificationRequired: response?.phone_verification_required !== false,
+  };
+}
+
 export function logoutCustomer(context = {}) {
   clearSessionState(context?.storage || context);
 }
@@ -678,6 +934,7 @@ export async function updateCustomerProfile(payload, context = {}) {
   const address =
     payload?.address === undefined ? session.address : normalizeText(payload?.address);
   const language = resolveLanguage(payload) || session.language;
+  const previousPhone = normalizePhone(session.phone);
 
   if (!name || !phone) {
     throw new Error("Please fill all required fields.");
@@ -706,6 +963,9 @@ export async function updateCustomerProfile(payload, context = {}) {
     },
     context?.storage
   );
+  if (phone !== previousPhone) {
+    clearPhoneVerificationTrust(context?.storage);
+  }
   upsertCheckoutInfo(customer, context?.storage);
   return customer;
 }

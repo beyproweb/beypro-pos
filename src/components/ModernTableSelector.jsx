@@ -38,6 +38,8 @@ function toRgba(value, alpha) {
   return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
 }
 
+const ALL_AREAS_KEY = "__all_areas__";
+
 export default function ModernTableSelector({
   tables = [],
   onSelect,
@@ -72,21 +74,26 @@ export default function ModernTableSelector({
   }, [areaViewEnabled, tables]);
 
   const areas = useMemo(() => Object.keys(grouped), [grouped]);
+  const areaTabs = useMemo(
+    () => (areaViewEnabled && areas.length > 1 ? [ALL_AREAS_KEY, ...areas] : areas),
+    [areaViewEnabled, areas]
+  );
   const [activeArea, setActiveArea] = useState(
-    areaViewEnabled ? areas[0] || "Main Hall" : "ALL"
+    areaViewEnabled ? areaTabs[0] || "Main Hall" : "ALL"
   );
   useEffect(() => {
     if (!areaViewEnabled) {
       setActiveArea("ALL");
       return;
     }
-    if (!areas.includes(activeArea)) {
-      setActiveArea(areas[0] || "Main Hall");
+    if (!areaTabs.includes(activeArea)) {
+      setActiveArea(areaTabs[0] || "Main Hall");
     }
-  }, [activeArea, areaViewEnabled, areas]);
+  }, [activeArea, areaTabs, areaViewEnabled]);
 
-  const resolvedArea = areaViewEnabled ? activeArea || areas[0] || "Main Hall" : "ALL";
-  const visibleTables = grouped[resolvedArea] || [];
+  const resolvedArea = areaViewEnabled ? activeArea || areaTabs[0] || "Main Hall" : "ALL";
+  const visibleTables =
+    resolvedArea === ALL_AREAS_KEY ? tables : grouped[resolvedArea] || [];
   const occupiedSet = useMemo(() => new Set((occupiedNumbers || []).map((n) => Number(n))), [occupiedNumbers]);
   const reservedSet = useMemo(() => new Set((reservedNumbers || []).map((n) => Number(n))), [reservedNumbers]);
   const renderAreaTabs = areaViewEnabled && areas.length > 1;
@@ -148,7 +155,7 @@ export default function ModernTableSelector({
             {renderAreaTabs ? (
               <div className="min-w-0 flex-1 overflow-x-auto scrollbar-none">
                 <div className="flex gap-3 min-w-max">
-                  {areas.map((area) => (
+                  {areaTabs.map((area) => (
                     <button
                       key={area}
                       onClick={() => setActiveArea(area)}
@@ -169,7 +176,7 @@ export default function ModernTableSelector({
                           : undefined
                       }
                     >
-                      {area}
+                      {area === ALL_AREAS_KEY ? t("All Areas") : area}
                     </button>
                   ))}
                 </div>
@@ -182,7 +189,7 @@ export default function ModernTableSelector({
       {/* AREA TABS */}
       {renderAreaTabs && !headerAreaTabs && (
         <div className="flex gap-3 overflow-x-auto pb-3 scrollbar-none mb-6">
-          {areas.map((area) => (
+          {areaTabs.map((area) => (
             <button
               key={area}
               onClick={() => setActiveArea(area)}
@@ -203,7 +210,7 @@ export default function ModernTableSelector({
                   : undefined
               }
             >
-              {area}
+              {area === ALL_AREAS_KEY ? t("All Areas") : area}
             </button>
           ))}
         </div>

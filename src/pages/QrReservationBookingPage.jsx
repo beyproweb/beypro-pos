@@ -18,6 +18,12 @@ import {
 } from "../features/qrmenu/publicBookingRoutes";
 import { createQrScopedStorage } from "../features/qrmenu/utils/createQrScopedStorage";
 import {
+  getOrderTableNumberKey,
+  isActiveTableOrderStatus,
+  isSameTableNumberKey,
+  normalizeTableNumberKey,
+} from "../utils/activeTableState";
+import {
   getFloorPlanStateTableNumber,
   mergeFloorPlanVisualStyles,
   normalizeFloorPlanTableStatus,
@@ -77,21 +83,15 @@ function normalizeHexColor(value, fallback = "#111827") {
     .toUpperCase()}`;
 }
 
-const TABLE_STATUS_PRIORITY = {
-  available: 0,
-  pending_hold: 1,
-  reserved: 2,
-  occupied: 3,
-  blocked: 4,
-};
 const TABLE_STATE_SOURCE_PRIORITY = {
   fallback: 0,
   unavailable_list: 20,
   unavailable_reserved_list: 30,
   unavailable_state: 40,
-  floor_plan_state: 50,
+  active_order: 90,
   table_lock: 100,
 };
+const TABLE_10_DEBUG_KEY = "10";
 const LIVE_REFRESH_SOCKET_EVENTS = [
   "order_confirmed",
   "orders_updated",
@@ -103,6 +103,23 @@ const LIVE_REFRESH_SOCKET_EVENTS = [
   "reservation_cancelled",
   "reservation_deleted",
 ];
+const TERMINAL_FLOOR_MAP_ORDER_STATUSES = new Set([
+  "checked_out",
+  "checkedout",
+  "checkout",
+  "closed",
+  "completed",
+  "cancelled",
+  "canceled",
+  "deleted",
+  "void",
+  "archived",
+]);
+const RESERVATION_LIKE_ORDER_TYPES = new Set([
+  "reservation",
+  "concert",
+  "concert_table",
+]);
 
 function parseRestaurantIdFromIdentifier(identifier) {
   const raw = String(identifier || "").trim();
@@ -120,9 +137,116 @@ function parseReservationTableNumber(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function parseReservationOrdersPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.orders)) return payload.orders;
+  return [];
+}
+
+function normalizeReservationDateYmd(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const datePrefix = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  return datePrefix ? datePrefix[1] : "";
+}
+
+function getReservationOrderStatus(order) {
+  return String(
+    order?.status ??
+      order?.order_status ??
+      order?.orderStatus ??
+      order?.reservation_order_status ??
+      order?.reservationOrderStatus ??
+      order?.reservation?.status ??
+      order?.reservation?.reservation_status ??
+      order?.reservation?.reservationStatus ??
+      ""
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function getReservationOrderDateYmd(order) {
+  return normalizeReservationDateYmd(
+    order?.reservation_date ??
+      order?.reservationDate ??
+      order?.reservation?.reservation_date ??
+      order?.reservation?.reservationDate ??
+      order?.event_date ??
+      order?.eventDate ??
+      order?.reservation?.event_date ??
+      order?.reservation?.eventDate
+  );
+}
+
+function hasReservationPayload(order) {
+  return Boolean(
+    order?.reservation_id ??
+      order?.reservationId ??
+      order?.reservation_date ??
+      order?.reservationDate ??
+      order?.reservation_time ??
+      order?.reservationTime ??
+      order?.reservation?.id ??
+      order?.reservation?.reservation_id ??
+      order?.reservation?.reservationId ??
+      order?.reservation?.reservation_date ??
+      order?.reservation?.reservationDate ??
+      order?.reservation?.reservation_time ??
+      order?.reservation?.reservationTime
+  );
+}
+
+function isReservationLikeOrder(order, normalizedStatus = "") {
+  const orderType = String(
+    order?.order_type ??
+      order?.orderType ??
+      order?.reservation?.order_type ??
+      order?.reservation?.orderType ??
+      ""
+  )
+    .trim()
+    .toLowerCase();
+  if (RESERVATION_LIKE_ORDER_TYPES.has(orderType)) return true;
+  if (hasReservationPayload(order)) return true;
+  return normalizedStatus === "reserved" || normalizedStatus === "checked_in";
+}
+
+function isOrderOccupyingForReservationDate(order, reservationDateYmd = "") {
+  const normalizedStatus = getReservationOrderStatus(order);
+  if (!normalizedStatus) return false;
+  if (TERMINAL_FLOOR_MAP_ORDER_STATUSES.has(normalizedStatus)) return false;
+  if (isActiveTableOrderStatus(normalizedStatus)) return true;
+  if (!isReservationLikeOrder(order, normalizedStatus)) return false;
+  if (normalizedStatus === "checked_in") return true;
+
+  const orderDateYmd = getReservationOrderDateYmd(order);
+  if (!reservationDateYmd || !orderDateYmd) return true;
+  return orderDateYmd === reservationDateYmd;
+}
+
+function isReservationTable10(value) {
+  return normalizeTableNumberKey(value) === TABLE_10_DEBUG_KEY;
+}
+
+function resolveReservationTableNumberFromTables(tables = [], rawValue) {
+  const targetKey = normalizeTableNumberKey(rawValue);
+  if (!targetKey) return null;
+  const matched = (Array.isArray(tables) ? tables : []).find((table) =>
+    isSameTableNumberKey(
+      targetKey,
+      table?.number ?? table?.tableNumber ?? table?.table_number
+    )
+  );
+  const resolvedRaw = matched
+    ? matched?.number ?? matched?.tableNumber ?? matched?.table_number
+    : rawValue;
+  return parseReservationTableNumber(resolvedRaw);
+}
+
 function normalizeReservationFloorPlanStatus(value) {
-  const normalized = normalizeFloorPlanTableStatus(value);
-  return normalized === "reserved" ? "occupied" : normalized;
+  return normalizeFloorPlanTableStatus(value);
 }
 
 function mergeStateEntryByPriority(
@@ -135,9 +259,10 @@ function mergeStateEntryByPriority(
   if (!tableNumber) return;
   const sourcePriority =
     TABLE_STATE_SOURCE_PRIORITY[String(options?.source || "fallback").trim()] || 0;
+  const sourceName = String(options?.source || "fallback").trim();
   const forceStatus = Boolean(options?.forceStatus);
 
-  const normalizedStatus = normalizeReservationFloorPlanStatus(
+  let normalizedStatus = normalizeReservationFloorPlanStatus(
     source?.status ??
       source?.table_status ??
       source?.tableStatus ??
@@ -146,6 +271,17 @@ function mergeStateEntryByPriority(
       source?.state ??
       fallbackStatus
   );
+  if (normalizedStatus === "reserved") {
+    normalizedStatus = "occupied";
+  }
+  if (
+    sourceName !== "active_order" &&
+    sourceName !== "unavailable_state" &&
+    sourceName !== "unavailable_reserved_list" &&
+    (normalizedStatus === "occupied" || normalizedStatus === "reserved")
+  ) {
+    normalizedStatus = "available";
+  }
 
   const previous = map.get(tableNumber);
   if (!previous) {
@@ -189,43 +325,124 @@ function mergeNumberListAsStatus(map, values, status, options = {}) {
 }
 
 function buildMergedReservationTableStates({
-  floorPlanStates = [],
+  activeOrders = [],
   unavailablePayload = null,
   tables = [],
+  reservationDateYmd = "",
 }) {
   const merged = new Map();
 
-  (Array.isArray(floorPlanStates) ? floorPlanStates : []).forEach((state) =>
-    mergeStateEntryByPriority(merged, state, "available", { source: "floor_plan_state" })
-  );
+  (Array.isArray(tables) ? tables : []).forEach((table) => {
+    const tableNumber = resolveReservationTableNumberFromTables(
+      tables,
+      table?.number ?? table?.tableNumber ?? table?.table_number
+    );
+    if (!tableNumber) return;
+    mergeStateEntryByPriority(
+      merged,
+      {
+        table_number: tableNumber,
+        label: table?.label || "",
+        capacity: Number(table?.seats ?? table?.guests ?? 0) || undefined,
+      },
+      "available",
+      { source: "fallback", forceStatus: true }
+    );
+  });
 
   if (unavailablePayload && typeof unavailablePayload === "object") {
     (Array.isArray(unavailablePayload?.table_states) ? unavailablePayload.table_states : []).forEach(
       (state) =>
-        mergeStateEntryByPriority(merged, state, "available", {
-          source: "unavailable_state",
-        })
+        mergeStateEntryByPriority(
+          merged,
+          {
+            ...(state && typeof state === "object" ? state : {}),
+            table_number: resolveReservationTableNumberFromTables(
+              tables,
+              getFloorPlanStateTableNumber(state)
+            ),
+          },
+          "available",
+          {
+            source: "unavailable_state",
+          }
+        )
     );
     (Array.isArray(unavailablePayload?.tables) ? unavailablePayload.tables : []).forEach((state) =>
-      mergeStateEntryByPriority(merged, state, "available", {
-        source: "unavailable_state",
-      })
+      mergeStateEntryByPriority(
+        merged,
+        {
+          ...(state && typeof state === "object" ? state : {}),
+          table_number: resolveReservationTableNumberFromTables(
+            tables,
+            getFloorPlanStateTableNumber(state)
+          ),
+        },
+        "available",
+        {
+          source: "unavailable_state",
+        }
+      )
     );
-    mergeNumberListAsStatus(merged, unavailablePayload?.table_numbers, "pending_hold", {
-      source: "unavailable_list",
-      forceStatus: true,
-    });
-    mergeNumberListAsStatus(merged, unavailablePayload?.occupied_table_numbers, "pending_hold", {
-      source: "unavailable_state",
-    });
-    mergeNumberListAsStatus(merged, unavailablePayload?.reserved_table_numbers, "reserved", {
-      source: "unavailable_reserved_list",
-      forceStatus: true,
-    });
+    mergeNumberListAsStatus(
+      merged,
+      (Array.isArray(unavailablePayload?.table_numbers) ? unavailablePayload.table_numbers : []).map(
+        (value) => resolveReservationTableNumberFromTables(tables, value)
+      ),
+      "pending_hold",
+      {
+        source: "unavailable_list",
+        forceStatus: true,
+      }
+    );
+    mergeNumberListAsStatus(
+      merged,
+      (Array.isArray(unavailablePayload?.occupied_table_numbers)
+        ? unavailablePayload.occupied_table_numbers
+        : []
+      ).map((value) => resolveReservationTableNumberFromTables(tables, value)),
+      "pending_hold",
+      {
+        source: "unavailable_state",
+      }
+    );
+    mergeNumberListAsStatus(
+      merged,
+      (Array.isArray(unavailablePayload?.reserved_table_numbers)
+        ? unavailablePayload.reserved_table_numbers
+        : []
+      ).map((value) => resolveReservationTableNumberFromTables(tables, value)),
+      "occupied",
+      {
+        source: "unavailable_reserved_list",
+        forceStatus: true,
+      }
+    );
   }
 
+  (Array.isArray(activeOrders) ? activeOrders : []).forEach((order) => {
+    if (!isOrderOccupyingForReservationDate(order, reservationDateYmd)) return;
+    const tableNumber = resolveReservationTableNumberFromTables(
+      tables,
+      getOrderTableNumberKey(order)
+    );
+    if (!tableNumber) return;
+    mergeStateEntryByPriority(
+      merged,
+      {
+        table_number: tableNumber,
+      },
+      "occupied",
+      {
+        source: "active_order",
+        forceStatus: true,
+      }
+    );
+  });
+
   (Array.isArray(tables) ? tables : []).forEach((table) => {
-    const tableNumber = parseReservationTableNumber(
+    const tableNumber = resolveReservationTableNumberFromTables(
+      tables,
       table?.number ?? table?.tableNumber ?? table?.table_number
     );
     if (!tableNumber) return;
@@ -264,17 +481,6 @@ function buildMergedReservationTableStates({
       const bNum = parseReservationTableNumber(b?.table_number) || 0;
       return aNum - bNum;
     });
-}
-
-function summarizeReservationTableStates(rows = []) {
-  const list = Array.isArray(rows) ? rows : [];
-  const counts = { available: 0, pending_hold: 0, reserved: 0, occupied: 0, blocked: 0, unknown: 0 };
-  list.forEach((row) => {
-    const status = normalizeReservationFloorPlanStatus(row?.status);
-    if (status in counts) counts[status] += 1;
-    else counts.unknown += 1;
-  });
-  return counts;
 }
 
 async function fetchUnavailableTablesSnapshot(identifier, params = {}, cacheBustValue = "") {
@@ -667,16 +873,7 @@ export default function QrReservationBookingPage() {
   React.useEffect(() => {
     let cancelled = false;
     async function loadPlan() {
-      if (!identifier) {
-        console.warn("[qr-reservation:floor-plan:skip] missing identifier");
-        return;
-      }
-      console.warn("[qr-reservation:floor-plan:start]", {
-        identifier,
-        reservationDate: form.reservation_date,
-        reservationTime: form.reservation_time,
-        selectedGuestCount,
-      });
+      if (!identifier) return;
       setFloorPlanLoading(true);
       try {
         const cacheBust = String(Date.now());
@@ -690,7 +887,7 @@ export default function QrReservationBookingPage() {
         }
         params.set("_ts", cacheBust);
         const query = params.toString();
-        const [response, tablesPayload, unavailablePayload] = await Promise.all([
+        const [response, tablesPayload, unavailablePayload, ordersPayload] = await Promise.all([
           secureFetch(
             `/public/floor-plan/${encodeURIComponent(identifier)}${query ? `?${query}` : ""}`,
             { cache: "no-store" }
@@ -710,6 +907,9 @@ export default function QrReservationBookingPage() {
             console.warn("Failed to load unavailable reservation tables:", error);
             return null;
           }),
+          secureFetch(`/orders?_ts=${encodeURIComponent(cacheBust)}`, {
+            cache: "no-store",
+          }).catch(() => []),
         ]);
         if (cancelled) return;
         const hasTablesPayload =
@@ -718,44 +918,103 @@ export default function QrReservationBookingPage() {
           ? getActiveTables(Array.isArray(tablesPayload) ? tablesPayload : tablesPayload?.data || [])
           : [];
         if (hasTablesPayload) setTables(normalizedTables);
-        console.warn("[qr-reservation:floor-plan:raw]", {
-          identifier,
-          reservationDate: form.reservation_date,
-          reservationTime: form.reservation_time,
-          selectedGuestCount,
-          floorPlanStateCount: Array.isArray(response?.table_states)
-            ? response.table_states.length
-            : 0,
-          unavailableTableNumbers: Array.isArray(unavailablePayload?.table_numbers)
-            ? unavailablePayload.table_numbers
-            : [],
-          unavailableReservedTableNumbers: Array.isArray(unavailablePayload?.reserved_table_numbers)
-            ? unavailablePayload.reserved_table_numbers
-            : [],
-          unavailableOccupiedTableNumbers: Array.isArray(unavailablePayload?.occupied_table_numbers)
-            ? unavailablePayload.occupied_table_numbers
-            : [],
-          unavailableTableStatesCount: Array.isArray(unavailablePayload?.table_states)
-            ? unavailablePayload.table_states.length
-            : 0,
-          activeTablesCount: normalizedTables.length,
+        const normalizedOrders = parseReservationOrdersPayload(ordersPayload);
+        const selectedReservationDateYmd = normalizeReservationDateYmd(form.reservation_date);
+        const activeOrderTableKeys = new Set();
+        const table10RawOrders = [];
+        (Array.isArray(normalizedOrders) ? normalizedOrders : []).forEach((order) => {
+          const tableKey = getOrderTableNumberKey(order);
+          const status = getReservationOrderStatus(order);
+          const occupiesNow = isOrderOccupyingForReservationDate(
+            order,
+            selectedReservationDateYmd
+          );
+          if (isReservationTable10(tableKey)) {
+            table10RawOrders.push({
+              id: order?.id ?? null,
+              status,
+              table_number:
+                order?.table_number ??
+                order?.tableNumber ??
+                order?.reserved_table_number ??
+                order?.reservedTableNumber ??
+                order?.table_id ??
+                order?.tableId ??
+                order?.table ??
+                order?.reservation?.table_number ??
+                order?.reservation?.tableNumber ??
+                null,
+              reservation_date: getReservationOrderDateYmd(order),
+              occupiesNow,
+            });
+          }
+          if (!tableKey || !occupiesNow) return;
+          activeOrderTableKeys.add(normalizeTableNumberKey(tableKey));
         });
+
+        const table10RawUnavailableRows = [
+          ...(Array.isArray(unavailablePayload?.table_states) ? unavailablePayload.table_states : []),
+          ...(Array.isArray(unavailablePayload?.tables) ? unavailablePayload.tables : []),
+        ]
+          .filter((row) => isReservationTable10(getFloorPlanStateTableNumber(row)))
+          .map((row) => ({
+            table_number: getFloorPlanStateTableNumber(row),
+            status:
+              row?.status ??
+              row?.table_status ??
+              row?.tableStatus ??
+              row?.availability_status ??
+              row?.availabilityStatus ??
+              row?.state ??
+              "unknown",
+          }));
+        const table10UnavailableReservedNumbers = (
+          Array.isArray(unavailablePayload?.reserved_table_numbers)
+            ? unavailablePayload.reserved_table_numbers
+            : []
+        ).filter((value) => isReservationTable10(value));
+        const table10UnavailableOccupiedNumbers = (
+          Array.isArray(unavailablePayload?.occupied_table_numbers)
+            ? unavailablePayload.occupied_table_numbers
+            : []
+        ).filter((value) => isReservationTable10(value));
+
         setFloorPlan(mergeFloorPlanVisualStyles(response?.layout || null, settings?.qr_floor_plan_layout));
         setFloorPlanSource(String(response?.source || "generated"));
         const mergedStates = buildMergedReservationTableStates({
-          floorPlanStates: Array.isArray(response?.table_states) ? response.table_states : [],
+          activeOrders: normalizedOrders,
           unavailablePayload,
           tables: hasTablesPayload ? normalizedTables : tableSnapshotRef.current,
+          reservationDateYmd: selectedReservationDateYmd,
         });
-        console.warn("[qr-reservation:floor-plan:merged]", {
-          total: mergedStates.length,
-          counts: summarizeReservationTableStates(mergedStates),
-          sample: mergedStates.slice(0, 20).map((state) => ({
-            table_number: state?.table_number ?? state?.tableNumber ?? state?.number,
-            status: normalizeReservationFloorPlanStatus(state?.status),
-            reason: state?.reason || "",
-          })),
-        });
+
+        if (import.meta.env.DEV) {
+          const table10State =
+            (Array.isArray(mergedStates) ? mergedStates : []).find((state) =>
+              isReservationTable10(getFloorPlanStateTableNumber(state))
+            ) || null;
+          if (
+            table10RawOrders.length > 0 ||
+            table10RawUnavailableRows.length > 0 ||
+            activeOrderTableKeys.has(TABLE_10_DEBUG_KEY) ||
+            table10State
+          ) {
+            console.warn("[table10-debug][qr-floor-map][raw-api]", {
+              orders: table10RawOrders,
+              unavailableRows: table10RawUnavailableRows,
+              unavailableReservedNumbers: table10UnavailableReservedNumbers,
+              unavailableOccupiedNumbers: table10UnavailableOccupiedNumbers,
+            });
+            console.warn("[table10-debug][qr-floor-map][derived-occupied]", {
+              activeOrderTableKeys: Array.from(activeOrderTableKeys),
+              table10Occupied: activeOrderTableKeys.has(TABLE_10_DEBUG_KEY),
+            });
+            console.warn("[table10-debug][qr-floor-map][derived-state]", {
+              table10State,
+            });
+          }
+        }
+
         setTableStates(mergedStates);
       } catch (error) {
         if (!cancelled) {
@@ -846,7 +1105,11 @@ export default function QrReservationBookingPage() {
   const selectedTableState = React.useMemo(() => {
     return (
       (Array.isArray(tableStates) ? tableStates : []).find(
-        (state) => Number(getFloorPlanStateTableNumber(state)) === selectedTableNumber
+        (state) =>
+          isSameTableNumberKey(
+            getFloorPlanStateTableNumber(state),
+            selectedTableNumber
+          )
       ) || null
     );
   }, [selectedTableNumber, tableStates]);
@@ -854,7 +1117,10 @@ export default function QrReservationBookingPage() {
     return (
       (Array.isArray(tables) ? tables : []).find(
         (table) =>
-          Number(table?.number ?? table?.tableNumber ?? table?.table_number) === selectedTableNumber
+          isSameTableNumberKey(
+            table?.number ?? table?.tableNumber ?? table?.table_number,
+            selectedTableNumber
+          )
       ) || null
     );
   }, [selectedTableNumber, tables]);
@@ -863,7 +1129,7 @@ export default function QrReservationBookingPage() {
     const selectedNumber = Number(form.table_number || 0);
     if (!selectedNumber) return;
     const currentState = (Array.isArray(tableStates) ? tableStates : []).find(
-      (state) => Number(getFloorPlanStateTableNumber(state)) === selectedNumber
+      (state) => isSameTableNumberKey(getFloorPlanStateTableNumber(state), selectedNumber)
     );
     const normalizedStateStatus = normalizeReservationFloorPlanStatus(
       currentState?.status ??
@@ -873,11 +1139,13 @@ export default function QrReservationBookingPage() {
         currentState?.availabilityStatus ??
         currentState?.state
     );
-    console.warn("[qr-reservation:selected-table-state]", {
-      selectedNumber,
-      normalizedStateStatus,
-      state: currentState || null,
-    });
+    if (import.meta.env.DEV && isReservationTable10(selectedNumber)) {
+      console.warn("[table10-debug][qr-floor-map][selected-state]", {
+        selectedNumber,
+        normalizedStateStatus,
+        state: currentState || null,
+      });
+    }
     if (!currentState || normalizedStateStatus !== "available") {
       setForm((prev) => ({ ...prev, table_number: "" }));
     }
