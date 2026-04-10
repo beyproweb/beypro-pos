@@ -6,7 +6,12 @@ import { toast } from "react-toastify";
 import secureFetch, { getAuthToken } from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
 import { SOCKET_BASE } from "../utils/api";
-import { getCheckoutPrefill, useCustomerAuth } from "../features/qrmenu/header-drawer";
+import {
+  getCheckoutPrefill,
+  saveCheckoutPrefill,
+  useCustomerAuth,
+} from "../features/qrmenu/header-drawer";
+import PhoneVerificationModal from "../features/qrmenu/components/modals/PhoneVerificationModal";
 import {
   buildConcertContactPath,
   buildPublicMenuPath,
@@ -610,7 +615,13 @@ export default function QrConcertBookingPage() {
     return candidate;
   }, [concertId, location.state]);
   const storage = React.useMemo(() => createQrScopedStorage(identifier), [identifier]);
-  const { customer, isLoggedIn } = useCustomerAuth(storage, { fetcher: customerAuthFetcher });
+  const {
+    customer,
+    isLoggedIn,
+    requestPhoneOtp: requestCustomerPhoneOtp,
+    verifyPhoneOtp: verifyCustomerPhoneOtp,
+    getPhoneVerificationStatus: getCustomerPhoneVerificationStatus,
+  } = useCustomerAuth(storage, { fetcher: customerAuthFetcher });
   const isLoggedInEffective = Boolean(isLoggedIn || customer?.id);
   const [customerPrefill, setCustomerPrefill] = React.useState(() => getCheckoutPrefill(storage));
   const customerEmailPrefill = React.useMemo(() => {
@@ -632,6 +643,12 @@ export default function QrConcertBookingPage() {
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [invalidField, setInvalidField] = React.useState("");
+  const phoneVerificationResolverRef = React.useRef(null);
+  const [phoneVerificationModalState, setPhoneVerificationModalState] = React.useState({
+    open: false,
+    phone: "",
+    flowLabel: "",
+  });
   const fieldRefs = React.useRef({});
   const confirmationSectionRef = React.useRef(null);
   const previousConfirmedTableRef = React.useRef("");
@@ -1339,6 +1356,59 @@ export default function QrConcertBookingPage() {
       return;
     }
 
+    const ensureVerifiedPhoneForFlow = async ({ phone, flowLabel = "" }) => {
+      const normalizedPhone = normalizeQrPhone(phone);
+      if (!QR_PHONE_REGEX.test(normalizedPhone)) {
+        window.alert(t("Please enter a valid phone number."));
+        return { ok: false, phone: normalizedPhone, phoneVerificationToken: "" };
+      }
+
+      try {
+        const status = await getCustomerPhoneVerificationStatus({
+          phone: normalizedPhone,
+        });
+        if (status?.verified) {
+          return {
+            ok: true,
+            phone: normalizedPhone,
+            phoneVerificationToken: String(status?.phoneVerificationToken || "").trim(),
+          };
+        }
+      } catch {
+        // Continue with modal fallback.
+      }
+
+      const modalResult = await new Promise((resolve) => {
+        phoneVerificationResolverRef.current = resolve;
+        setPhoneVerificationModalState({
+          open: true,
+          phone: normalizedPhone,
+          flowLabel: String(flowLabel || "").trim(),
+        });
+      });
+
+      if (modalResult?.verified) {
+        return {
+          ok: true,
+          phone: normalizeQrPhone(modalResult.phone || normalizedPhone),
+          phoneVerificationToken: String(modalResult.phoneVerificationToken || "").trim(),
+        };
+      }
+      return { ok: false, phone: normalizedPhone, phoneVerificationToken: "" };
+    };
+
+    const verification = await ensureVerifiedPhoneForFlow({
+      phone: normalizedPhone,
+      flowLabel: isTableBooking ? t("Concert Reservation") : t("Concert Ticket"),
+    });
+    if (!verification?.ok) return;
+
+    const verifiedPhone = normalizeQrPhone(verification.phone || normalizedPhone);
+    if (QR_PHONE_REGEX.test(verifiedPhone)) {
+      setForm((prev) => ({ ...prev, customer_phone: formatQrPhoneForInput(verifiedPhone) }));
+      saveCheckoutPrefill({ phone: verifiedPhone }, storage);
+    }
+
     setInvalidField("");
     setSubmitting(true);
     try {
@@ -1357,11 +1427,12 @@ export default function QrConcertBookingPage() {
             female_guests_count:
               isTableBooking && guestCompositionVisible && hasGuestCompositionInput ? womenCount : null,
             customer_name: form.customer_name.trim(),
-            customer_phone: normalizedPhone,
+            customer_phone: verifiedPhone || normalizedPhone,
             customer_email: String(form.customer_email || "").trim().toLowerCase() || null,
             customer_note: form.customer_note.trim(),
             bank_reference: form.bank_reference.trim(),
             area_name: selectedTicketType.area_name || null,
+            phone_verification_token: verification.phoneVerificationToken || null,
           }),
         }
       );
@@ -1467,6 +1538,7 @@ export default function QrConcertBookingPage() {
     formErrors.phone,
     guestCompositionError,
     guestCompositionVisible,
+    getCustomerPhoneVerificationStatus,
     hasGuestCompositionInput,
     identifier,
     isTableBooking,
@@ -1475,6 +1547,7 @@ export default function QrConcertBookingPage() {
     navigate,
     normalizedPhone,
     quantity,
+    saveCheckoutPrefill,
     selectedGuests,
     selectedTicketType,
     storage,
@@ -1484,6 +1557,22 @@ export default function QrConcertBookingPage() {
     focusInvalidField,
     scheduleLiveTableStateRefresh,
   ]);
+
+  React.useEffect(
+    () => () => {
+      const resolver = phoneVerificationResolverRef.current;
+      phoneVerificationResolverRef.current = null;
+      if (typeof resolver === "function") {
+        resolver({
+          verified: false,
+          phone: "",
+          phoneVerificationToken: "",
+          source: "dismissed",
+        });
+      }
+    },
+    []
+  );
 
   const summaryItems = [
     {
@@ -1559,7 +1648,8 @@ export default function QrConcertBookingPage() {
     : !canSubmit;
 
   return (
-    <BookingPageLayout
+    <>
+      <BookingPageLayout
       title={t("Concert Booking")}
       subtitle={loading ? t("Loading event") : t("Premium event checkout flow")}
       onBack={handleBack}
@@ -1802,6 +1892,43 @@ export default function QrConcertBookingPage() {
           setPickerOpen(false);
         }}
       />
-    </BookingPageLayout>
+      </BookingPageLayout>
+
+      <PhoneVerificationModal
+        open={phoneVerificationModalState.open}
+        t={t}
+        requireVerification={true}
+        initialPhone={phoneVerificationModalState.phone}
+        flowLabel={phoneVerificationModalState.flowLabel}
+        onClose={() => {
+          const resolver = phoneVerificationResolverRef.current;
+          phoneVerificationResolverRef.current = null;
+          setPhoneVerificationModalState({ open: false, phone: "", flowLabel: "" });
+          if (typeof resolver === "function") {
+            resolver({
+              verified: false,
+              phone: "",
+              phoneVerificationToken: "",
+              source: "dismissed",
+            });
+          }
+        }}
+        onRequestOtp={requestCustomerPhoneOtp}
+        onVerifyOtp={verifyCustomerPhoneOtp}
+        onVerified={(result) => {
+          const resolver = phoneVerificationResolverRef.current;
+          phoneVerificationResolverRef.current = null;
+          setPhoneVerificationModalState({ open: false, phone: "", flowLabel: "" });
+          if (typeof resolver === "function") {
+            resolver({
+              verified: true,
+              phone: result?.phone || phoneVerificationModalState.phone,
+              phoneVerificationToken: String(result?.phoneVerificationToken || "").trim(),
+              source: result?.source || "otp_verified",
+            });
+          }
+        }}
+      />
+    </>
   );
 }

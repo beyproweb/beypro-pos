@@ -18,7 +18,7 @@ function LoginPage({
     try {
       await onGoogleLogin?.();
     } catch (err) {
-      setError(err?.message || "Social login failed");
+      setError(err?.message || t("Social login failed"));
       setSocialLoading("");
     }
   };

@@ -82,9 +82,14 @@ import {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const QR_PHONE_REGEX = PHONE_API_REGEX;
+const PHONE_REQUIRED_ORDER_TYPES = new Set(["online", "packet", "delivery", "phone"]);
 
 function normalizeQrPhone(value) {
   return normalizePhoneForApi(value);
+}
+
+function isPhoneRequiredOrderType(value) {
+  return PHONE_REQUIRED_ORDER_TYPES.has(String(value || "").trim().toLowerCase());
 }
 
 function navigateToMarketplaceFromQrMenu() {
@@ -1771,6 +1776,17 @@ const DICT = {
     "Sign out from this device": "Sign out from this device",
     "Access your account": "Access your account",
     "Continue with your email": "Continue with your email",
+    "Login or sign up": "Login or sign up",
+    "Continue with Google": "Continue with Google",
+    "Continue with Apple": "Continue with Apple",
+    "Need an account? Sign up": "Need an account? Sign up",
+    "Continue as guest": "Continue as guest",
+    "By continuing, you agree to Beyall Terms and Privacy Policy.": "By continuing, you agree to Beyall Terms and Privacy Policy.",
+    "Social login failed": "Social login failed",
+    "Phone Verification": "Phone Verification",
+    "Account Verification": "Account Verification",
+    "Enter your phone number to receive a one-time verification code.": "Enter your phone number to receive a one-time verification code.",
+    "Send OTP": "Send OTP",
     "Support / Contact": "Support / Contact",
     "Contact support for help": "Contact support for help",
     "Support section will be available soon.": "Support section will be available soon.",
@@ -1794,6 +1810,9 @@ const DICT = {
     "Email already registered.": "Email already registered.",
     "Username already in use.": "Username already in use.",
     "Please enter your credentials.": "Please enter your credentials.",
+    "Please enter your name.": "Please enter your name.",
+    "Please enter a valid phone number.": "Please enter a valid phone number.",
+    "Please enter your password.": "Please enter your password.",
     "Please enter a valid email address.": "Please enter a valid email address.",
     "No account found for this phone number or email. Please register.": "No account found for this phone number or email. Please register.",
     "Invalid credentials.": "Invalid credentials.",
@@ -2134,6 +2153,17 @@ const DICT = {
     "Sign out from this device": "Bu cihazdan çıkış yap",
     "Access your account": "Hesabınıza erişin",
     "Continue with your email": "E-posta ile devam edin",
+    "Login or sign up": "Giriş yap veya kayıt ol",
+    "Continue with Google": "Google ile devam et",
+    "Continue with Apple": "Apple ile devam et",
+    "Need an account? Sign up": "Hesabın yok mu? Kayıt ol",
+    "Continue as guest": "Misafir olarak devam et",
+    "By continuing, you agree to Beyall Terms and Privacy Policy.": "Devam ederek Beyall Şartlar ve Gizlilik Politikasını kabul etmiş olursunuz.",
+    "Social login failed": "Sosyal giriş başarısız oldu",
+    "Phone Verification": "Telefon Doğrulama",
+    "Account Verification": "Hesap Doğrulama",
+    "Enter your phone number to receive a one-time verification code.": "Tek kullanımlık doğrulama kodu almak için telefon numaranızı girin.",
+    "Send OTP": "OTP Gönder",
     "Support / Contact": "Destek / İletişim",
     "Contact support for help": "Yardım için destekle iletişime geçin",
     "Support section will be available soon.": "Destek bölümü yakında kullanıma açılacak.",
@@ -2161,6 +2191,9 @@ const DICT = {
     "Email already registered.": "E-posta zaten kayıtlı.",
     "Username already in use.": "Kullanıcı adı zaten kullanılıyor.",
     "Please enter your credentials.": "Lütfen giriş bilgilerinizi girin.",
+    "Please enter your name.": "Lütfen adınızı girin.",
+    "Please enter a valid phone number.": "Lütfen geçerli bir telefon numarası girin.",
+    "Please enter your password.": "Lütfen şifrenizi girin.",
     "Please enter a valid email address.": "Lütfen geçerli bir e-posta adresi girin.",
     "No account found for this phone number or email. Please register.": "Bu telefon numarası veya e-posta için hesap bulunamadı. Lütfen kayıt olun.",
     "Invalid credentials.": "Geçersiz giriş bilgileri.",
@@ -2389,6 +2422,17 @@ const DICT = {
     "Sign out from this device": "Von diesem Gerät abmelden",
     "Access your account": "Auf Ihr Konto zugreifen",
     "Continue with your email": "Fahren Sie mit Ihrer E-Mail fort",
+    "Login or sign up": "Anmelden oder registrieren",
+    "Continue with Google": "Mit Google fortfahren",
+    "Continue with Apple": "Mit Apple fortfahren",
+    "Need an account? Sign up": "Noch kein Konto? Registrieren",
+    "Continue as guest": "Als Gast fortfahren",
+    "By continuing, you agree to Beyall Terms and Privacy Policy.": "Durch Fortfahren stimmen Sie den Beyall-Nutzungsbedingungen und der Datenschutzrichtlinie zu.",
+    "Social login failed": "Soziale Anmeldung fehlgeschlagen",
+    "Phone Verification": "Telefonverifizierung",
+    "Account Verification": "Kontoverifizierung",
+    "Enter your phone number to receive a one-time verification code.": "Gib deine Telefonnummer ein, um einen einmaligen Verifizierungscode zu erhalten.",
+    "Send OTP": "OTP senden",
     "Support / Contact": "Support / Kontakt",
     "Contact support for help": "Support für Hilfe kontaktieren",
     "Support section will be available soon.": "Der Support-Bereich ist bald verfügbar.",
@@ -2412,6 +2456,9 @@ const DICT = {
     "Full name": "Vollständiger Name",
     "Address (optional)": "Adresse (optional)",
     "Please enter your credentials.": "Bitte Zugangsdaten eingeben.",
+    "Please enter your name.": "Bitte geben Sie Ihren Namen ein.",
+    "Please enter a valid phone number.": "Bitte geben Sie eine gültige Telefonnummer ein.",
+    "Please enter your password.": "Bitte geben Sie Ihr Passwort ein.",
     "Please enter a valid email address.": "Bitte geben Sie eine gültige E-Mail-Adresse ein.",
     "No account found for this phone number or email. Please register.": "Für diese Telefonnummer oder E-Mail wurde kein Konto gefunden. Bitte registrieren Sie sich.",
     "Invalid credentials.": "Ungültige Zugangsdaten.",
@@ -2650,6 +2697,17 @@ const DICT = {
     "Sign out from this device": "Se déconnecter de cet appareil",
     "Access your account": "Accéder à votre compte",
     "Continue with your email": "Continuez avec votre e-mail",
+    "Login or sign up": "Connexion ou inscription",
+    "Continue with Google": "Continuer avec Google",
+    "Continue with Apple": "Continuer avec Apple",
+    "Need an account? Sign up": "Besoin d’un compte ? Inscrivez-vous",
+    "Continue as guest": "Continuer en invité",
+    "By continuing, you agree to Beyall Terms and Privacy Policy.": "En continuant, vous acceptez les Conditions et la Politique de confidentialité de Beyall.",
+    "Social login failed": "Échec de la connexion sociale",
+    "Phone Verification": "Vérification du téléphone",
+    "Account Verification": "Vérification du compte",
+    "Enter your phone number to receive a one-time verification code.": "Saisissez votre numéro de téléphone pour recevoir un code de vérification à usage unique.",
+    "Send OTP": "Envoyer OTP",
     "Support / Contact": "Support / Contact",
     "Contact support for help": "Contacter le support pour obtenir de l'aide",
     "Support section will be available soon.": "La section support sera bientôt disponible.",
@@ -2673,6 +2731,9 @@ const DICT = {
     "Full name": "Nom complet",
     "Address (optional)": "Adresse (facultatif)",
     "Please enter your credentials.": "Veuillez saisir vos identifiants.",
+    "Please enter your name.": "Veuillez saisir votre nom.",
+    "Please enter a valid phone number.": "Veuillez saisir un numéro de téléphone valide.",
+    "Please enter your password.": "Veuillez saisir votre mot de passe.",
     "Please enter a valid email address.": "Veuillez saisir une adresse e-mail valide.",
     "No account found for this phone number or email. Please register.": "Aucun compte n’a été trouvé pour ce numéro de téléphone ou cet e-mail. Veuillez vous inscrire.",
     "Invalid credentials.": "Identifiants invalides.",
@@ -7876,11 +7937,13 @@ export default function QrMenu() {
   const callWaiterFeedbackTimeoutRef = useRef(null);
   const authPromptWasLoggedInRef = useRef(isCustomerLoggedInEffective);
   const autoPhoneVerificationPromptedRef = useRef(false);
+  const [isAutoPhoneVerificationChecking, setIsAutoPhoneVerificationChecking] = useState(false);
   const phoneVerificationResolverRef = useRef(null);
   const [phoneVerificationModalState, setPhoneVerificationModalState] = useState({
     open: false,
     phone: "",
     flowLabel: "",
+    origin: "flow_required",
   });
 
   const handleCloseAppHeaderDrawer = useCallback(() => {
@@ -7941,24 +8004,33 @@ export default function QrMenu() {
 
   const closePhoneVerificationModal = useCallback(
     (result = null) => {
+      const modalOrigin = String(phoneVerificationModalState.origin || "").trim().toLowerCase();
+      if (!result?.verified && modalOrigin === "account_auto") {
+        autoPhoneVerificationPromptedRef.current = false;
+      }
+      if (modalOrigin === "account_auto") {
+        setIsAutoPhoneVerificationChecking(false);
+      }
       setPhoneVerificationModalState({
         open: false,
         phone: "",
         flowLabel: "",
+        origin: "flow_required",
       });
       resolvePhoneVerificationRequest(result);
     },
-    [resolvePhoneVerificationRequest]
+    [phoneVerificationModalState.origin, resolvePhoneVerificationRequest]
   );
 
   const requestPhoneVerificationModal = useCallback(
-    ({ phone, flowLabel = "" }) =>
+    ({ phone, flowLabel = "", origin = "flow_required" }) =>
       new Promise((resolve) => {
         phoneVerificationResolverRef.current = resolve;
         setPhoneVerificationModalState({
           open: true,
           phone: normalizeQrPhone(phone),
           flowLabel: String(flowLabel || "").trim(),
+          origin: String(origin || "flow_required").trim() || "flow_required",
         });
       }),
     []
@@ -7974,6 +8046,7 @@ export default function QrMenu() {
   useEffect(() => {
     if (!isCustomerLoggedInEffective) {
       autoPhoneVerificationPromptedRef.current = false;
+      setIsAutoPhoneVerificationChecking(false);
       return;
     }
     if (isCustomerAuthRestoring) return;
@@ -7981,6 +8054,7 @@ export default function QrMenu() {
     if (autoPhoneVerificationPromptedRef.current) return;
 
     autoPhoneVerificationPromptedRef.current = true;
+    setIsAutoPhoneVerificationChecking(true);
 
     const sessionPhone = normalizeQrPhone(qrCustomerSession?.phone || "");
     let cancelled = false;
@@ -8000,12 +8074,17 @@ export default function QrMenu() {
         }
       }
 
-      if (cancelled || alreadyVerified) return;
+      if (cancelled) return;
+      if (alreadyVerified) {
+        setIsAutoPhoneVerificationChecking(false);
+        return;
+      }
 
       setIsManualAuthModalOpen(false);
       await requestPhoneVerificationModal({
         phone: sessionPhone,
         flowLabel: t("Account Verification"),
+        origin: "account_auto",
       });
     })();
 
@@ -8022,6 +8101,12 @@ export default function QrMenu() {
     requestPhoneVerificationModal,
     t,
   ]);
+
+  const shouldHideMenuContent =
+    suppressMenuFlash ||
+    isAutoPhoneVerificationChecking ||
+    (phoneVerificationModalState.open &&
+      String(phoneVerificationModalState.origin || "").trim().toLowerCase() === "account_auto");
 
   useEffect(() => {
     if (isCustomerLoggedInEffective) return;
@@ -9044,7 +9129,7 @@ export default function QrMenu() {
       ).toLowerCase();
       const takeawayMode = String(takeaway?.mode || "").toLowerCase();
       const requiresPhoneVerification =
-        currentOrderType === "online" ||
+        isPhoneRequiredOrderType(currentOrderType) ||
         (currentOrderType === "takeaway" && takeawayMode !== "reservation");
 
       if (!requiresPhoneVerification) {
@@ -9052,7 +9137,7 @@ export default function QrMenu() {
         return;
       }
 
-      if (currentOrderType === "online") {
+      if (isPhoneRequiredOrderType(currentOrderType)) {
         const deliveryPhone = normalizeQrPhone(
           customerInfo?.phone || savedCustomerPrefill?.phone || ""
         );
@@ -9972,8 +10057,14 @@ export default function QrMenu() {
         brandName={brandName}
         accentColor={takeawaySubmitButtonColor}
       />
-      {showHome ? (
-        <>
+      <div
+        style={{
+          opacity: shouldHideMenuContent ? 0 : 1,
+          pointerEvents: shouldHideMenuContent ? "none" : "auto",
+        }}
+      >
+        {showHome ? (
+          <>
           <OrderTypeSelect
             identifier={restaurantIdentifier}
             appendIdentifier={appendIdentifier}
@@ -10025,12 +10116,9 @@ export default function QrMenu() {
               tableEnabled={!hasActiveDeliveryLock && allowTableOrder}
             />
           )}
-        </>
-      ) : (
-        <div
-          className={`${isQrHeaderDark ? "dark " : ""}flex-1`}
-          style={{ opacity: suppressMenuFlash ? 0 : 1, pointerEvents: suppressMenuFlash ? "none" : "auto" }}
-        >
+          </>
+        ) : (
+          <div className={`${isQrHeaderDark ? "dark " : ""}flex-1`}>
           <div className="min-h-screen w-full max-w-full bg-neutral-50 dark:bg-neutral-900 flex flex-col">
             {shouldShowTableOrderHeader ? (
               <TableOrderHeader
@@ -10142,8 +10230,9 @@ export default function QrMenu() {
               </div>
             </div>
           </div>
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
       {!isDesktopLayout && (
         <CartModal
@@ -10681,6 +10770,7 @@ export default function QrMenu() {
         open={phoneVerificationModalState.open}
         t={t}
         accentColor={takeawaySubmitButtonColor}
+        requireVerification={true}
         initialPhone={phoneVerificationModalState.phone}
         flowLabel={phoneVerificationModalState.flowLabel}
         onClose={() => closePhoneVerificationModal()}
@@ -10701,7 +10791,7 @@ export default function QrMenu() {
         }}
       />
 
-      {suppressMenuFlash && (
+      {shouldHideMenuContent && (
         <div className="fixed inset-0 z-[120] bg-white" aria-hidden="true" />
       )}
     </>

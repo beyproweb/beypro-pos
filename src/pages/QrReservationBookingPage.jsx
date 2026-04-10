@@ -5,7 +5,12 @@ import { io } from "socket.io-client";
 import secureFetch, { getAuthToken } from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
 import { SOCKET_BASE } from "../utils/api";
-import { getCheckoutPrefill, useCustomerAuth } from "../features/qrmenu/header-drawer";
+import {
+  getCheckoutPrefill,
+  saveCheckoutPrefill,
+  useCustomerAuth,
+} from "../features/qrmenu/header-drawer";
+import PhoneVerificationModal from "../features/qrmenu/components/modals/PhoneVerificationModal";
 import {
   getEffectiveBookingMaxDaysInAdvance,
   normalizeQrBookingSettings,
@@ -553,7 +558,13 @@ export default function QrReservationBookingPage() {
     [id, location.pathname, location.search, slug]
   );
   const storage = React.useMemo(() => createQrScopedStorage(identifier), [identifier]);
-  const { customer, isLoggedIn } = useCustomerAuth(storage, { fetcher: customerAuthFetcher });
+  const {
+    customer,
+    isLoggedIn,
+    requestPhoneOtp: requestCustomerPhoneOtp,
+    verifyPhoneOtp: verifyCustomerPhoneOtp,
+    getPhoneVerificationStatus: getCustomerPhoneVerificationStatus,
+  } = useCustomerAuth(storage, { fetcher: customerAuthFetcher });
   const isLoggedInEffective = Boolean(isLoggedIn || customer?.id);
   const [customerPrefill, setCustomerPrefill] = React.useState(() => getCheckoutPrefill(storage));
   const customerEmailPrefill = React.useMemo(() => {
@@ -572,6 +583,12 @@ export default function QrReservationBookingPage() {
   const [tableStates, setTableStates] = React.useState([]);
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
+  const phoneVerificationResolverRef = React.useRef(null);
+  const [phoneVerificationModalState, setPhoneVerificationModalState] = React.useState({
+    open: false,
+    phone: "",
+    flowLabel: "",
+  });
   const [resolvedRestaurantId, setResolvedRestaurantId] = React.useState(() =>
     parseRestaurantIdFromIdentifier(identifier)
   );
@@ -1274,6 +1291,58 @@ export default function QrReservationBookingPage() {
       return;
     }
 
+    const ensureVerifiedPhoneForFlow = async ({ phone, flowLabel = "" }) => {
+      const normalizedPhone = normalizeQrPhone(phone);
+      if (!QR_PHONE_REGEX.test(normalizedPhone)) {
+        window.alert(t("Please enter a valid phone number."));
+        return { ok: false, phone: normalizedPhone, phoneVerificationToken: "" };
+      }
+
+      try {
+        const status = await getCustomerPhoneVerificationStatus({
+          phone: normalizedPhone,
+        });
+        if (status?.verified) {
+          return {
+            ok: true,
+            phone: normalizedPhone,
+            phoneVerificationToken: String(status?.phoneVerificationToken || "").trim(),
+          };
+        }
+      } catch {
+        // Continue with modal fallback.
+      }
+
+      const modalResult = await new Promise((resolve) => {
+        phoneVerificationResolverRef.current = resolve;
+        setPhoneVerificationModalState({
+          open: true,
+          phone: normalizedPhone,
+          flowLabel: String(flowLabel || "").trim(),
+        });
+      });
+      if (modalResult?.verified) {
+        return {
+          ok: true,
+          phone: normalizeQrPhone(modalResult.phone || normalizedPhone),
+          phoneVerificationToken: String(modalResult.phoneVerificationToken || "").trim(),
+        };
+      }
+      return { ok: false, phone: normalizedPhone, phoneVerificationToken: "" };
+    };
+
+    const verification = await ensureVerifiedPhoneForFlow({
+      phone: phoneValue,
+      flowLabel: t("Reservation"),
+    });
+    if (!verification?.ok) return;
+
+    const verifiedPhone = normalizeQrPhone(verification.phone || phoneValue);
+    if (QR_PHONE_REGEX.test(verifiedPhone)) {
+      setForm((prev) => ({ ...prev, phone: formatQrPhoneForInput(verifiedPhone) }));
+      saveCheckoutPrefill({ phone: verifiedPhone }, storage);
+    }
+
     setSubmitting(true);
     try {
       const response = await secureFetch(buildReservationApiPath(identifier), {
@@ -1289,8 +1358,9 @@ export default function QrReservationBookingPage() {
             guestCompositionVisible && hasGuestCompositionInput ? womenCount : null,
           reservation_notes: form.notes || "",
           customer_name: form.name.trim(),
-          customer_phone: phoneValue,
+          customer_phone: verifiedPhone || phoneValue,
           customer_email: String(form.email || "").trim().toLowerCase() || null,
+          phone_verification_token: verification.phoneVerificationToken || null,
         }),
       });
       const reservationOrderId = Number(response?.reservation?.id || 0);
@@ -1332,16 +1402,34 @@ export default function QrReservationBookingPage() {
     guestCompositionVisible,
     hasGuestCompositionInput,
     identifier,
+    getCustomerPhoneVerificationStatus,
     menuPath,
     menCount,
     navigate,
     phoneValue,
+    saveCheckoutPrefill,
     selectedGuestCount,
     selectedTimeSlot?.isAvailable,
     storage,
     t,
     womenCount,
   ]);
+
+  React.useEffect(
+    () => () => {
+      const resolver = phoneVerificationResolverRef.current;
+      phoneVerificationResolverRef.current = null;
+      if (typeof resolver === "function") {
+        resolver({
+          verified: false,
+          phone: "",
+          phoneVerificationToken: "",
+          source: "dismissed",
+        });
+      }
+    },
+    []
+  );
 
   if (!hasRegisteredProfile) {
     return null;
@@ -1359,7 +1447,8 @@ export default function QrReservationBookingPage() {
     : !form.reservation_date || !form.reservation_time || pickerOpen;
 
   return (
-    <BookingPageLayout
+    <>
+      <BookingPageLayout
       title={t("Reserve Table")}
       subtitle={loading ? t("Loading booking page") : t("Step-by-step reservation flow")}
       onBack={handleBack}
@@ -1541,6 +1630,43 @@ export default function QrReservationBookingPage() {
           setPickerOpen(false);
         }}
       />
-    </BookingPageLayout>
+      </BookingPageLayout>
+
+      <PhoneVerificationModal
+        open={phoneVerificationModalState.open}
+        t={t}
+        requireVerification={true}
+        initialPhone={phoneVerificationModalState.phone}
+        flowLabel={phoneVerificationModalState.flowLabel}
+        onClose={() => {
+          const resolver = phoneVerificationResolverRef.current;
+          phoneVerificationResolverRef.current = null;
+          setPhoneVerificationModalState({ open: false, phone: "", flowLabel: "" });
+          if (typeof resolver === "function") {
+            resolver({
+              verified: false,
+              phone: "",
+              phoneVerificationToken: "",
+              source: "dismissed",
+            });
+          }
+        }}
+        onRequestOtp={requestCustomerPhoneOtp}
+        onVerifyOtp={verifyCustomerPhoneOtp}
+        onVerified={(result) => {
+          const resolver = phoneVerificationResolverRef.current;
+          phoneVerificationResolverRef.current = null;
+          setPhoneVerificationModalState({ open: false, phone: "", flowLabel: "" });
+          if (typeof resolver === "function") {
+            resolver({
+              verified: true,
+              phone: result?.phone || phoneVerificationModalState.phone,
+              phoneVerificationToken: String(result?.phoneVerificationToken || "").trim(),
+              source: result?.source || "otp_verified",
+            });
+          }
+        }}
+      />
+    </>
   );
 }

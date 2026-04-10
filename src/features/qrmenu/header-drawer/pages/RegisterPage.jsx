@@ -92,7 +92,7 @@ function RegisterPage({
         await onAppleLogin?.();
       }
     } catch (err) {
-      setError(err?.message || "Social login failed");
+      setError(err?.message || t("Social login failed"));
       setSocialLoading("");
     }
   };
@@ -110,7 +110,7 @@ function RegisterPage({
     try {
       await onRegister?.(form);
     } catch (err) {
-      setError(err?.message || "Registration failed");
+      setError(err?.message || t("Registration failed"));
     } finally {
       setLoading(false);
     }

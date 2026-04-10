@@ -43,6 +43,7 @@ export default function PhoneVerificationModal({
   accentColor = "#111827",
   initialPhone = "",
   flowLabel = "",
+  requireVerification = false,
   onClose,
   onRequestOtp,
   onVerifyOtp,
@@ -94,6 +95,7 @@ export default function PhoneVerificationModal({
   }, [code, open, step]);
 
   const dismiss = () => {
+    if (requireVerification) return;
     if (sending || verifying) return;
     onClose?.();
   };
@@ -227,15 +229,17 @@ export default function PhoneVerificationModal({
     <div className="fixed inset-0 z-[1700] flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-0 sm:p-4">
       <div className="absolute inset-0" onClick={dismiss} />
       <div className="relative w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-white shadow-[0_16px_50px_rgba(0,0,0,0.16)] border border-neutral-200 p-5 sm:p-7 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
-        <button
-          type="button"
-          onClick={dismiss}
-          className="absolute right-4 top-4 w-8 h-8 rounded-full bg-neutral-100 text-neutral-500 hover:text-red-600 hover:bg-red-50 transition"
-          aria-label={t("Close")}
-          disabled={sending || verifying}
-        >
-          ×
-        </button>
+        {!requireVerification ? (
+          <button
+            type="button"
+            onClick={dismiss}
+            className="absolute right-4 top-4 w-8 h-8 rounded-full bg-neutral-100 text-neutral-500 hover:text-red-600 hover:bg-red-50 transition"
+            aria-label={t("Close")}
+            disabled={sending || verifying}
+          >
+            ×
+          </button>
+        ) : null}
 
         <h2 className="text-xl sm:text-2xl font-semibold text-neutral-900 pr-8">
           {t("Phone Verification")}
