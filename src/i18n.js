@@ -59,6 +59,12 @@ const resources = {
           "whatWouldKidsLike": "What would the kids like?"
         }
       },
+      "waiter": {
+        "call": "Call Waiter",
+        "wantBill": "Want Bill",
+        "wantReorder": "Want Reorder",
+        "handled": "Handled"
+      },
       " 🌍 Language & Localization": "🌍 Language & Localization",
       "-- Payment Method --": "-- Payment Method --",
       "-- Select --": "-- Select --",
@@ -1559,7 +1565,7 @@ const resources = {
       "🕒 Shop Hours": "🕒 Shop Hours",
       "🗓️ Date Paid:": "🗓️ Date Paid:",
       "Customers": "Customers",
-      "Customer Insights": "Customer Insights",
+      "Customer Insights": "Customer Profile",
       "Customer updated successfully!": "Customer updated successfully!",
       "Failed to update: {{error}}": "Failed to update: {{error}}",
       "Are you sure you want to delete this customer?": "Are you sure you want to delete this customer?",
@@ -1602,7 +1608,7 @@ const resources = {
       "Select a payment method": "Select a payment method",
       "Debt payment recorded successfully.": "Debt payment recorded successfully.",
       "Failed to record debt payment": "Failed to record debt payment",
-      "Access Denied: You do not have permission to view Customer Insights.": "Access Denied: You do not have permission to view Customer Insights.",
+      "Access Denied: You do not have permission to view Customer Insights.": "Access Denied: You do not have permission to view Customer Profile.",
       "Delivery average label": "Delivery: {{value}} avg",
       "Ingredient Prices": "Ingredient Prices",
       "Prices": "Prices",
@@ -2385,6 +2391,12 @@ const resources = {
           "whatWouldMeLike": "Sizin için ne istersiniz?",
           "whatWouldKidsLike": "Çocuklar için ne istersiniz?"
         }
+      },
+      "waiter": {
+        "call": "Garson Çağır",
+        "wantBill": "Hesap İstiyorum",
+        "wantReorder": "Tekrar Sipariş",
+        "handled": "Çözüldü"
       },
       "-- Payment Method --": "-- Ödeme Yöntemi --",
       "-- Select --": "-- Seçiniz --",
@@ -3984,7 +3996,7 @@ const resources = {
       "🕒 Shop Hours": "🕒 Mağaza Saatleri",
       "🗓️ Date Paid:": "🗓️ Ödeme Tarihi:",
       "Customers": "Müşteriler",
-      "Customer Insights": "Müşteri Analizleri",
+      "Customer Insights": "Müşteri Profili",
       "Customer updated successfully!": "Müşteri başarıyla güncellendi!",
       "Failed to update: {{error}}": "Güncelleme başarısız: {{error}}",
       "Are you sure you want to delete this customer?": "Bu müşteriyi silmek istediğinize emin misiniz?",
@@ -4027,7 +4039,7 @@ const resources = {
       "Select a payment method": "Ödeme yöntemi seçin",
       "Debt payment recorded successfully.": "Borç ödemesi başarıyla kaydedildi.",
       "Failed to record debt payment": "Borç ödemesi kaydedilemedi",
-      "Access Denied: You do not have permission to view Customer Insights.": "Erişim reddedildi: Müşteri Analizlerini görüntüleme izniniz yok.",
+      "Access Denied: You do not have permission to view Customer Insights.": "Erişim reddedildi: Müşteri Profilini görüntüleme izniniz yok.",
       "Delivery average label": "Teslimat: ort {{value}} dk",
       "Ingredient Prices": "Malzeme Fiyatları",
       "Prices": "Fiyatlar",
@@ -4835,6 +4847,12 @@ const resources = {
           "whatWouldMeLike": "Was möchten Sie?",
           "whatWouldKidsLike": "Was möchten die Kinder?"
         }
+      },
+      "waiter": {
+        "call": "Kellner rufen",
+        "wantBill": "Rechnung bitte",
+        "wantReorder": "Nachbestellen",
+        "handled": "Erledigt"
       },
       "-- Payment Method --": "-- Zahlungsmethode --",
       "-- Select --": "-- Auswählen --",
@@ -6433,7 +6451,7 @@ const resources = {
       "🕒 Shop Hours": "🕒 Öffnungszeiten",
       "🗓️ Date Paid:": "🗓️ Bezahlt Datum:",
       "Customers": "Kunden",
-      "Customer Insights": "Kundenanalysen",
+      "Customer Insights": "Kundenprofil",
       "Customer updated successfully!": "Kunde erfolgreich aktualisiert!",
       "Failed to update: {{error}}": "Aktualisierung fehlgeschlagen: {{error}}",
       "Are you sure you want to delete this customer?": "Möchten Sie diesen Kunden wirklich löschen?",
@@ -6476,7 +6494,7 @@ const resources = {
       "Select a payment method": "Zahlungsmethode auswählen",
       "Debt payment recorded successfully.": "Schuldzahlung erfolgreich erfasst.",
       "Failed to record debt payment": "Schuldzahlung konnte nicht erfasst werden",
-      "Access Denied: You do not have permission to view Customer Insights.": "Zugriff verweigert: Sie haben keine Berechtigung, Kundenanalysen zu sehen.",
+      "Access Denied: You do not have permission to view Customer Insights.": "Zugriff verweigert: Sie haben keine Berechtigung, das Kundenprofil zu sehen.",
       "Delivery average label": "Lieferung: Ø {{value}} min",
       "Ingredient Prices": "Zutatenpreise",
       "Prices": "Preise",
@@ -7014,11 +7032,17 @@ const resources = {
           "whatWouldKidsLike": "Que voudraient les enfants ?"
         }
       },
+      "waiter": {
+        "call": "Appeler le serveur",
+        "wantBill": "Demander l'addition",
+        "wantReorder": "Recommander",
+        "handled": "Traité"
+      },
       "Close Time": "Heure de fermeture",
       "Upload Avatar": "Télécharger un avatar",
       "Avatar uploaded successfully": "Avatar importé avec succès",
       "Customers": "Clients",
-      "Customer Insights": "Analyses clients",
+      "Customer Insights": "Profil client",
       "Customer updated successfully!": "Client mis à jour avec succès !",
       "Failed to update: {{error}}": "Échec de la mise à jour : {{error}}",
       "Are you sure you want to delete this customer?": "Êtes-vous sûr de vouloir supprimer ce client ?",
@@ -7070,7 +7094,7 @@ const resources = {
       "Select a payment method": "Sélectionnez un moyen de paiement",
       "Debt payment recorded successfully.": "Paiement de la dette enregistré avec succès.",
       "Failed to record debt payment": "Impossible d’enregistrer le paiement de la dette",
-      "Access Denied: You do not have permission to view Customer Insights.": "Accès refusé : vous n’avez pas l’autorisation de voir les analyses clients.",
+      "Access Denied: You do not have permission to view Customer Insights.": "Accès refusé : vous n’avez pas l’autorisation de voir le profil client.",
       "Integrations": "Intégrations",
       "Products": "Produits",
       "Product updated!": "Produit mis à jour !",

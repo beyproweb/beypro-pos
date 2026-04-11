@@ -2,6 +2,7 @@ export const ACTIVE_TABLE_ORDER_STATUSES = Object.freeze([
   "open",
   "confirmed",
   "preparing",
+  "paid",
 ]);
 
 const ACTIVE_TABLE_ORDER_STATUS_SET = new Set(ACTIVE_TABLE_ORDER_STATUSES);

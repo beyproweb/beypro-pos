@@ -223,6 +223,24 @@ export const buildReservationShadowRecord = ({ reservation, order, tableNumber, 
     orderSource?.reservation && typeof orderSource.reservation === "object"
       ? orderSource.reservation
       : null;
+  const reservationConcertBooking =
+    reservationSource?.concert_booking && typeof reservationSource.concert_booking === "object"
+      ? reservationSource.concert_booking
+      : reservationSource?.concertBooking && typeof reservationSource.concertBooking === "object"
+        ? reservationSource.concertBooking
+        : null;
+  const orderConcertBooking =
+    orderSource?.concert_booking && typeof orderSource.concert_booking === "object"
+      ? orderSource.concert_booking
+      : orderSource?.concertBooking && typeof orderSource.concertBooking === "object"
+        ? orderSource.concertBooking
+        : null;
+  const nestedConcertBooking =
+    nestedReservation?.concert_booking && typeof nestedReservation.concert_booking === "object"
+      ? nestedReservation.concert_booking
+      : nestedReservation?.concertBooking && typeof nestedReservation.concertBooking === "object"
+        ? nestedReservation.concertBooking
+        : null;
 
   const resolvedTableNumber = Number(
     tableNumber ??
@@ -287,11 +305,85 @@ export const buildReservationShadowRecord = ({ reservation, order, tableNumber, 
     return null;
   }
 
+  const resolvedReservationOrderStatus =
+    reservationSource?.reservation_order_status ??
+    reservationSource?.reservationOrderStatus ??
+    orderSource?.reservation_order_status ??
+    orderSource?.reservationOrderStatus ??
+    nestedReservation?.reservation_order_status ??
+    nestedReservation?.reservationOrderStatus ??
+    reservationConcertBooking?.reservation_order_status ??
+    reservationConcertBooking?.reservationOrderStatus ??
+    orderConcertBooking?.reservation_order_status ??
+    orderConcertBooking?.reservationOrderStatus ??
+    nestedConcertBooking?.reservation_order_status ??
+    nestedConcertBooking?.reservationOrderStatus ??
+    null;
+  const resolvedPaymentStatus =
+    reservationSource?.payment_status ??
+    reservationSource?.paymentStatus ??
+    orderSource?.payment_status ??
+    orderSource?.paymentStatus ??
+    nestedReservation?.payment_status ??
+    nestedReservation?.paymentStatus ??
+    reservationSource?.concert_booking_payment_status ??
+    reservationSource?.concertBookingPaymentStatus ??
+    orderSource?.concert_booking_payment_status ??
+    orderSource?.concertBookingPaymentStatus ??
+    nestedReservation?.concert_booking_payment_status ??
+    nestedReservation?.concertBookingPaymentStatus ??
+    reservationConcertBooking?.payment_status ??
+    reservationConcertBooking?.paymentStatus ??
+    orderConcertBooking?.payment_status ??
+    orderConcertBooking?.paymentStatus ??
+    nestedConcertBooking?.payment_status ??
+    nestedConcertBooking?.paymentStatus ??
+    null;
+  const resolvedBookingStatus =
+    reservationSource?.booking_status ??
+    reservationSource?.bookingStatus ??
+    orderSource?.booking_status ??
+    orderSource?.bookingStatus ??
+    nestedReservation?.booking_status ??
+    nestedReservation?.bookingStatus ??
+    reservationSource?.concert_booking_status ??
+    reservationSource?.concertBookingStatus ??
+    orderSource?.concert_booking_status ??
+    orderSource?.concertBookingStatus ??
+    nestedReservation?.concert_booking_status ??
+    nestedReservation?.concertBookingStatus ??
+    reservationConcertBooking?.status ??
+    orderConcertBooking?.status ??
+    nestedConcertBooking?.status ??
+    null;
+  const resolvedConcertBookingId =
+    reservationSource?.concert_booking_id ??
+    reservationSource?.concertBookingId ??
+    orderSource?.concert_booking_id ??
+    orderSource?.concertBookingId ??
+    nestedReservation?.concert_booking_id ??
+    nestedReservation?.concertBookingId ??
+    reservationConcertBooking?.id ??
+    orderConcertBooking?.id ??
+    nestedConcertBooking?.id ??
+    null;
+
   const resolvedStatus =
     reservationSource?.status ??
+    reservationSource?.reservation_status ??
+    reservationSource?.reservationStatus ??
+    resolvedReservationOrderStatus ??
     reservationSource?.order_status ??
     orderSource?.status ??
+    orderSource?.reservation_status ??
+    orderSource?.reservationStatus ??
+    orderSource?.reservation_order_status ??
+    orderSource?.reservationOrderStatus ??
     nestedReservation?.status ??
+    nestedReservation?.reservation_status ??
+    nestedReservation?.reservationStatus ??
+    nestedReservation?.reservation_order_status ??
+    nestedReservation?.reservationOrderStatus ??
     "reserved";
   const normalizedResolvedStatus = String(resolvedStatus || "").trim().toLowerCase();
   if (TERMINAL_RESERVATION_STATUSES.has(normalizedResolvedStatus)) {
@@ -329,6 +421,12 @@ export const buildReservationShadowRecord = ({ reservation, order, tableNumber, 
     reservation_time: reservationTime,
     reservation_clients: reservationClients,
     reservation_notes: reservationNotes,
+    reservation_order_status: resolvedReservationOrderStatus ?? null,
+    payment_status: resolvedPaymentStatus ?? null,
+    booking_status: resolvedBookingStatus ?? null,
+    concert_booking_id: resolvedConcertBookingId ?? null,
+    concert_booking_payment_status: resolvedPaymentStatus ?? null,
+    concert_booking_status: resolvedBookingStatus ?? null,
   };
 };
 

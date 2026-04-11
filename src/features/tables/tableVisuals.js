@@ -188,16 +188,33 @@ export const hasUnpaidAnywhere = (order) => {
   const items = Array.isArray(order.items) ? order.items : [];
   const hasLineData = items.length > 0 || suborders.length > 0;
   const hasPaidFlag = status === "paid" || paymentStatus === "paid" || order?.is_paid === true;
-  // Keep instant-paid UX only for transient states where line data is not available yet.
-  if (hasPaidFlag && !hasLineData) {
+  const allSuborderItems = suborders.flatMap((sub) =>
+    Array.isArray(sub?.items) ? sub.items : []
+  );
+  const allLineItems = [...items, ...allSuborderItems];
+  const hasLinePaymentMarkers = allLineItems.some(
+    (line) =>
+      line &&
+      typeof line === "object" &&
+      ("paid" in line || "paid_at" in line || "paidAt" in line)
+  );
+  const isLinePaid = (line) =>
+    Boolean(line?.paid_at || line?.paidAt) ||
+    line?.paid === true ||
+    line?.paid === 1 ||
+    String(line?.paid ?? "").trim().toLowerCase() === "true";
+
+  // Some payloads only set order-level payment fields (status/payment_status/is_paid)
+  // and omit per-line paid flags. Trust order-level paid state in that case.
+  if (hasPaidFlag && (!hasLineData || !hasLinePaymentMarkers)) {
     return false;
   }
 
   const unpaidSub = suborders.some((sub) =>
-    Array.isArray(sub.items) ? sub.items.some((i) => !i.paid_at && !i.paid) : false
+    Array.isArray(sub.items) ? sub.items.some((line) => !isLinePaid(line)) : false
   );
 
-  const unpaidMain = items.some((i) => !i.paid_at && !i.paid);
+  const unpaidMain = items.some((line) => !isLinePaid(line));
 
   return unpaidSub || unpaidMain;
 };
@@ -467,19 +484,51 @@ export const resolveTableVisualState = (tableLike = {}, prevDerived = null) => {
     }
 
     const resolved = getMemoizedTableDerivedFields(source);
-    // Heuristic: when incoming source appears partial (no items, no timestamps)
-    // prefer previous derived snapshot to avoid flicker caused by interim
-    // responses or cached payloads that lack line-item details.
+    const normalizedStatus = getCanonicalTableOrderStatus(source);
+    const isTerminalLifecycleStatus =
+      normalizedStatus === "closed" ||
+      normalizedStatus === "completed" ||
+      normalizedStatus === "cancelled" ||
+      normalizedStatus === "canceled" ||
+      normalizedStatus === "void" ||
+      normalizedStatus === "deleted" ||
+      normalizedStatus === "checked_out";
+    const hasMainItems = Array.isArray(source?.items) && source.items.length > 0;
+    const hasSuborderItems = Array.isArray(source?.suborders)
+      ? source.suborders.some((sub) => Array.isArray(sub?.items) && sub.items.length > 0)
+      : false;
+    const hasReceiptMethods =
+      Array.isArray(source?.receiptMethods) && source.receiptMethods.length > 0;
+    const paymentStatus = String(source?.payment_status ?? source?.paymentStatus ?? "")
+      .trim()
+      .toLowerCase();
+    const hasExplicitPaidFlag =
+      normalizedStatus === "paid" ||
+      paymentStatus === "paid" ||
+      source?.is_paid === true ||
+      source?.isPaid === true;
+    const hasReservationStateSignal = hasReservationSignal(source);
+    const hasKitchenStateSignal = hasKitchenLifecycleSignal(source);
+
+    // Treat payloads without line/payment/reservation/kitchen signal as partial
+    // even if backend timestamps exist. This is the common phase-1 table list shape.
     const looksPartial =
-      (!Array.isArray(source.items) || source.items.length === 0) &&
-      !source?.updated_at &&
-      !source?.created_at &&
-      !source?.receiptMethods;
+      !isTerminalLifecycleStatus &&
+      !hasMainItems &&
+      !hasSuborderItems &&
+      !hasReceiptMethods &&
+      !hasExplicitPaidFlag &&
+      !hasReservationStateSignal &&
+      !hasKitchenStateSignal;
 
     if (prevDerived && looksPartial) {
-      // Avoid flipping from having unpaid to free or paid -> free while data hydrates.
-      if ((prevDerived.unpaidTotal > 0 && resolved.unpaidTotal === 0) ||
-          (prevDerived.isFullyPaid && !resolved.isFullyPaid)) {
+      // Avoid transient downgrade of strong table states while hydration completes.
+      if (
+        (prevDerived.unpaidTotal > 0 && resolved.unpaidTotal === 0) ||
+        (prevDerived.isFullyPaid && !resolved.isFullyPaid) ||
+        (prevDerived.isReservedTable && !resolved.isReservedTable) ||
+        (!prevDerived.isFreeTable && resolved.isFreeTable)
+      ) {
         return prevDerived;
       }
     }

@@ -8,6 +8,8 @@ import {
   parseLooseDateToMs,
 } from "../tables/tableVisuals";
 import {
+  readInitialReservationsToday,
+  readInitialTableOrders,
   writeTableOrdersCache,
   writeReservationsTodayCache,
 } from "./tableOrdersCache";
@@ -234,9 +236,11 @@ const mergeVisibleTableStatus = (...orders) => {
 };
 
 export default function useTableOrdersData() {
-  const [orders, setOrders] = useState([]);
+  const [orders, setOrders] = useState(() => readInitialTableOrders());
   const [ordersLoading, setOrdersLoading] = useState(false);
-  const [reservationsToday, setReservationsToday] = useState([]);
+  const [reservationsToday, setReservationsToday] = useState(() =>
+    readInitialReservationsToday()
+  );
 
   const didInitialOrdersLoadRef = useRef(false);
   const ordersFetchSeqRef = useRef(0);

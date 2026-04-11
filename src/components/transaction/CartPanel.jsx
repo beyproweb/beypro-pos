@@ -893,34 +893,6 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
                     {t("Reservation")}
                   </span>
                   <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5">
-                    {!isCheckedInReservation && !isCheckedOutReservation && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCheckinReservation?.();
-                        }}
-                        className={`${reservationSecondaryActionClassName} border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/40 dark:bg-emerald-900/20 dark:text-emerald-200 dark:hover:bg-emerald-900/35`}
-                        title={t("Checkin Reservation")}
-                        aria-label={t("Checkin Reservation")}
-                      >
-                        {t("Checkin")}
-                      </button>
-                    )}
-                    {showCheckoutReservationButton && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCheckoutReservation?.();
-                        }}
-                        className={`${reservationSecondaryActionClassName} border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-500/40 dark:bg-indigo-900/20 dark:text-indigo-200 dark:hover:bg-indigo-900/35`}
-                        title={t("Check Out")}
-                        aria-label={t("Check Out")}
-                      >
-                        {t("Check Out")}
-                      </button>
-                    )}
                     <button
                       type="button"
                       onClick={(e) => {

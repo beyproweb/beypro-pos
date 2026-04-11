@@ -339,7 +339,7 @@ const QUICK_ACCESS_CONFIG = [
   {
     id: "customer-insights",
     labelKey: "Customer Insights",
-    defaultLabel: "Customer Insights",
+    defaultLabel: "Customer Profile",
     path: "/customer-insights",
     color: "bg-gradient-to-r from-pink-400 to-purple-500",
     iconColor: "text-fuchsia-600",
@@ -1081,7 +1081,7 @@ const fetchSummaryStats = useCallback(async () => {
       },
       {
         key: "growth",
-        title: t("Growth"),
+        title: t("Customers"),
         icon: "TrendingUp",
         activeClass:
           "border-pink-500 bg-gradient-to-br from-pink-500 via-pink-500 to-rose-500 text-white shadow-lg shadow-pink-500/30 ring-1 ring-pink-200/70 dark:border-pink-400 dark:text-white dark:ring-pink-300/20",

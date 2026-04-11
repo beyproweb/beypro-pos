@@ -115,6 +115,14 @@ function extractTableNumberFromPayload(payload) {
   return null;
 }
 
+function normalizeWaiterCallType(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "bill" || normalized === "reorder") return normalized;
+  return null;
+}
+
 function buildCustomerCallMessage(payload, fallback = "Table is calling waiter") {
   const tableNo = extractTableNumberFromPayload(payload);
   if (Number.isFinite(tableNo)) return `Table ${tableNo} is calling waiter`;
@@ -405,6 +413,18 @@ export function NotificationsProvider({ children }) {
     if (!Number.isFinite(tableNumber) || tableNumber <= 0) return null;
     const key = String(tableNumber);
     const requestedAt = payload?.requested_at || payload?.time || new Date().toISOString();
+    const requestType = normalizeWaiterCallType(
+      payload?.call_type ??
+        payload?.callType ??
+        payload?.request_type ??
+        payload?.requestType ??
+        payload?.type ??
+        payload?.order?.call_type ??
+        payload?.order?.callType ??
+        payload?.order?.request_type ??
+        payload?.order?.requestType ??
+        payload?.order?.type
+    );
     setCustomerCalls((prev) => ({
       ...(prev || {}),
       [key]: {
@@ -413,6 +433,8 @@ export function NotificationsProvider({ children }) {
         requestId: payload?.request_id || payload?.requestId || null,
         requestedAt,
         source: payload?.source || "socket",
+        callType: requestType,
+        requestType,
       },
     }));
     return tableNumber;

@@ -247,7 +247,7 @@ export default function Layout({
     "/staff":"Staff Management",
     "/expenses":"Expenses",
     "/maintenance": "Maintenance",
-    "/customer-insights": "Customer Insights",
+    "/customer-insights": "Customer Profile",
     "/ingredient-prices":"Prices",
     "/marketing-campaigns":"Marketing Campaigns",
     "/cash-register-history":"Cash History",
@@ -426,7 +426,7 @@ export default function Layout({
   }, [isSidebarOpen]);
 
   return (
-    <div className="w-full h-full overflow-hidden flex bg-slate-50 dark:bg-zinc-950 transition-colors">
+    <div className="w-full h-screen min-h-screen overflow-hidden flex bg-slate-50 dark:bg-zinc-950 transition-colors">
       {isSidebarOpen && (
         <>
           <div

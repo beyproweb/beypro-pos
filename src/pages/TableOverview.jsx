@@ -4137,6 +4137,10 @@ useEffect(() => {
     const tableNumber = Number(tableNumberRaw);
 
     const nextStatus = String(detail.status || "").toLowerCase();
+    const incomingPatch = detail.patch && typeof detail.patch === "object" ? detail.patch : null;
+    const isReservationCheckoutLocalEvent = Boolean(
+      incomingPatch?.reservation_checkout ?? incomingPatch?.is_reservation_checkout
+    );
     const markItemsPaid = (items) => {
       if (!Array.isArray(items)) return [];
       const paidAt = new Date().toISOString();
@@ -4175,8 +4179,6 @@ useEffect(() => {
         detail.order_id === null || detail.order_id === undefined
           ? null
           : Number(detail.order_id);
-
-      const incomingPatch = detail.patch && typeof detail.patch === "object" ? detail.patch : null;
       const patch =
         nextStatus === "paid"
           ? {
@@ -4237,13 +4239,54 @@ useEffect(() => {
       return next;
     });
 
+    if (LOCAL_REMOVE_ORDER_STATUSES.has(nextStatus) && isReservationCheckoutLocalEvent) {
+      const patchReservationId = Number(
+        incomingPatch?.reservation_id ??
+          incomingPatch?.reservationId ??
+          incomingPatch?.id
+      );
+      const patchOrderId = Number(
+        incomingPatch?.order_id ??
+          incomingPatch?.orderId ??
+          detail?.order_id
+      );
+      removeReservationShadow({
+        reservationId: Number.isFinite(patchReservationId) ? patchReservationId : null,
+        orderId: Number.isFinite(patchOrderId) ? patchOrderId : null,
+        tableNumber,
+      });
+      removeBookingFromViewBookingLists({
+        tableNumber,
+        reservationId: Number.isFinite(patchReservationId) ? patchReservationId : null,
+        orderId: Number.isFinite(patchOrderId) ? patchOrderId : null,
+      });
+      setReservationsToday((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        return list.filter((row) => {
+          const rowTableNumber = normalizeTableKey(
+            row?.table_number ?? row?.tableNumber ?? row?.table
+          );
+          const rowReservationId = Number(
+            row?.id ?? row?.reservation_id ?? row?.reservationId
+          );
+          const rowOrderId = Number(row?.order_id ?? row?.orderId);
+          if (isSameTableNumber(rowTableNumber, tableNumberKey)) return false;
+          if (Number.isFinite(patchReservationId) && rowReservationId === patchReservationId) {
+            return false;
+          }
+          if (Number.isFinite(patchOrderId) && rowOrderId === patchOrderId) return false;
+          return true;
+        });
+      });
+    }
+
     markPerfTrace("tableoverview-local-status-patch", {
       tableNumber,
       status: nextStatus,
       durationMs: Number((performance.now() - patchStartedAt).toFixed(2)),
     });
 
-    const detailPatch = detail.patch && typeof detail.patch === "object" ? detail.patch : null;
+    const detailPatch = incomingPatch;
     const reservationPayload =
       detailPatch?.reservation && typeof detailPatch.reservation === "object"
         ? detailPatch.reservation
@@ -4711,14 +4754,8 @@ useEffect(() => {
     return;
   }
 
-  loadDataForTab(activeTab, { fastTablesOnly: true });
-
-  const timeoutId = window.setTimeout(() => {
-    fetchOrders();
-  }, 180);
-
-  return () => window.clearTimeout(timeoutId);
-}, [activeTab, loadDataForTab, isStressModeActive, fetchOrders]);
+  loadDataForTab(activeTab);
+}, [activeTab, loadDataForTab, isStressModeActive]);
 
 useEffect(() => {
   const handler = () => fetchKitchenOpenOrders();
@@ -5035,7 +5072,7 @@ useEffect(() => {
 const { tables } = useTablesModel({
   tableConfigs: effectiveTableConfigs,
   ordersByTable,
-  reservationsToday: [],
+  reservationsToday: reservationsForModel,
 });
 const filteredTablesByNumberSearch = React.useMemo(() => {
   const allTables = Array.isArray(tables) ? tables : [];
@@ -5242,6 +5279,13 @@ const handleTableClick = useCallback(async (table) => {
   const reservationStatePatch =
     reservationFallback && typeof reservationFallback === "object"
       ? {
+          status:
+            reservationFallback.status ??
+            reservationFallback.reservation_status ??
+            reservationFallback.reservationStatus ??
+            reservationFallback.reservation_order_status ??
+            reservationFallback.reservationOrderStatus ??
+            null,
           reservation_id: reservationFallback.id ?? null,
           reservationId: reservationFallback.id ?? null,
           reservation_date:
@@ -5260,11 +5304,118 @@ const handleTableClick = useCallback(async (table) => {
             reservationFallback.reservation_notes ?? reservationFallback.reservationNotes ?? "",
           reservationNotes:
             reservationFallback.reservationNotes ?? reservationFallback.reservation_notes ?? "",
+          reservation_status:
+            reservationFallback.reservation_status ??
+            reservationFallback.reservationStatus ??
+            reservationFallback.status ??
+            reservationFallback.reservation_order_status ??
+            reservationFallback.reservationOrderStatus ??
+            null,
+          reservationStatus:
+            reservationFallback.reservationStatus ??
+            reservationFallback.reservation_status ??
+            reservationFallback.status ??
+            reservationFallback.reservationOrderStatus ??
+            reservationFallback.reservation_order_status ??
+            null,
+          reservation_order_status:
+            reservationFallback.reservation_order_status ??
+            reservationFallback.reservationOrderStatus ??
+            reservationFallback.status ??
+            reservationFallback.reservation_status ??
+            reservationFallback.reservationStatus ??
+            null,
+          reservationOrderStatus:
+            reservationFallback.reservationOrderStatus ??
+            reservationFallback.reservation_order_status ??
+            reservationFallback.status ??
+            reservationFallback.reservationStatus ??
+            reservationFallback.reservation_status ??
+            null,
+          payment_status:
+            reservationFallback.payment_status ??
+            reservationFallback.paymentStatus ??
+            reservationFallback.concert_booking_payment_status ??
+            reservationFallback.concertBookingPaymentStatus ??
+            null,
+          booking_status:
+            reservationFallback.booking_status ??
+            reservationFallback.bookingStatus ??
+            reservationFallback.concert_booking_status ??
+            reservationFallback.concertBookingStatus ??
+            null,
+          concert_booking_id:
+            reservationFallback.concert_booking_id ??
+            reservationFallback.concertBookingId ??
+            null,
+          concertBookingId:
+            reservationFallback.concertBookingId ??
+            reservationFallback.concert_booking_id ??
+            null,
+          concert_booking_payment_status:
+            reservationFallback.concert_booking_payment_status ??
+            reservationFallback.concertBookingPaymentStatus ??
+            reservationFallback.payment_status ??
+            reservationFallback.paymentStatus ??
+            null,
+          concertBookingPaymentStatus:
+            reservationFallback.concertBookingPaymentStatus ??
+            reservationFallback.concert_booking_payment_status ??
+            reservationFallback.paymentStatus ??
+            reservationFallback.payment_status ??
+            null,
+          concert_booking_status:
+            reservationFallback.concert_booking_status ??
+            reservationFallback.concertBookingStatus ??
+            reservationFallback.booking_status ??
+            reservationFallback.bookingStatus ??
+            null,
+          concertBookingStatus:
+            reservationFallback.concertBookingStatus ??
+            reservationFallback.concert_booking_status ??
+            reservationFallback.bookingStatus ??
+            reservationFallback.booking_status ??
+            null,
           customer_name: reservationFallback.customer_name ?? reservationFallback.customerName ?? "",
           customer_phone:
             reservationFallback.customer_phone ?? reservationFallback.customerPhone ?? "",
           reservation: {
             id: reservationFallback.id ?? null,
+            status:
+              reservationFallback.status ??
+              reservationFallback.reservation_status ??
+              reservationFallback.reservationStatus ??
+              reservationFallback.reservation_order_status ??
+              reservationFallback.reservationOrderStatus ??
+              null,
+            reservation_status:
+              reservationFallback.reservation_status ??
+              reservationFallback.reservationStatus ??
+              reservationFallback.status ??
+              reservationFallback.reservation_order_status ??
+              reservationFallback.reservationOrderStatus ??
+              null,
+            reservationStatus:
+              reservationFallback.reservationStatus ??
+              reservationFallback.reservation_status ??
+              reservationFallback.status ??
+              reservationFallback.reservationOrderStatus ??
+              reservationFallback.reservation_order_status ??
+              null,
+            reservation_order_status:
+              reservationFallback.reservation_order_status ??
+              reservationFallback.reservationOrderStatus ??
+              reservationFallback.status ??
+              reservationFallback.reservation_status ??
+              reservationFallback.reservationStatus ??
+              null,
+            reservationOrderStatus:
+              reservationFallback.reservationOrderStatus ??
+              reservationFallback.reservation_order_status ??
+              reservationFallback.status ??
+              reservationFallback.reservationStatus ??
+              reservationFallback.reservation_status ??
+              null,
             reservation_date:
               reservationFallback.reservation_date ?? reservationFallback.reservationDate ?? null,
             reservation_time:
@@ -5273,6 +5424,50 @@ const handleTableClick = useCallback(async (table) => {
               reservationFallback.reservation_clients ?? reservationFallback.reservationClients ?? 0,
             reservation_notes:
               reservationFallback.reservation_notes ?? reservationFallback.reservationNotes ?? "",
+            payment_status:
+              reservationFallback.payment_status ??
+              reservationFallback.paymentStatus ??
+              reservationFallback.concert_booking_payment_status ??
+              reservationFallback.concertBookingPaymentStatus ??
+              null,
+            booking_status:
+              reservationFallback.booking_status ??
+              reservationFallback.bookingStatus ??
+              reservationFallback.concert_booking_status ??
+              reservationFallback.concertBookingStatus ??
+              null,
+            concert_booking_id:
+              reservationFallback.concert_booking_id ??
+              reservationFallback.concertBookingId ??
+              null,
+            concertBookingId:
+              reservationFallback.concertBookingId ??
+              reservationFallback.concert_booking_id ??
+              null,
+            concert_booking_payment_status:
+              reservationFallback.concert_booking_payment_status ??
+              reservationFallback.concertBookingPaymentStatus ??
+              reservationFallback.payment_status ??
+              reservationFallback.paymentStatus ??
+              null,
+            concertBookingPaymentStatus:
+              reservationFallback.concertBookingPaymentStatus ??
+              reservationFallback.concert_booking_payment_status ??
+              reservationFallback.paymentStatus ??
+              reservationFallback.payment_status ??
+              null,
+            concert_booking_status:
+              reservationFallback.concert_booking_status ??
+              reservationFallback.concertBookingStatus ??
+              reservationFallback.booking_status ??
+              reservationFallback.bookingStatus ??
+              null,
+            concertBookingStatus:
+              reservationFallback.concertBookingStatus ??
+              reservationFallback.concert_booking_status ??
+              reservationFallback.bookingStatus ??
+              reservationFallback.booking_status ??
+              null,
             customer_name:
               reservationFallback.customer_name ?? reservationFallback.customerName ?? "",
             customer_phone:

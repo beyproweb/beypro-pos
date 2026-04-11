@@ -202,15 +202,31 @@ export const isConcertBookingConfirmed = (...sources) =>
   sources.some((source) => {
     if (!source || typeof source !== "object") return false;
     const reservation = source?.reservation;
+    const sourceConcertBooking =
+      source?.concert_booking && typeof source.concert_booking === "object"
+        ? source.concert_booking
+        : source?.concertBooking && typeof source.concertBooking === "object"
+          ? source.concertBooking
+          : null;
+    const reservationConcertBooking =
+      reservation?.concert_booking && typeof reservation.concert_booking === "object"
+        ? reservation.concert_booking
+        : reservation?.concertBooking && typeof reservation.concertBooking === "object"
+          ? reservation.concertBooking
+          : null;
     const paymentStatus = String(
       source?.payment_status ??
         source?.paymentStatus ??
         source?.concert_booking_payment_status ??
         source?.concertBookingPaymentStatus ??
+        sourceConcertBooking?.payment_status ??
+        sourceConcertBooking?.paymentStatus ??
         reservation?.payment_status ??
         reservation?.paymentStatus ??
         reservation?.concert_booking_payment_status ??
         reservation?.concertBookingPaymentStatus ??
+        reservationConcertBooking?.payment_status ??
+        reservationConcertBooking?.paymentStatus ??
         ""
     )
       .trim()
@@ -221,18 +237,58 @@ export const isConcertBookingConfirmed = (...sources) =>
         source?.bookingStatus ??
         source?.concert_booking_status ??
         source?.concertBookingStatus ??
+        sourceConcertBooking?.status ??
+        sourceConcertBooking?.booking_status ??
+        sourceConcertBooking?.bookingStatus ??
+        sourceConcertBooking?.concert_booking_status ??
+        sourceConcertBooking?.concertBookingStatus ??
         reservation?.status ??
         reservation?.booking_status ??
         reservation?.bookingStatus ??
         reservation?.concert_booking_status ??
         reservation?.concertBookingStatus ??
+        reservationConcertBooking?.status ??
+        reservationConcertBooking?.booking_status ??
+        reservationConcertBooking?.bookingStatus ??
+        reservationConcertBooking?.concert_booking_status ??
+        reservationConcertBooking?.concertBookingStatus ??
         ""
     )
       .trim()
       .toLowerCase();
+    const reservationOrderStatus = String(
+      source?.reservation_order_status ??
+        source?.reservationOrderStatus ??
+        sourceConcertBooking?.reservation_order_status ??
+        sourceConcertBooking?.reservationOrderStatus ??
+        reservation?.reservation_order_status ??
+        reservation?.reservationOrderStatus ??
+        reservationConcertBooking?.reservation_order_status ??
+        reservationConcertBooking?.reservationOrderStatus ??
+        ""
+    )
+      .trim()
+      .toLowerCase();
+    const hasConfirmedSignal =
+      paymentStatus === "confirmed" ||
+      bookingStatus === "confirmed" ||
+      bookingStatus === "checked_in" ||
+      reservationOrderStatus === "confirmed" ||
+      reservationOrderStatus === "checked_in";
+    if (!hasConfirmedSignal) return false;
+    const hasCancelledSignal =
+      paymentStatus === "cancelled" ||
+      paymentStatus === "canceled" ||
+      bookingStatus === "cancelled" ||
+      bookingStatus === "canceled" ||
+      reservationOrderStatus === "cancelled" ||
+      reservationOrderStatus === "canceled";
+    if (hasCancelledSignal && reservationOrderStatus !== "checked_in") return false;
     return (
       paymentStatus === "confirmed" ||
       bookingStatus === "confirmed" ||
-      bookingStatus === "checked_in"
+      bookingStatus === "checked_in" ||
+      reservationOrderStatus === "confirmed" ||
+      reservationOrderStatus === "checked_in"
     );
   });

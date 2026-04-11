@@ -206,6 +206,7 @@ const PAST_MULTI_ORDER_STATUSES = new Set([
   "canceled",
   "void",
   "deleted",
+  "archived",
   "failed",
   "rejected",
 ]);
@@ -393,6 +394,11 @@ const isPaidLikeItem = (item) => {
 const isCancelledLikeOrderStatus = (value) => {
   const status = String(value || "").toLowerCase();
   return ["canceled", "cancelled", "void", "deleted"].includes(status);
+};
+
+const isArchivedLikeOrderStatus = (value) => {
+  const status = String(value || "").toLowerCase();
+  return status === "archived";
 };
 
 const isFinishedLikeOrderStatus = (value) => {
@@ -981,13 +987,13 @@ function OrderProgressStepper({ t, currentStepIndex = 0, isCancelled = false }) 
 
   return (
     <section className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-4">
-      <div className="grid grid-cols-2 gap-x-3 gap-y-3 sm:flex sm:items-center sm:justify-between sm:gap-2">
+      <div className="grid grid-cols-4 gap-2">
         {steps.map((s, idx) => {
           const isDone = idx < currentStepIndex;
           const isActive = idx === currentStepIndex;
           return (
             <div key={s.key} className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col items-center gap-2 text-center">
                 <div
                   className={[
                     "h-7 w-7 rounded-full border flex items-center justify-center text-xs font-semibold shrink-0",
@@ -1003,7 +1009,7 @@ function OrderProgressStepper({ t, currentStepIndex = 0, isCancelled = false }) 
                 <div className="min-w-0">
                   <div
                     className={[
-                      "text-xs leading-tight truncate",
+                      "text-[11px] leading-tight",
                       isDone
                         ? "text-neutral-700 dark:text-neutral-300"
                         : isActive
@@ -1016,7 +1022,7 @@ function OrderProgressStepper({ t, currentStepIndex = 0, isCancelled = false }) 
                 </div>
               </div>
               {idx !== steps.length - 1 ? (
-                <div className="mt-2 h-[2px] w-full bg-neutral-200 dark:bg-neutral-800 rounded-full hidden sm:block">
+                <div className="mt-2 h-[2px] w-full bg-neutral-200 dark:bg-neutral-800 rounded-full">
                   <div
                     className={[
                       "h-[2px] rounded-full",
@@ -1652,7 +1658,7 @@ const OrderStatusScreen = ({
   const accountOrdersFetchRef = useRef({ key: "", fetchedAtMs: 0 });
   const { formatCurrency } = useCurrency();
 
-  const FINISHED_STATES = ["closed", "completed"]; // keep cancelled visible
+  const FINISHED_STATES = ["closed", "completed", "archived"]; // keep cancelled visible
   const hasReservationPayload = useCallback((entry) => {
     return hasReservationData(entry);
   }, []);
@@ -2069,7 +2075,9 @@ const OrderStatusScreen = ({
         }
       }
 
-      const nextOrders = dedupeOrdersById(merged).sort((a, b) => {
+      const nextOrders = dedupeOrdersById(merged)
+        .filter((row) => !isArchivedLikeOrderStatus(normalizeOrderStatusForPortfolio(row)))
+        .sort((a, b) => {
         const aTs = Math.max(
           toOrderTimestamp(a?.updated_at || a?.updatedAt),
           toOrderTimestamp(a?.created_at || a?.createdAt)

@@ -103,7 +103,11 @@ const canReuseTableModel = (prev, next) => {
   return sameDerived;
 };
 
-export default function useTablesModel({ tableConfigs, ordersByTable, reservationsToday }) {
+export default function useTablesModel({
+  tableConfigs,
+  ordersByTable,
+  reservationsToday,
+}) {
   const prevTablesByNumberRef = useRef(new Map());
   const prevGroupedTablesRef = useRef({});
 

@@ -131,6 +131,25 @@ function TableCard({
   const tablePrepMeta = getTablePrepMeta(table.tableNumber);
   const waiterCall = waiterCallsByTable?.[String(table.tableNumber)] || null;
   const isCallingWaiter = Boolean(waiterCall);
+  const waiterCallType = React.useMemo(() => {
+    const normalized = String(
+      waiterCall?.callType ??
+        waiterCall?.requestType ??
+        waiterCall?.call_type ??
+        waiterCall?.request_type ??
+        waiterCall?.type ??
+        ""
+    )
+      .trim()
+      .toLowerCase();
+    if (normalized === "bill" || normalized === "reorder") return normalized;
+    return null;
+  }, [waiterCall]);
+  const waiterCallLabel = waiterCallType === "bill"
+    ? t("waiter.wantBill")
+    : waiterCallType === "reorder"
+      ? t("waiter.wantReorder")
+      : t("Calling");
 
   const handleCardClick = React.useCallback(() => {
     handleTableClick(table);
@@ -223,35 +242,61 @@ function TableCard({
     );
   }, []);
   const fallbackReservationToneStatus = normalizeOrderStatus(table?.reservationFallback?.status);
-  const shouldUseReservedTone = isReservedTable && normalizedOrderStatus === "reserved";
+  const reservationOrderLifecycleStatus = normalizeOrderStatus(
+    tableOrder?.reservation_order_status ??
+      tableOrder?.reservationOrderStatus ??
+      table?.reservationFallback?.reservation_order_status ??
+      table?.reservationFallback?.reservationOrderStatus
+  );
+  const hasConfirmedReservationTone =
+    (normalizedOrderStatus === "confirmed" ||
+      reservationOrderLifecycleStatus === "confirmed") &&
+    (hasReservationSignalOnOrder ||
+      fallbackReservationToneStatus === "confirmed" ||
+      reservationOrderLifecycleStatus === "confirmed" ||
+      isReservedTable);
+  const shouldUseReservedTone =
+    isReservedTable &&
+    (normalizedOrderStatus === "reserved" ||
+      normalizedOrderStatus === "confirmed" ||
+      reservationOrderLifecycleStatus === "confirmed");
   const hasReservedVisualTone =
     shouldUseReservedTone ||
     normalizedOrderStatus === "reserved" ||
-    fallbackReservationToneStatus === "reserved";
+    reservationOrderLifecycleStatus === "confirmed" ||
+    fallbackReservationToneStatus === "reserved" ||
+    fallbackReservationToneStatus === "confirmed" ||
+    hasConfirmedReservationTone;
   const hasCheckedInVisualTone =
     normalizedOrderStatus === "checked_in" || fallbackReservationToneStatus === "checked_in";
-  const cardToneClass = hasUnpaidItems
+  const cardToneClass = hasConfirmedReservationTone
+      ? "border-sky-600 bg-sky-300"
+      : hasUnpaidItems
       ? "border-rose-600 bg-rose-300"
       : isLockedTable && !hasOrderActivity
         ? "border-slate-600 bg-slate-400"
-      : normalizedOrderStatus === "confirmed"
-        ? "border-rose-600 bg-rose-300"
-        : hasReservedVisualTone
-          ? "border-sky-600 bg-sky-300"
+      : isPaidTable
+        ? "border-emerald-600 bg-emerald-300"
+      : hasReservedVisualTone
+        ? "border-sky-600 bg-sky-300"
+        : normalizedOrderStatus === "confirmed"
+          ? "border-rose-600 bg-rose-300"
           : hasCheckedInVisualTone
             ? "border-emerald-600 bg-emerald-300"
-            : isPaidTable
-              ? "border-emerald-600 bg-emerald-300"
-              : "border-slate-500 bg-slate-300";
-  const cardAccentGlowClass = hasUnpaidItems
-    ? "bg-rose-500/85"
+            : "border-slate-500 bg-slate-300";
+  const cardAccentGlowClass = hasConfirmedReservationTone
+    ? "bg-sky-500/85"
+    : hasUnpaidItems
+      ? "bg-rose-500/85"
     : isLockedTable && !hasOrderActivity
       ? "bg-white/45"
-      : normalizedOrderStatus === "confirmed"
-        ? "bg-rose-500/85"
-        : hasReservedVisualTone
+      : isPaidTable
+        ? "bg-emerald-500/85"
+      : hasReservedVisualTone
         ? "bg-sky-500/85"
-        : hasCheckedInVisualTone || isPaidTable
+        : normalizedOrderStatus === "confirmed"
+          ? "bg-rose-500/85"
+        : hasCheckedInVisualTone
           ? "bg-emerald-500/85"
           : "bg-slate-500/85";
   const hasPreparingItems = tableItems.some((i) => i.kitchen_status === "preparing");
@@ -604,13 +649,35 @@ function TableCard({
   const isOrderDelayed = tablePrepMeta.isDelayed;
   const displayTotal = formatCurrency(Number(table.unpaidTotal || 0));
   const tableDisplayLabel = `${tableLabelText} ${String(table.tableNumber).padStart(2, "0")}`;
-  const paidStatusLabel = t("Unpaid");
-  const fullyPaidStatusLabel = t("Paid");
   const normalizedStatusLabelKey =
     normalizedOrderStatus === "draft" ? "Free" : normalizedOrderStatus || "confirmed";
   const orderStatusLabel = isCheckedInReservationStatus(normalizedOrderStatus)
     ? t("Checked-in")
     : t(normalizedStatusLabelKey);
+  const primaryStateBadge = React.useMemo(() => {
+    if (hasUnpaidItems) {
+      return {
+        key: "due",
+        label: t("Due"),
+        className: "border-rose-200 bg-rose-600 text-white",
+      };
+    }
+    if (isPaidTable) {
+      return {
+        key: "paid",
+        label: t("Paid"),
+        className: "border-emerald-200 bg-emerald-600 text-white",
+      };
+    }
+    if (shouldShowReservedBadge) {
+      return {
+        key: "reserved",
+        label: t("Reserved"),
+        className: "border-sky-200 bg-sky-600 text-white",
+      };
+    }
+    return null;
+  }, [hasUnpaidItems, isPaidTable, shouldShowReservedBadge, t]);
   const showOrderStatusBadge =
     normalizedOrderStatus !== "confirmed" &&
     !isPaidTable &&
@@ -656,7 +723,9 @@ function TableCard({
     [handleToggleTableLock, isLockedTable, table.tableNumber]
   );
 
-  const densityStatusKey = hasUnpaidItems
+  const densityStatusKey = hasConfirmedReservationTone
+    ? "reserved"
+    : hasUnpaidItems
     ? "unpaid"
     : shouldShowReservedBadge
       ? "reserved"
@@ -695,7 +764,7 @@ function TableCard({
       ? {
           key: "waiter",
           className: "bg-rose-500 animate-pulse",
-          title: t("Calling"),
+          title: waiterCallLabel,
         }
       : null,
   ].filter(Boolean);
@@ -708,6 +777,13 @@ function TableCard({
   ]
     .filter(Boolean)
     .join(" • ");
+  const stateTextToneClass = primaryStateBadge?.key === "due"
+    ? "text-rose-700"
+    : primaryStateBadge?.key === "paid"
+      ? "text-emerald-700"
+      : primaryStateBadge?.key === "reserved"
+        ? "text-sky-700"
+        : "text-slate-500";
   const canToggleLockCompact =
     showManualTableLock && (isFreeDisplay || (isLockedTable && !hasOrderActivity));
 
@@ -724,6 +800,20 @@ function TableCard({
           isCallingWaiter && "ring-1 ring-rose-500/80"
         )}
       >
+        {isCallingWaiter ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <ActionButton
+              onClick={handleResolvedClick}
+              className={cx(
+                "pointer-events-auto h-[25px] rounded-2xl bg-emerald-600 px-[10px] text-[10px] font-semibold hover:bg-emerald-700",
+                isLargeCompact ? "shadow-[0_12px_28px_rgba(15,23,42,0.18)]" : "shadow-[0_10px_22px_rgba(15,23,42,0.16)]"
+              )}
+            >
+              {t("waiter.handled")}
+            </ActionButton>
+          </div>
+        ) : null}
+
         <div className={cx("flex min-w-0 items-center", isLargeCompact ? "gap-2.5" : "gap-2")}>
           <span
             className={cx(
@@ -756,6 +846,17 @@ function TableCard({
             ) : null}
           </div>
           <div className={cx("ml-auto flex shrink-0 items-center", isLargeCompact ? "gap-1.5" : "gap-1")}>
+            {primaryStateBadge ? (
+              <span
+                className={cx(
+                  "shrink-0 whitespace-nowrap font-medium leading-none",
+                  isLargeCompact ? "text-xs" : "text-[11px]",
+                  stateTextToneClass
+                )}
+              >
+                {primaryStateBadge.label}
+              </span>
+            ) : null}
             {canToggleLockCompact ? (
               <button
                 type="button"
@@ -866,17 +967,6 @@ function TableCard({
                   {displayTotal}
                 </div>
               </div>
-              {hasOrderActivity && (hasUnpaidItems || isPaidTable) ? (
-                hasUnpaidItems ? (
-                  <Pill className="border-rose-200 bg-rose-600 px-3 py-1.5 text-[10px] text-white sm:px-3 sm:py-1 sm:text-xs">
-                    {paidStatusLabel}
-                  </Pill>
-                ) : isPaidTable ? (
-                  <Pill className="border-emerald-200 bg-emerald-600 px-3 py-1.5 text-[10px] text-white sm:px-3 sm:py-1 sm:text-xs">
-                    {fullyPaidStatusLabel}
-                  </Pill>
-                ) : null
-              ) : null}
             </div>
           </div>
         </div>
@@ -909,6 +999,19 @@ function TableCard({
         >
           {isFreeDisplay && !shouldShowReservedBadge ? <div className="min-h-0 flex-1" /> : null}
         </div>
+
+        {primaryStateBadge ? (
+          <div className="relative z-10 mt-1 flex items-center justify-start">
+            <span
+              className={cx(
+                "whitespace-nowrap text-[11px] font-medium leading-none sm:text-xs",
+                stateTextToneClass
+              )}
+            >
+              {primaryStateBadge.label}
+            </span>
+          </div>
+        ) : null}
 
         <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-200/80 pt-2 sm:pt-3">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
@@ -1001,13 +1104,13 @@ function TableCard({
             {isCallingWaiter && (
               <div className="flex items-center justify-end gap-2 flex-nowrap">
                 <Pill className="border-rose-200 bg-rose-600 px-3 py-1.5 text-[10px] text-white animate-pulse sm:px-3 sm:py-1 sm:text-xs">
-                  🔴 {t("Calling")}
+                  🔴 {waiterCallLabel}
                 </Pill>
                 <ActionButton
                   onClick={handleResolvedClick}
                   className="bg-emerald-600 hover:bg-emerald-700"
                 >
-                  {t("Resolved")}
+                  {t("waiter.handled")}
                 </ActionButton>
               </div>
             )}

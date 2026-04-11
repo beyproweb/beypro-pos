@@ -39,8 +39,21 @@ export function useTransactionOrchestratorEffects({
       const tableNumber = Number(tableNumberRaw);
       if (!Number.isFinite(tableNumber)) return;
 
+      const patchOverrideOrderId =
+        patchOverride && typeof patchOverride === "object"
+          ? Number(
+              patchOverride.order_id ??
+                patchOverride.orderId ??
+                patchOverride.id ??
+                null
+            )
+          : NaN;
       const orderIdNum =
-        order?.id === null || order?.id === undefined ? null : Number(order.id);
+        Number.isFinite(patchOverrideOrderId) && patchOverrideOrderId > 0
+          ? patchOverrideOrderId
+          : order?.id === null || order?.id === undefined
+            ? null
+            : Number(order.id);
       const normalizedStatus = String(nextStatus).toLowerCase();
       const defaultPatch =
         normalizedStatus === "paid"
@@ -123,12 +136,19 @@ export function useTransactionOrchestratorEffects({
         });
       }
 
+      const dispatchPatch =
+        normalizedStatus === "closed"
+          ? patchOverride && typeof patchOverride === "object"
+            ? patchOverride
+            : null
+          : patch;
+
       dispatchOrdersLocalRefresh({
         kind: "tableoverview_order_status",
         table_number: tableNumber,
         order_id: orderIdNum,
         status: nextStatus,
-        patch: normalizedStatus === "closed" ? null : patch,
+        patch: dispatchPatch,
       });
     },
     [

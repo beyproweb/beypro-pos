@@ -85,14 +85,14 @@ export function createConfirmFlow(deps) {
     return asEnabledFlag(raw);
   };
 
-  const clearReservationBookingCaches = () => {
+  const clearReservationBookingCaches = ({ orderIdOverride = null } = {}) => {
     const reservationId =
       existingReservation?.id ??
       order?.reservation?.id ??
       order?.reservation_id ??
       order?.reservationId ??
       null;
-    const orderId = order?.id ?? null;
+    const orderId = orderIdOverride ?? order?.id ?? null;
     const tableNumber = order?.table_number ?? order?.tableNumber ?? null;
 
     removeReservationShadow({ reservationId, orderId, tableNumber });
@@ -132,6 +132,98 @@ export function createConfirmFlow(deps) {
       existingReservation,
       order?.reservation
     );
+    if (isReservationCheckoutAction) {
+      const reservationOwnedOrderId = Number(
+        existingReservation?.order_id ??
+          existingReservation?.orderId ??
+          order?.reservation?.order_id ??
+          order?.reservation?.orderId ??
+          order?.reservation_order_id ??
+          order?.reservationOrderId ??
+          order?.reservation_id ??
+          order?.reservationId ??
+          null
+      );
+      const checkoutOrderId = Number(
+        (Number.isFinite(reservationOwnedOrderId) && reservationOwnedOrderId > 0
+          ? reservationOwnedOrderId
+          : Number.isFinite(Number(order?.id)) && Number(order?.id) > 0
+            ? Number(order.id)
+            : null) ?? null
+      );
+      if (!Number.isFinite(checkoutOrderId) || checkoutOrderId <= 0) {
+        showToast(t("Reservation record not found"));
+        return;
+      }
+
+      const isCancelledLikeItem = (item) => {
+        const status = String(item?.kitchen_status || "").toLowerCase();
+        return ["cancelled", "canceled", "deleted", "void"].includes(status);
+      };
+      const isPaidLikeItem = (item) => {
+        if (!item || typeof item !== "object") return false;
+        const paymentStatus = String(item?.payment_status ?? item?.paymentStatus ?? "").toLowerCase();
+        return Boolean(
+          item?.paid ||
+            item?.paid_at ||
+            item?.paidAt ||
+            paymentStatus === "paid" ||
+            item?.payment_method ||
+            item?.paymentMethod
+        );
+      };
+
+      try {
+        const latestItemsRaw = await txApiRequest(`/orders/${checkoutOrderId}/items${identifier}`);
+        const latestItems = Array.isArray(latestItemsRaw) ? latestItemsRaw : [];
+        const activeItems = latestItems.filter((item) => !isCancelledLikeItem(item));
+        const hasUnpaidItems = activeItems.some((item) => !isPaidLikeItem(item));
+        if (hasUnpaidItems || hasConfirmedCartUnpaid || hasSuborderUnpaid) {
+          showToast(t("Cannot check out: some items are not paid yet."));
+          return;
+        }
+        if (!allItemsDelivered(activeItems)) {
+          showToast("⚠️ " + t("Cannot close: some kitchen items not yet delivered!"));
+          return;
+        }
+
+        await txApiRequest(`/orders/${checkoutOrderId}/close${identifier}`, {
+          method: "POST",
+          body: JSON.stringify({
+            preserve_reservation_checkout_badge: true,
+          }),
+        });
+        clearReservationBookingCaches({ orderIdOverride: checkoutOrderId });
+        await resetTableGuests(order?.table_number ?? order?.tableNumber);
+        broadcastTableOverviewOrderStatus("closed", {
+          reservation_checkout: true,
+          reservation_id:
+            existingReservation?.id ??
+            order?.reservation?.id ??
+            order?.reservation_id ??
+            order?.reservationId ??
+            null,
+          reservationId:
+            existingReservation?.id ??
+            order?.reservation?.id ??
+            order?.reservationId ??
+            order?.reservation_id ??
+            null,
+          order_id: checkoutOrderId,
+          orderId: checkoutOrderId,
+          table_number: order?.table_number ?? order?.tableNumber ?? null,
+          tableNumber: order?.tableNumber ?? order?.table_number ?? null,
+        });
+        setDiscountValue(0);
+        setDiscountType("percent");
+        setIsFloatingCartOpen(false);
+        navigate("/tableoverview?tab=tables");
+      } catch (err) {
+        console.error("❌ Reservation checkout failed:", err);
+        showToast(t("Failed to close table"));
+      }
+      return;
+    }
     const shouldPreserveReservationStatus =
       hasReservationContext && isCheckedInReservationServiceOrder(order);
 

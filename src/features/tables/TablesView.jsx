@@ -859,7 +859,7 @@ function TablesView({
   const getAreaTabClassName = React.useCallback(
     (isActive, activeClassName, inactiveClassName) =>
       [
-        "shrink-0 whitespace-nowrap rounded-full px-4 py-2 font-semibold shadow transition-all duration-150 text-sm sm:px-5",
+        "shrink-0 whitespace-nowrap inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold shadow-md transition active:scale-[0.98] sm:px-5",
         isActive ? activeClassName : inactiveClassName,
       ].join(" "),
     []
@@ -878,8 +878,8 @@ function TablesView({
               onClick={() => handleAreaTabClick(AREA_FILTER_ALL)}
               className={getAreaTabClassName(
                 activeArea === AREA_FILTER_ALL,
-                "bg-indigo-600 text-white scale-[1.03] shadow-lg",
-                "bg-white text-gray-700 border border-gray-300 hover:bg-gray-100"
+                "bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 text-white hover:from-indigo-500 hover:via-indigo-600 hover:to-violet-600",
+                "border border-slate-300/60 bg-white/80 text-slate-800 backdrop-blur hover:bg-white dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70"
               )}
             >
               {t("All Areas")}
@@ -895,8 +895,8 @@ function TablesView({
                 onClick={() => handleAreaTabClick(area)}
                 className={getAreaTabClassName(
                   activeArea === area,
-                  "bg-blue-600 text-white scale-[1.03] shadow-lg",
-                  "bg-white text-gray-700 border border-gray-300 hover:bg-blue-50"
+                  "bg-gradient-to-br from-sky-500 via-indigo-500 to-violet-500 text-white hover:from-sky-600 hover:via-indigo-600 hover:to-violet-600",
+                  "border border-slate-300/60 bg-white/80 text-slate-800 backdrop-blur hover:bg-white dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70"
                 )}
               >
                 {formatAreaLabel(area)}
@@ -910,8 +910,8 @@ function TablesView({
               onClick={() => handleAreaTabClick(AREA_FILTER_RESERVED)}
               className={getAreaTabClassName(
                 activeArea === AREA_FILTER_RESERVED,
-                "bg-amber-600 text-white scale-[1.03] shadow-lg",
-                "bg-white text-gray-700 border border-gray-300 hover:bg-amber-50"
+                "bg-gradient-to-br from-amber-400 via-amber-500 to-orange-500 text-white hover:from-amber-500 hover:to-orange-600",
+                "border border-slate-300/60 bg-white/80 text-slate-800 backdrop-blur hover:bg-white dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70"
               )}
             >
               {t("Reserved")} ({reservedTablesCount})
@@ -924,8 +924,8 @@ function TablesView({
               onClick={() => handleAreaTabClick(AREA_FILTER_UNPAID)}
               className={getAreaTabClassName(
                 activeArea === AREA_FILTER_UNPAID,
-                "bg-red-600 text-white scale-[1.03] shadow-lg",
-                "bg-white text-gray-700 border border-gray-300 hover:bg-red-50"
+                "bg-gradient-to-br from-rose-500 via-red-600 to-red-700 text-white hover:from-rose-600 hover:via-red-700 hover:to-red-800",
+                "border border-slate-300/60 bg-white/80 text-slate-800 backdrop-blur hover:bg-white dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70"
               )}
             >
               {t("Unpaid")} ({unpaidTablesCount})
@@ -938,8 +938,8 @@ function TablesView({
               onClick={() => handleAreaTabClick(AREA_FILTER_PAID)}
               className={getAreaTabClassName(
                 activeArea === AREA_FILTER_PAID,
-                "bg-emerald-600 text-white scale-[1.03] shadow-lg",
-                "bg-white text-gray-700 border border-gray-300 hover:bg-emerald-50"
+                "bg-gradient-to-br from-emerald-400 via-emerald-500 to-teal-500 text-white hover:from-emerald-500 hover:via-emerald-600 hover:to-teal-600",
+                "border border-slate-300/60 bg-white/80 text-slate-800 backdrop-blur hover:bg-white dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70"
               )}
             >
               {t("Paid")} ({paidTablesCount})
@@ -952,8 +952,8 @@ function TablesView({
               onClick={() => handleAreaTabClick(AREA_FILTER_FREE)}
               className={getAreaTabClassName(
                 activeArea === AREA_FILTER_FREE,
-                "bg-sky-600 text-white scale-[1.03] shadow-lg",
-                "bg-white text-gray-700 border border-gray-300 hover:bg-sky-50"
+                "bg-gradient-to-br from-sky-500 via-cyan-500 to-blue-500 text-white hover:from-sky-600 hover:via-cyan-600 hover:to-blue-600",
+                "border border-slate-300/60 bg-white/80 text-slate-800 backdrop-blur hover:bg-white dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70"
               )}
             >
               {t("Free")} ({freeTablesCount})
@@ -969,8 +969,8 @@ function TablesView({
             onClick={() => handleAreaTabClick(AREA_FILTER_VIEW_BOOKING)}
             className={getAreaTabClassName(
               activeArea === AREA_FILTER_VIEW_BOOKING,
-              "bg-violet-600 text-white scale-[1.03] shadow-lg",
-              "bg-white text-gray-700 border border-gray-300 hover:bg-violet-50"
+              "bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 text-white hover:from-indigo-500 hover:via-indigo-600 hover:to-violet-600",
+              "border border-slate-300/60 bg-white/80 text-slate-800 backdrop-blur hover:bg-white dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70"
             )}
           >
             {t("View Booking")} ({rangeBookingCount})
@@ -985,8 +985,8 @@ function TablesView({
             onClick={() => handleAreaTabClick(AREA_FILTER_SONG_REQUEST)}
             className={getAreaTabClassName(
               activeArea === AREA_FILTER_SONG_REQUEST,
-              "bg-fuchsia-600 text-white scale-[1.03] shadow-lg",
-              "bg-white text-gray-700 border border-gray-300 hover:bg-fuchsia-50"
+              "bg-gradient-to-br from-fuchsia-500 via-purple-500 to-indigo-500 text-white hover:from-fuchsia-600 hover:via-purple-600 hover:to-indigo-600",
+              "border border-slate-300/60 bg-white/80 text-slate-800 backdrop-blur hover:bg-white dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70"
             )}
           >
             {t("Song Request")} ({Array.isArray(songRequests) ? songRequests.length : 0})
@@ -1496,11 +1496,11 @@ function TablesView({
         />
       ) : null}
       {showAreaTabs ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-3 pb-0 sm:px-4 sm:pb-0">
-          <div className="pointer-events-auto mx-auto w-full max-w-7xl rounded-[20px] border border-white/60 bg-white/90 p-3 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] backdrop-blur-xl">
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 p-0">
+          <div className="pointer-events-auto w-full border border-white/60 border-x-0 border-b-0 bg-white/90 py-3 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] backdrop-blur-xl">
             <div
               ref={areaTabsRailRef}
-              className="flex gap-2 overflow-x-auto scroll-smooth scrollbar-hide px-0.5 sm:flex-wrap sm:justify-center sm:overflow-visible"
+              className="flex flex-nowrap justify-center gap-2 overflow-x-auto scroll-smooth scrollbar-hide px-0"
             >
               {renderAreaFooterTabs()}
             </div>

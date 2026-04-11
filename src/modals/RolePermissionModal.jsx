@@ -22,7 +22,7 @@ const PERMISSION_LABELS = {
   "cash-register": "💰 Cash Register History",
   "ingredient-prices": "🥘 Ingredient Prices",
   integrations: "🔌 Integrations",
-  "customer-insights": "👤 Customer Insights",
+  "customer-insights": "👤 Customer Profile",
   "marketing-campaigns": "📢 Marketing Campaigns",
   maintenance: "🔧 Maintenance Tracker",
   "scan-ticket": "📷 Scan Ticket",

@@ -1571,6 +1571,17 @@ const handleReservationStateSync = useCallback(
         reservationSource?.reservationTime ??
         reservationSource?.reservation_notes ??
         reservationSource?.reservationNotes ??
+        reservationSource?.status ??
+        reservationSource?.reservation_status ??
+        reservationSource?.reservationStatus ??
+        reservationSource?.reservation_order_status ??
+        reservationSource?.reservationOrderStatus ??
+        reservationSource?.concert_booking_id ??
+        reservationSource?.concertBookingId ??
+        reservationSource?.concert_booking_payment_status ??
+        reservationSource?.concertBookingPaymentStatus ??
+        reservationSource?.concert_booking_status ??
+        reservationSource?.concertBookingStatus ??
         (Number(
         reservationSource?.reservation_clients ?? reservationSource?.reservationClients ?? 0
         ) > 0)
@@ -1603,6 +1614,10 @@ const handleReservationStateSync = useCallback(
       ? reservationSource?.status ??
         reservationSource?.reservation_status ??
         reservationSource?.reservationStatus ??
+        reservationSource?.reservation_order_status ??
+        reservationSource?.reservationOrderStatus ??
+        source?.reservation_order_status ??
+        source?.reservationOrderStatus ??
         null
       : null;
     const normalizedStatus =
@@ -1702,6 +1717,56 @@ const handleReservationStateSync = useCallback(
         : null,
       reservation_order_status: hasReservationPayload ? normalizedStatus : null,
       reservationOrderStatus: hasReservationPayload ? normalizedStatus : null,
+      concert_booking_id: hasReservationPayload
+        ? reservationSource?.concert_booking_id ??
+          reservationSource?.concertBookingId ??
+          source?.concert_booking_id ??
+          source?.concertBookingId ??
+          null
+        : null,
+      concertBookingId: hasReservationPayload
+        ? reservationSource?.concertBookingId ??
+          reservationSource?.concert_booking_id ??
+          source?.concertBookingId ??
+          source?.concert_booking_id ??
+          null
+        : null,
+      concert_booking_payment_status: hasReservationPayload
+        ? reservationSource?.concert_booking_payment_status ??
+          reservationSource?.concertBookingPaymentStatus ??
+          reservationSource?.payment_status ??
+          reservationSource?.paymentStatus ??
+          source?.concert_booking_payment_status ??
+          source?.concertBookingPaymentStatus ??
+          null
+        : null,
+      concertBookingPaymentStatus: hasReservationPayload
+        ? reservationSource?.concertBookingPaymentStatus ??
+          reservationSource?.concert_booking_payment_status ??
+          reservationSource?.paymentStatus ??
+          reservationSource?.payment_status ??
+          source?.concertBookingPaymentStatus ??
+          source?.concert_booking_payment_status ??
+          null
+        : null,
+      concert_booking_status: hasReservationPayload
+        ? reservationSource?.concert_booking_status ??
+          reservationSource?.concertBookingStatus ??
+          reservationSource?.booking_status ??
+          reservationSource?.bookingStatus ??
+          source?.concert_booking_status ??
+          source?.concertBookingStatus ??
+          null
+        : null,
+      concertBookingStatus: hasReservationPayload
+        ? reservationSource?.concertBookingStatus ??
+          reservationSource?.concert_booking_status ??
+          reservationSource?.bookingStatus ??
+          reservationSource?.booking_status ??
+          source?.concertBookingStatus ??
+          source?.concert_booking_status ??
+          null
+        : null,
       items: Array.isArray(source?.items) ? source.items : undefined,
       suborders: Array.isArray(source?.suborders) ? source.suborders : undefined,
     };

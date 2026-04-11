@@ -7867,6 +7867,7 @@ export default function QrMenu() {
     filteredReserved,
     callingWaiter,
     callWaiterCooldownSeconds,
+    canCallWaiter,
     handleCallWaiter,
     brandName,
     lastError,
@@ -7904,6 +7905,7 @@ export default function QrMenu() {
     return Number.isFinite(storedId) && storedId > 0 ? storedId : null;
   })();
   const [callWaiterFeedback, setCallWaiterFeedback] = useState("");
+  const [waiterTypeModalOpen, setWaiterTypeModalOpen] = useState(false);
   const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
   const [editingCartItemId, setEditingCartItemId] = useState(null);
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
@@ -8456,9 +8458,10 @@ export default function QrMenu() {
     resolvedOrderTypeForActions === "table" &&
     Number.isFinite(resolvedTableForActions) &&
     resolvedTableForActions > 0;
-  const callWaiterButtonDisabledBase = callingWaiter || callWaiterCooldownSeconds > 0;
+  const callWaiterButtonDisabledBase =
+    !canCallWaiter || callingWaiter || callWaiterCooldownSeconds > 0;
   const homeLabel = t("Home");
-  const callWaiterLabel = t("Waiter");
+  const callWaiterLabel = t("waiter.call");
   const reOrderLabel = "Re-Order";
   const aiOrderLabel = t("AI Order");
   const cartLabel = t("Your Order");
@@ -8707,8 +8710,9 @@ export default function QrMenu() {
     };
   }, []);
 
-  const onCallWaiterClick = useCallback(async () => {
-    const result = await handleCallWaiter?.();
+  const onCallWaiterOptionSelect = useCallback(async (callType) => {
+    setWaiterTypeModalOpen(false);
+    const result = await handleCallWaiter?.(callType);
     if (result?.ok) {
       showCallWaiterFeedback(t("Waiter notified!"));
       return;
@@ -8717,8 +8721,16 @@ export default function QrMenu() {
       showCallWaiterFeedback(t("Please wait before calling again."));
       return;
     }
+    if (result?.reason === "not_confirmed") {
+      showCallWaiterFeedback(t("Waiter can be called after check-in."));
+      return;
+    }
     showCallWaiterFeedback(t("Unable to call waiter right now."));
   }, [handleCallWaiter, showCallWaiterFeedback, t]);
+
+  const onCallWaiterClick = useCallback(() => {
+    setWaiterTypeModalOpen(true);
+  }, []);
 
   const onGoHomeFromNav = useCallback(() => {
     setShowStatus(false);
@@ -10388,6 +10400,43 @@ export default function QrMenu() {
           </div>
         </div>
       )}
+
+      {waiterTypeModalOpen ? (
+        <div
+          className="fixed inset-0 z-[145] flex items-center justify-center bg-black/45 px-4"
+          onClick={() => setWaiterTypeModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-xs rounded-2xl border border-neutral-200 bg-white p-4 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-3 text-sm font-semibold text-slate-900">{callWaiterLabel}</div>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => onCallWaiterOptionSelect("bill")}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 active:scale-[0.99]"
+              >
+                {t("waiter.wantBill")}
+              </button>
+              <button
+                type="button"
+                onClick={() => onCallWaiterOptionSelect("reorder")}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 active:scale-[0.99]"
+              >
+                {t("waiter.wantReorder")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setWaiterTypeModalOpen(false)}
+                className="w-full rounded-xl border border-neutral-200 bg-neutral-100 px-3 py-2 text-xs font-semibold text-neutral-600 transition hover:bg-neutral-200 active:scale-[0.99]"
+              >
+                {t("Close")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <VoiceOrderController
         restaurantId={restaurantIdentifier || id || slug}

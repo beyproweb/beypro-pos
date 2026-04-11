@@ -569,6 +569,21 @@ const resolveReservationAwareStatus = (entry, fallbackStatus = null) => {
   return directStatus || nestedStatus || flatReservationStatus || fallback;
 };
 
+const canCallWaiterForStatus = (value) => {
+  const status = normalizeReservationStatus(value);
+  return [
+    "checked_in",
+    "preparing",
+    "ready",
+    "on_road",
+    "delivered",
+    "served",
+    "closed",
+    "completed",
+    "checked_out",
+  ].includes(status);
+};
+
 const isCheckedInReservationEntry = (entry, fallbackStatus = null) => {
   if (!entry || typeof entry !== "object") return false;
   const nested =
@@ -3276,7 +3291,7 @@ function handleReset(options = null) {
 		  }
 		}
 
-  const handleCallWaiter = useCallback(async () => {
+  const handleCallWaiter = useCallback(async (callType = null) => {
     const tableNumber =
       Number(table) ||
       Number(storage.getItem("qr_table")) ||
@@ -3284,6 +3299,14 @@ function handleReset(options = null) {
       null;
     if (!restaurantIdentifier || !Number.isFinite(tableNumber) || tableNumber <= 0) {
       return { ok: false, reason: "missing_table" };
+    }
+
+    const waiterEligibleStatus = resolveReservationAwareStatus(
+      activeOrder,
+      orderScreenStatus || activeOrder?.status || ""
+    );
+    if (!canCallWaiterForStatus(waiterEligibleStatus)) {
+      return { ok: false, reason: "not_confirmed" };
     }
 
     const now = Date.now();
@@ -3301,11 +3324,22 @@ function handleReset(options = null) {
             },
           }
         : {};
+      const normalizedCallType = String(callType || "")
+        .trim()
+        .toLowerCase();
+      const waiterRequestType =
+        normalizedCallType === "bill" || normalizedCallType === "reorder"
+          ? normalizedCallType
+          : null;
       const callWaiterBody = {
         table_number: tableNumber,
         // Manual "Call waiter" should always be audible on POS.
         source: "qr_menu",
       };
+      if (waiterRequestType) {
+        callWaiterBody.call_type = waiterRequestType;
+        callWaiterBody.request_type = waiterRequestType;
+      }
       try {
         await secureFetch(`/public/call-waiter/${encodeURIComponent(restaurantIdentifier)}`, {
           method: "POST",
@@ -3342,7 +3376,20 @@ function handleReset(options = null) {
     } finally {
       setCallingWaiter(false);
     }
-  }, [restaurantIdentifier, table, storage, callWaiterCooldownUntil, getStoredToken]);
+  }, [
+    activeOrder,
+    callWaiterCooldownUntil,
+    getStoredToken,
+    orderScreenStatus,
+    restaurantIdentifier,
+    storage,
+    table,
+  ]);
+
+  const canCallWaiter =
+    canCallWaiterForStatus(
+      resolveReservationAwareStatus(activeOrder, orderScreenStatus || activeOrder?.status || "")
+    );
 
   const callWaiterCooldownSeconds = Math.max(
     0,
@@ -3488,6 +3535,7 @@ function handleReset(options = null) {
     safeReservedTables,
     hasActiveOrder,
     productsForGrid,
+    canCallWaiter,
     triggerOrderType,
     handlePopularProductClick,
     handleMenuCategorySelect,

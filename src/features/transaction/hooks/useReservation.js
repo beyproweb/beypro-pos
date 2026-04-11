@@ -259,6 +259,12 @@ export const useReservation = ({
       order?.reservation?.status,
       order?.reservation_status,
       order?.reservationStatus,
+      order?.reservation_order_status,
+      order?.reservationOrderStatus,
+      order?.reservation?.reservation_status,
+      order?.reservation?.reservationStatus,
+      order?.reservation?.reservation_order_status,
+      order?.reservation?.reservationOrderStatus,
     ].map(toLowerStatus);
     if (statusCandidates.some((status) => TERMINAL_RESERVATION_STATUSES.has(status))) {
       return null;
@@ -307,6 +313,84 @@ export const useReservation = ({
       reservation_time: reservationTime,
       reservation_clients: reservationClients ?? 0,
       reservation_notes: reservationNotes ?? "",
+      status:
+        order?.reservation?.status ??
+        order?.reservation?.reservation_status ??
+        order?.reservation?.reservationStatus ??
+        order?.reservation?.reservation_order_status ??
+        order?.reservation?.reservationOrderStatus ??
+        order?.reservation_status ??
+        order?.reservationStatus ??
+        order?.reservation_order_status ??
+        order?.reservationOrderStatus ??
+        order?.status ??
+        null,
+      reservation_status:
+        order?.reservation?.reservation_status ??
+        order?.reservation?.reservationStatus ??
+        order?.reservation?.status ??
+        order?.reservation?.reservation_order_status ??
+        order?.reservation?.reservationOrderStatus ??
+        order?.reservation_status ??
+        order?.reservationStatus ??
+        order?.reservation_order_status ??
+        order?.reservationOrderStatus ??
+        order?.status ??
+        null,
+      reservation_order_status:
+        order?.reservation?.reservation_order_status ??
+        order?.reservation?.reservationOrderStatus ??
+        order?.reservation_order_status ??
+        order?.reservationOrderStatus ??
+        order?.reservation?.status ??
+        order?.reservation?.reservation_status ??
+        order?.reservation?.reservationStatus ??
+        order?.reservation_status ??
+        order?.reservationStatus ??
+        order?.status ??
+        null,
+      payment_status:
+        order?.payment_status ??
+        order?.paymentStatus ??
+        order?.concert_booking_payment_status ??
+        order?.concertBookingPaymentStatus ??
+        order?.reservation?.payment_status ??
+        order?.reservation?.paymentStatus ??
+        order?.reservation?.concert_booking_payment_status ??
+        order?.reservation?.concertBookingPaymentStatus ??
+        null,
+      booking_status:
+        order?.booking_status ??
+        order?.bookingStatus ??
+        order?.concert_booking_status ??
+        order?.concertBookingStatus ??
+        order?.reservation?.booking_status ??
+        order?.reservation?.bookingStatus ??
+        order?.reservation?.concert_booking_status ??
+        order?.reservation?.concertBookingStatus ??
+        null,
+      concert_booking_id:
+        order?.concert_booking_id ??
+        order?.concertBookingId ??
+        order?.reservation?.concert_booking_id ??
+        order?.reservation?.concertBookingId ??
+        null,
+      concert_booking_payment_status:
+        order?.concert_booking_payment_status ??
+        order?.concertBookingPaymentStatus ??
+        order?.reservation?.concert_booking_payment_status ??
+        order?.reservation?.concertBookingPaymentStatus ??
+        order?.payment_status ??
+        order?.paymentStatus ??
+        null,
+      concert_booking_status:
+        order?.concert_booking_status ??
+        order?.concertBookingStatus ??
+        order?.reservation?.concert_booking_status ??
+        order?.reservation?.concertBookingStatus ??
+        order?.booking_status ??
+        order?.bookingStatus ??
+        null,
       customer_name:
         order?.customer_name ??
         order?.customerName ??
@@ -742,11 +826,25 @@ export const useReservation = ({
   const handleCheckinReservation = useCallback(async () => {
     if (!existingReservation?.reservation_date) return;
     const currentOrderId = Number(order?.id);
-    let targetOrderId = Number(
-      (Number.isFinite(currentOrderId) && currentOrderId > 0 ? currentOrderId : null) ??
-        existingReservation?.order_id ??
+    const reservationOwnedOrderId = Number(
+      existingReservation?.order_id ??
         existingReservation?.orderId ??
-        existingReservation?.id
+        existingReservationRef.current?.order_id ??
+        existingReservationRef.current?.orderId ??
+        order?.reservation?.order_id ??
+        order?.reservation?.orderId ??
+        order?.reservation_order_id ??
+        order?.reservationOrderId ??
+        null
+    );
+    let targetOrderId = Number(
+      (Number.isFinite(reservationOwnedOrderId) && reservationOwnedOrderId > 0
+        ? reservationOwnedOrderId
+        : Number.isFinite(currentOrderId) && currentOrderId > 0
+          ? currentOrderId
+          : null) ??
+        existingReservation?.id ??
+        existingReservationRef.current?.id
     );
     if (!Number.isFinite(targetOrderId) || targetOrderId <= 0) {
       showToast(t("Reservation record not found"));
