@@ -898,11 +898,32 @@ function TablesView({
   const getAreaTabClassName = React.useCallback(
     (isActive, activeClassName, inactiveClassName) =>
       [
-        "shrink-0 whitespace-nowrap inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold shadow-md transition active:scale-[0.98] sm:px-5",
+        "group shrink-0 whitespace-nowrap inline-flex min-h-[48px] items-center justify-center gap-2 rounded-[20px] px-4 py-3 text-[13px] font-semibold tracking-[-0.01em] shadow-[0_10px_30px_rgba(15,23,42,0.08)] ring-1 transition duration-200 active:scale-[0.985] sm:min-h-[52px] sm:px-5 sm:text-sm",
         isActive ? activeClassName : inactiveClassName,
       ].join(" "),
     []
   );
+
+  const renderAreaTabLabel = React.useCallback((label, count = null, isActive = false) => {
+    const hasCount = Number.isFinite(Number(count)) && Number(count) >= 0;
+    return (
+      <>
+        <span className="max-w-[11rem] truncate">{label}</span>
+        {hasCount ? (
+          <span
+            className={[
+              "inline-flex min-w-[1.8rem] items-center justify-center rounded-full px-2.5 py-1 text-[11px] font-bold leading-none ring-1 transition",
+              isActive
+                ? "bg-black/10 text-white ring-black/10"
+                : "bg-slate-900/6 text-slate-600 ring-slate-900/6 dark:bg-white/10 dark:text-slate-100 dark:ring-white/10",
+            ].join(" ")}
+          >
+            {Number(count)}
+          </span>
+        ) : null}
+      </>
+    );
+  }, []);
 
   const renderAreaFooterTabs = React.useCallback(
     () => (
@@ -917,11 +938,11 @@ function TablesView({
               onClick={() => handleAreaTabClick(AREA_FILTER_ALL)}
               className={getAreaTabClassName(
                 activeArea === AREA_FILTER_ALL,
-                "bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 text-white hover:from-indigo-500 hover:via-indigo-600 hover:to-violet-600",
-                "border border-slate-300/60 bg-white/80 text-slate-800 backdrop-blur hover:bg-white dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70"
+                "border-transparent bg-gradient-to-br from-slate-900 via-indigo-800 to-violet-700 text-white ring-black/5 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(79,70,229,0.22)] dark:from-slate-100 dark:via-white dark:to-slate-200 dark:text-slate-900 dark:ring-slate-200/40",
+                "border-slate-200 bg-white text-slate-700 ring-slate-200/70 hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700/60 dark:hover:bg-slate-800"
               )}
             >
-              {t("All Areas")}
+              {renderAreaTabLabel(t("All Areas"), null, activeArea === AREA_FILTER_ALL)}
             </button>
 
             {Object.keys(groupedTables).map((area) => (
@@ -934,11 +955,11 @@ function TablesView({
                 onClick={() => handleAreaTabClick(area)}
                 className={getAreaTabClassName(
                   activeArea === area,
-                  "bg-gradient-to-br from-sky-500 via-indigo-500 to-violet-500 text-white hover:from-sky-600 hover:via-indigo-600 hover:to-violet-600",
-                  "border border-slate-300/60 bg-white/80 text-slate-800 backdrop-blur hover:bg-white dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70"
+                  "border-transparent bg-gradient-to-br from-sky-500 via-indigo-500 to-violet-600 text-white ring-black/5 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(59,130,246,0.22)]",
+                  "border-slate-200 bg-white text-slate-700 ring-slate-200/70 hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700/60 dark:hover:bg-slate-800"
                 )}
               >
-                {formatAreaLabel(area)}
+                {renderAreaTabLabel(formatAreaLabel(area), null, activeArea === area)}
               </button>
             ))}
             <button
@@ -949,11 +970,11 @@ function TablesView({
               onClick={() => handleAreaTabClick(AREA_FILTER_RESERVED)}
               className={getAreaTabClassName(
                 activeArea === AREA_FILTER_RESERVED,
-                "bg-gradient-to-br from-amber-400 via-amber-500 to-orange-500 text-white hover:from-amber-500 hover:to-orange-600",
-                "border border-slate-300/60 bg-white/80 text-slate-800 backdrop-blur hover:bg-white dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70"
+                "border-transparent bg-gradient-to-br from-amber-400 via-amber-500 to-orange-600 text-white ring-black/5 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(245,158,11,0.2)]",
+                "border-slate-200 bg-white text-slate-700 ring-slate-200/70 hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700/60 dark:hover:bg-slate-800"
               )}
             >
-              {t("Reserved")} ({reservedTablesCount})
+              {renderAreaTabLabel(t("Reserved"), reservedTablesCount, activeArea === AREA_FILTER_RESERVED)}
             </button>
             <button
               ref={(node) => {
@@ -963,11 +984,11 @@ function TablesView({
               onClick={() => handleAreaTabClick(AREA_FILTER_UNPAID)}
               className={getAreaTabClassName(
                 activeArea === AREA_FILTER_UNPAID,
-                "bg-gradient-to-br from-rose-500 via-red-600 to-red-700 text-white hover:from-rose-600 hover:via-red-700 hover:to-red-800",
-                "border border-slate-300/60 bg-white/80 text-slate-800 backdrop-blur hover:bg-white dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70"
+                "border-transparent bg-gradient-to-br from-rose-500 via-red-600 to-red-700 text-white ring-black/5 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(225,29,72,0.22)]",
+                "border-slate-200 bg-white text-slate-700 ring-slate-200/70 hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700/60 dark:hover:bg-slate-800"
               )}
             >
-              {t("Unpaid")} ({unpaidTablesCount})
+              {renderAreaTabLabel(t("Unpaid"), unpaidTablesCount, activeArea === AREA_FILTER_UNPAID)}
             </button>
             <button
               ref={(node) => {
@@ -977,11 +998,11 @@ function TablesView({
               onClick={() => handleAreaTabClick(AREA_FILTER_PAID)}
               className={getAreaTabClassName(
                 activeArea === AREA_FILTER_PAID,
-                "bg-gradient-to-br from-emerald-400 via-emerald-500 to-teal-500 text-white hover:from-emerald-500 hover:via-emerald-600 hover:to-teal-600",
-                "border border-slate-300/60 bg-white/80 text-slate-800 backdrop-blur hover:bg-white dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70"
+                "border-transparent bg-gradient-to-br from-emerald-400 via-emerald-500 to-teal-600 text-white ring-black/5 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(16,185,129,0.2)]",
+                "border-slate-200 bg-white text-slate-700 ring-slate-200/70 hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700/60 dark:hover:bg-slate-800"
               )}
             >
-              {t("Paid")} ({paidTablesCount})
+              {renderAreaTabLabel(t("Paid"), paidTablesCount, activeArea === AREA_FILTER_PAID)}
             </button>
             <button
               ref={(node) => {
@@ -991,11 +1012,11 @@ function TablesView({
               onClick={() => handleAreaTabClick(AREA_FILTER_FREE)}
               className={getAreaTabClassName(
                 activeArea === AREA_FILTER_FREE,
-                "bg-gradient-to-br from-sky-500 via-cyan-500 to-blue-500 text-white hover:from-sky-600 hover:via-cyan-600 hover:to-blue-600",
-                "border border-slate-300/60 bg-white/80 text-slate-800 backdrop-blur hover:bg-white dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70"
+                "border-transparent bg-gradient-to-br from-cyan-500 via-sky-500 to-blue-600 text-white ring-black/5 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(14,165,233,0.2)]",
+                "border-slate-200 bg-white text-slate-700 ring-slate-200/70 hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700/60 dark:hover:bg-slate-800"
               )}
             >
-              {t("Free")} ({freeTablesCount})
+              {renderAreaTabLabel(t("Free"), freeTablesCount, activeArea === AREA_FILTER_FREE)}
             </button>
           </>
         ) : null}
@@ -1008,11 +1029,11 @@ function TablesView({
             onClick={() => handleAreaTabClick(AREA_FILTER_VIEW_BOOKING)}
             className={getAreaTabClassName(
               activeArea === AREA_FILTER_VIEW_BOOKING,
-              "bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 text-white hover:from-indigo-500 hover:via-indigo-600 hover:to-violet-600",
-              "border border-slate-300/60 bg-white/80 text-slate-800 backdrop-blur hover:bg-white dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70"
+              "border-transparent bg-gradient-to-br from-violet-500 via-indigo-500 to-fuchsia-500 text-white ring-black/5 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(139,92,246,0.22)]",
+              "border-slate-200 bg-white text-slate-700 ring-slate-200/70 hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700/60 dark:hover:bg-slate-800"
             )}
           >
-            {t("View Booking")} ({rangeBookingCount})
+            {renderAreaTabLabel(t("View Booking"), rangeBookingCount, activeArea === AREA_FILTER_VIEW_BOOKING)}
           </button>
         ) : null}
         {showSongRequestTab ? (
@@ -1024,18 +1045,22 @@ function TablesView({
             onClick={() => handleAreaTabClick(AREA_FILTER_SONG_REQUEST)}
             className={getAreaTabClassName(
               activeArea === AREA_FILTER_SONG_REQUEST,
-              "bg-gradient-to-br from-fuchsia-500 via-purple-500 to-indigo-500 text-white hover:from-fuchsia-600 hover:via-purple-600 hover:to-indigo-600",
-              "border border-slate-300/60 bg-white/80 text-slate-800 backdrop-blur hover:bg-white dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70"
+              "border-transparent bg-gradient-to-br from-fuchsia-500 via-purple-500 to-indigo-600 text-white ring-black/5 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(168,85,247,0.22)]",
+              "border-slate-200 bg-white text-slate-700 ring-slate-200/70 hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700/60 dark:hover:bg-slate-800"
             )}
           >
-            {t("Song Request")} ({Array.isArray(songRequests) ? songRequests.length : 0})
+            {renderAreaTabLabel(
+              t("Song Request"),
+              Array.isArray(songRequests) ? songRequests.length : 0,
+              activeArea === AREA_FILTER_SONG_REQUEST
+            )}
           </button>
         ) : null}
         {onLockClick ? (
           <button
             type="button"
             onClick={onLockClick}
-            className="shrink-0 whitespace-nowrap inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition active:scale-[0.98] hover:-translate-y-0.5 hover:shadow-lg sm:px-5"
+            className="shrink-0 whitespace-nowrap inline-flex min-h-[48px] items-center justify-center gap-2 rounded-[20px] border border-slate-900/10 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 px-4 py-3 text-[13px] font-semibold text-white shadow-[0_12px_32px_rgba(15,23,42,0.18)] ring-1 ring-white/10 transition duration-200 active:scale-[0.985] hover:-translate-y-0.5 hover:shadow-[0_18px_40px_rgba(15,23,42,0.24)] sm:min-h-[52px] sm:px-5 sm:text-sm dark:border-white/10"
             aria-label={t("Lock", { defaultValue: "Lock" })}
             title={t("Lock", { defaultValue: "Lock" })}
           >
@@ -1062,6 +1087,7 @@ function TablesView({
       unpaidTablesCount,
       freeTablesCount,
       formatAreaLabel,
+      renderAreaTabLabel,
     ]
   );
 
@@ -1556,12 +1582,18 @@ function TablesView({
       ) : null}
       {showAreaTabs ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 p-0">
-          <div className="pointer-events-auto w-full border border-white/60 border-x-0 border-b-0 bg-white/90 py-3 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] backdrop-blur-xl">
-            <div
-              ref={areaTabsRailRef}
-              className="flex flex-nowrap justify-center gap-2 overflow-x-auto scroll-smooth scrollbar-hide px-0"
-            >
-              {renderAreaFooterTabs()}
+          <div className="pointer-events-auto w-full px-2 pb-[calc(8px+env(safe-area-inset-bottom))] pt-3 sm:px-4">
+            <div className="mx-auto w-full max-w-[1480px] overflow-hidden rounded-[30px] border border-slate-200 bg-slate-100 shadow-[0_-18px_45px_rgba(15,23,42,0.10)] ring-1 ring-slate-200/70 dark:border-slate-800 dark:bg-slate-950 dark:ring-slate-800/80">
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-slate-100 via-slate-100/80 to-transparent dark:from-slate-950 dark:via-slate-950/80" />
+                <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-slate-100 via-slate-100/80 to-transparent dark:from-slate-950 dark:via-slate-950/80" />
+                <div
+                  ref={areaTabsRailRef}
+                  className="flex flex-nowrap items-center justify-start gap-2 overflow-x-auto scroll-smooth scrollbar-hide px-3 py-3 sm:justify-center sm:px-4"
+                >
+                  {renderAreaFooterTabs()}
+                </div>
+              </div>
             </div>
           </div>
         </div>
