@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCurrency } from "../../../../context/CurrencyContext";
 import { usePaymentMethods } from "../../../../hooks/usePaymentMethods";
 
@@ -33,23 +33,31 @@ const CartModal = React.memo(function CartModal({
   const { formatCurrency } = useCurrency();
   const paymentMethods = usePaymentMethods();
 
-  const cartArray = toArray(cart);
-  const cartLength = cartArray.length;
-  const prevItems = cartArray.filter((item) => item.locked);
-  const newItems = cartArray.filter((item) => !item.locked);
-  const newItemsCount = newItems.length;
-  const hasNewItems = newItemsCount > 0;
-
-  const lineTotal = (item) => {
+  const cartArray = useMemo(() => toArray(cart), [cart]);
+  const lineTotal = useCallback((item) => {
     const base = parseFloat(item.price) || 0;
     const extrasTotal = (item.extras || []).reduce(
       (sum, ex) => sum + (parseFloat(ex.price ?? ex.extraPrice ?? 0) || 0) * (ex.quantity || 1),
       0
     );
     return (base + extrasTotal) * (item.quantity || 1);
-  };
-
-  const total = newItems.reduce((sum, item) => sum + lineTotal(item), 0);
+  }, []);
+  const { cartLength, prevItems, newItems, newItemsCount, hasNewItems, total } = useMemo(() => {
+    const previousItems = cartArray.filter((item) => item.locked);
+    const unlockedItems = cartArray.filter((item) => !item.locked);
+    return {
+      cartLength: cartArray.length,
+      prevItems: previousItems,
+      newItems: unlockedItems,
+      newItemsCount: unlockedItems.length,
+      hasNewItems: unlockedItems.length > 0,
+      total: unlockedItems.reduce((sum, item) => sum + lineTotal(item), 0),
+    };
+  }, [cartArray, lineTotal]);
+  const enabledPaymentMethods = useMemo(
+    () => paymentMethods.filter((m) => m.enabled !== false),
+    [paymentMethods]
+  );
   const [paymentPrompt, setPaymentPrompt] = useState(false);
   const [shakeCart, setShakeCart] = useState(false);
   const shakeTimeoutRef = useRef(null);
@@ -237,6 +245,14 @@ const CartModal = React.memo(function CartModal({
     onOpenCart?.();
     if (!isPanel) setShow(false);
   }, [isPanel, onOpenCart, storage]);
+  const clearNewItems = useCallback(() => {
+    const lockedOnly = cartArray.filter((i) => i.locked);
+    setCart(lockedOnly);
+    storage.setItem("qr_cart", JSON.stringify(lockedOnly));
+    if (!isPanel) {
+      closeFromUi();
+    }
+  }, [cartArray, closeFromUi, isPanel, setCart, storage]);
 
   const cartPanel = (
     <div
@@ -504,9 +520,7 @@ const CartModal = React.memo(function CartModal({
               onChange={(e) => handlePaymentChange(e.target.value)}
             >
               <option value="">{t("Select Payment Method")}</option>
-              {paymentMethods
-                .filter((m) => m.enabled !== false)
-                .map((method) => (
+              {enabledPaymentMethods.map((method) => (
                   <option key={method.id} value={method.id}>
                     {method.icon ? `${method.icon} ` : ""}
                     {method.label}
@@ -536,14 +550,7 @@ const CartModal = React.memo(function CartModal({
           )}
 
           <button
-            onClick={() => {
-              const lockedOnly = cartArray.filter((i) => i.locked);
-              setCart(lockedOnly);
-              storage.setItem("qr_cart", JSON.stringify(lockedOnly));
-              if (!isPanel) {
-                closeFromUi();
-              }
-            }}
+            onClick={clearNewItems}
             className="w-full mt-1 py-2 rounded-md text-xs text-neutral-600 bg-neutral-100 hover:bg-neutral-200 transition"
           >
             {t("Clear New Items")}

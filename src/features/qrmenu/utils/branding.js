@@ -2,12 +2,49 @@ import {
   APP_RESTAURANT_BASE_URL,
   PUBLIC_RESTAURANT_BASE_URL,
 } from "../../../utils/publicRestaurantUrl";
-import { API_BASE as API_ORIGIN, API_ORIGIN as API_BASE } from "../../../utils/api";
+import { API_ORIGIN } from "../../../utils/api";
 import {
   QR_MENU_BRANDING_CACHE_PREFIX,
   QR_MENU_BRANDING_UPDATED_EVENT,
   QR_MENU_FONT_FAMILIES,
 } from "../constants/qrMenuConfig";
+
+function resolvePublicUploadsUrl(raw) {
+  const value = String(raw || "").trim().replace(/\\/g, "/");
+  if (!value) return "";
+
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const url = new URL(value);
+      if (/^\/api\/uploads\//i.test(url.pathname)) {
+        url.pathname = url.pathname.replace(/^\/api/i, "");
+        return url.toString();
+      }
+      if (/^\/public\/uploads\//i.test(url.pathname)) {
+        url.pathname = url.pathname.replace(/^\/public/i, "");
+        return url.toString();
+      }
+    } catch {
+      return value;
+    }
+    return value;
+  }
+
+  if (/^\/api\/uploads\//i.test(value)) {
+    return `${API_ORIGIN || ""}${value.replace(/^\/api/i, "")}`;
+  }
+  if (/^\/public\/uploads\//i.test(value)) {
+    return `${API_ORIGIN || ""}${value.replace(/^\/public/i, "")}`;
+  }
+  if (/^\/uploads\//i.test(value)) {
+    return `${API_ORIGIN || ""}${value}`;
+  }
+  if (/^uploads\//i.test(value)) {
+    return `${API_ORIGIN || ""}/${value}`;
+  }
+
+  return `${API_ORIGIN || ""}/uploads/${value.replace(/^\/?uploads\//i, "")}`;
+}
 
 function navigateToMarketplaceFromQrMenu() {
   if (typeof window === "undefined") return;
@@ -109,9 +146,7 @@ function writeCachedQrMenuBranding(identifier, customization) {
 function resolveUploadedAsset(raw) {
   const value = String(raw || "").trim();
   if (!value) return "";
-  if (/^https?:\/\//i.test(value)) return value;
-  const uploadsBase = API_BASE || "";
-  return `${uploadsBase}/uploads/${value.replace(/^\/?uploads\//, "")}`;
+  return resolvePublicUploadsUrl(value);
 }
 
 function resolveYouTubeEmbedUrl(rawUrl) {
@@ -139,16 +174,12 @@ function resolveYouTubeEmbedUrl(rawUrl) {
 function resolveBrandingAsset(raw, fallback = "") {
   const value = String(raw || "").trim();
   if (!value) return fallback;
-  if (/^https?:\/\//i.test(value)) return value;
+  if (/^https?:\/\//i.test(value) && !/\/((api|public)\/)?uploads\//i.test(value)) {
+    return value;
+  }
   if (value.startsWith("/Beylogo")) return value;
-  if (value.startsWith("/uploads/")) {
-    return `${API_ORIGIN || ""}${value}`;
-  }
-  if (value.startsWith("uploads/")) {
-    return `${API_ORIGIN || ""}/${value}`;
-  }
   if (value.startsWith("/")) return value;
-  return `${API_ORIGIN || ""}/uploads/${value.replace(/^\/?uploads\//, "")}`;
+  return resolvePublicUploadsUrl(value);
 }
 
 function toAbsolutePublicUrl(raw) {

@@ -111,12 +111,14 @@ import {
   normalizeGuestCompositionFieldMode,
   normalizeGuestCompositionRestrictionRule,
   normalizeGuestCountSelection,
+  parseGuestCompositionCount,
   resolveGuestCompositionPolicyMessage,
 } from "../features/qrmenu/utils/guestComposition";
 import {
   appendCacheVersion,
   formatConcertDisplayDateWithoutYear,
   formatConcertDisplayWeekday,
+  getQrMenuBrandingCacheKey,
   getReadableTextColor,
   navigateToMarketplaceFromQrMenu,
   normalizeHexColor,
@@ -157,6 +159,8 @@ import {
   makeToken,
   parseExpiry,
 } from "../features/qrmenu/utils/cardFormatting";
+
+const EMPTY_LIST = [];
 
 function normalizeQrPhone(value) {
   return normalizePhoneForApi(value);
@@ -3313,7 +3317,7 @@ async function load() {
 
 
 
-function ReservationSlotSelect({
+const ReservationSlotSelect = React.memo(function ReservationSlotSelect({
   value,
   onChange,
   slots = [],
@@ -3342,10 +3346,10 @@ function ReservationSlotSelect({
       ))}
     </select>
   );
-}
+});
 
 /* ====================== TAKEAWAY ORDER FORM ====================== */
-function TakeawayOrderForm({
+const TakeawayOrderForm = React.memo(function TakeawayOrderForm({
   submitting,
   t,
   onClose,
@@ -4436,7 +4440,7 @@ function TakeawayOrderForm({
       `}</style>
     </div>
   );
-}
+});
 
 function OrderTypePromptModal({
   product,
@@ -4761,14 +4765,14 @@ export default function QrMenu() {
     extractTableNumberFromQrText,
   });
 
-  const statusPortalOrderId = (() => {
+  const statusPortalOrderId = useMemo(() => {
     const activeStateId = Number(orderId || 0);
     if (Number.isFinite(activeStateId) && activeStateId > 0) return activeStateId;
     const activeOrderId = Number(activeOrder?.id || 0);
     if (Number.isFinite(activeOrderId) && activeOrderId > 0) return activeOrderId;
     const storedId = Number(storage.getItem("qr_active_order_id") || 0);
     return Number.isFinite(storedId) && storedId > 0 ? storedId : null;
-  })();
+  }, [activeOrder?.id, orderId, storage]);
   const [callWaiterFeedback, setCallWaiterFeedback] = useState("");
   const [waiterTypeModalOpen, setWaiterTypeModalOpen] = useState(false);
   const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
@@ -5339,7 +5343,7 @@ export default function QrMenu() {
     const max = Number.isFinite(seats) && seats > 0 ? Math.min(20, Math.floor(seats)) : 12;
     return Array.from({ length: max }, (_, idx) => idx + 1);
   }, [scanTargetTable]);
-  const cartItems = toArray(safeCart);
+  const cartItems = useMemo(() => toArray(safeCart), [safeCart]);
   const allowReservationPickup = boolish(
     orderSelectCustomization?.reservation_pickup_enabled,
     true
@@ -5354,7 +5358,10 @@ export default function QrMenu() {
         : null,
     [cartItems, editingCartItemId]
   );
-  const cartNewItemsCount = cartItems.filter((item) => !item?.locked).length;
+  const cartNewItemsCount = useMemo(
+    () => cartItems.filter((item) => !item?.locked).length,
+    [cartItems]
+  );
   const isTableOrderProductPage = !showHome && resolvedOrderTypeForActions === "table";
   const takeawayMode = String(takeaway?.mode || "").toLowerCase();
   const isReservationProductPage =
@@ -5374,6 +5381,18 @@ export default function QrMenu() {
     (!showHome || showStatus) &&
     !isCartDrawerOpen;
   const showCustomerAuthWelcomeModal = isManualAuthModalOpen;
+  const visibleMenuCategories = useMemo(
+    () => (hideAllQrProducts ? EMPTY_LIST : categories),
+    [categories, hideAllQrProducts]
+  );
+  const visibleMenuProducts = useMemo(
+    () => (hideAllQrProducts ? EMPTY_LIST : productsForGrid),
+    [hideAllQrProducts, productsForGrid]
+  );
+  const visibleVoiceProducts = useMemo(
+    () => (hideAllQrProducts ? EMPTY_LIST : safeProducts),
+    [hideAllQrProducts, safeProducts]
+  );
   const shouldLockReorderForNonTableConcert = (() => {
     const concertBookingType = String(
       activeOrder?.concert_booking_type ?? activeOrder?.concertBookingType ?? ""
@@ -6176,6 +6195,39 @@ export default function QrMenu() {
   const handleHeaderStatusShortcutToggle = useCallback(() => {
     openOrderStatus();
   }, [openOrderStatus]);
+  const handleOrderSelectCustomizationLoaded = useCallback(
+    (next) => {
+      setOrderSelectCustomization((prev) => ({ ...prev, ...(next || {}) }));
+    },
+    [setOrderSelectCustomization]
+  );
+  const handleTableScannerGuestChange = useCallback((value) => {
+    const n = Number(value);
+    setTableScanGuests(Number.isFinite(n) && n > 0 ? n : null);
+  }, []);
+  const handleTableScannerStart = useCallback(() => {
+    if (!startTableScannerWithGuests(tableScanGuests)) {
+      return;
+    }
+  }, [startTableScannerWithGuests, tableScanGuests]);
+  const handleCartOpen = useCallback(() => {
+    setShowStatus(false);
+    storage.setItem("qr_show_status", "0");
+  }, [setShowStatus, storage]);
+  const handleMenuProductOpenFromSection = useCallback(
+    (product) => {
+      if (reservationPendingCheckIn) {
+        showReservationPendingCheckInMessage();
+        return;
+      }
+      handleMenuProductOpen(product);
+    },
+    [
+      handleMenuProductOpen,
+      reservationPendingCheckIn,
+      showReservationPendingCheckInMessage,
+    ]
+  );
 
   useEffect(() => {
     const requestedOrderId = Number(location.state?.openOrderStatusOrderId || 0);
@@ -6746,6 +6798,250 @@ export default function QrMenu() {
     },
     [appendIdentifier, restaurantIdentifier]
   );
+  const handleProductModalClose = useCallback(() => {
+    const hasCartItems = cartItems.length > 0;
+    setShowAddModal(false);
+    setReturnHomeAfterAdd(false);
+    setEditingCartItemId(null);
+    if (hasCartItems) {
+      window.dispatchEvent(new Event("qr:cart-open"));
+      return;
+    }
+    setForceHome(false);
+    setShowDeliveryForm(false);
+    setShowTakeawayForm(false);
+    setShowStatus(false);
+  }, [
+    cartItems.length,
+    setEditingCartItemId,
+    setForceHome,
+    setShowAddModal,
+    setShowDeliveryForm,
+    setShowStatus,
+    setShowTakeawayForm,
+  ]);
+  const handleProductModalAddToCart = useCallback((item) => {
+    if (reservationPendingCheckIn) {
+      showReservationPendingCheckInMessage();
+      return;
+    }
+    const isEditingCartItem = Boolean(editingCartItemId);
+    storage.setItem("qr_cart_auto_open", isEditingCartItem ? "0" : "1");
+    setCart((prev) => {
+      const prevItems = toArray(prev);
+      if (!editingCartItemId) {
+        return [...prevItems, item];
+      }
+      return prevItems.map((existingItem) =>
+        String(existingItem?.unique_id) === String(editingCartItemId)
+          ? { ...item, unique_id: editingCartItemId }
+          : existingItem
+      );
+    });
+    setEditingCartItemId(null);
+    setShowAddModal(false);
+    setShowStatus(false);
+    if (isEditingCartItem) {
+      showQrCartToast(t("Save changes"));
+    } else {
+      showQrCartToast(`${Math.max(1, Number(item?.quantity) || 1)} ${item?.name || t("Unknown product")} added to Cart`);
+      if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(() => {
+          window.dispatchEvent(new Event("qr:cart-open"));
+        });
+      } else {
+        window.dispatchEvent(new Event("qr:cart-open"));
+      }
+    }
+    if (returnHomeAfterAdd) {
+      setReturnHomeAfterAdd(false);
+      setForceHome(true);
+      setShowDeliveryForm(false);
+      setShowTakeawayForm(false);
+    }
+  }, [
+    editingCartItemId,
+    reservationPendingCheckIn,
+    returnHomeAfterAdd,
+    setCart,
+    setEditingCartItemId,
+    setForceHome,
+    setShowAddModal,
+    setShowDeliveryForm,
+    setShowStatus,
+    setShowTakeawayForm,
+    showReservationPendingCheckInMessage,
+    storage,
+    t,
+  ]);
+  const handleCheckoutModalClose = useCallback(() => {
+    setShowDeliveryForm(false);
+    setOrderType(null);
+  }, [setOrderType, setShowDeliveryForm]);
+  const handleCheckoutModalSubmit = useCallback((form) => {
+    setCustomerInfo({
+      name: form.name,
+      phone: form.phone,
+      email: form.email,
+      address: form.address,
+      payment_method: form.payment_method,
+    });
+    setShowDeliveryForm(false);
+  }, [setCustomerInfo, setShowDeliveryForm]);
+  const handleTakeawayFormClose = useCallback(() => {
+    setShowTakeawayForm(false);
+    setOrderType(null);
+  }, [setOrderType, setShowTakeawayForm]);
+  const handleTakeawayAddItem = useCallback((form) => {
+    setTakeaway(form);
+    setShowTakeawayForm(false);
+    setShowStatus(false);
+    setForceHome(false);
+    window.dispatchEvent(new Event("qr:voice-order-close"));
+    setQrVoiceModalOpen(false);
+  }, [setForceHome, setQrVoiceModalOpen, setShowStatus, setShowTakeawayForm, setTakeaway]);
+  const handleTakeawayFormSubmit = useCallback(async (form) => {
+    if (!form) {
+      setTakeaway({
+        name: "",
+        phone: "",
+        email: "",
+        pickup_date: "",
+        pickup_time: "",
+        mode: "reservation",
+        table_number: "",
+        reservation_clients: "",
+        reservation_men: "",
+        reservation_women: "",
+        notes: "",
+        payment_method: "",
+      });
+      setShowTakeawayForm(false);
+      return;
+    }
+
+    if (String(form?.mode || "").toLowerCase() === "reservation") {
+      const latestTimeSlots = await loadReservationTimeSlots(
+        form.pickup_date,
+        form.reservation_clients
+      );
+      const normalizedTimeSlots = normalizeReservationTimeSlotOptions(
+        latestTimeSlots?.timeSlots || latestTimeSlots?.time_slots || [],
+        t
+      );
+      const selectedTimeSlot = normalizedTimeSlots.find(
+        (slot) => slot.time === String(form?.pickup_time || "").slice(0, 5) && slot.isAvailable
+      );
+      if (!selectedTimeSlot) {
+        alert(t("Please select a valid reservation time."));
+        return;
+      }
+
+      const selectedTableNumber =
+        String(form?.table_number || "").trim().toLowerCase() === "auto"
+          ? null
+          : Number(form?.table_number);
+      if (
+        selectedTableNumber != null &&
+        (!Number.isFinite(selectedTableNumber) || selectedTableNumber <= 0)
+      ) {
+        alert(t("Please select an available table."));
+        return;
+      }
+
+      try {
+        setSubmitting(true);
+        const response = await secureFetch(appendIdentifier("/orders/reservations"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            table_number:
+              Number.isFinite(selectedTableNumber) && selectedTableNumber > 0
+                ? selectedTableNumber
+                : null,
+            reservation_date: form.pickup_date,
+            reservation_time: form.pickup_time,
+            reservation_clients: Number(form.reservation_clients) || 1,
+            reservation_men: hasGuestCompositionValue(form.reservation_men)
+              ? Number(form.reservation_men) || 0
+              : null,
+            reservation_women: hasGuestCompositionValue(form.reservation_women)
+              ? Number(form.reservation_women) || 0
+              : null,
+            reservation_notes: form.notes || "",
+            customer_name: form.name || null,
+            customer_phone: form.phone || null,
+            customer_email: form.email || null,
+          }),
+        });
+
+        const reservationOrderId = Number(response?.reservation?.id);
+        const resolvedTableNumber = Number(
+          response?.reservation?.table_number || selectedTableNumber || 0
+        );
+        setTakeaway({
+          ...form,
+          table_number:
+            Number.isFinite(resolvedTableNumber) && resolvedTableNumber > 0
+              ? String(resolvedTableNumber)
+              : form.table_number,
+        });
+        setShowTakeawayForm(false);
+        window.dispatchEvent(new Event("qr:voice-order-close"));
+        setQrVoiceModalOpen(false);
+        setOrderType("table");
+        storage.setItem("qr_orderType", "table");
+        if (Number.isFinite(resolvedTableNumber) && resolvedTableNumber > 0) {
+          setTable(resolvedTableNumber);
+          storage.setItem("qr_table", String(resolvedTableNumber));
+        }
+        storage.setItem("qr_show_status", "1");
+        setConcertBookingConfirmLabel(false);
+        setOrderStatus("success");
+        setShowStatus(true);
+        if (Number.isFinite(reservationOrderId) && reservationOrderId > 0) {
+          storage.setItem("qr_force_status_until_closed", "1");
+          setOrderId(reservationOrderId);
+          storage.setItem("qr_active_order_id", String(reservationOrderId));
+          storage.setItem(
+            "qr_active_order",
+            JSON.stringify({
+              orderId: reservationOrderId,
+              orderType: "table",
+              table:
+                Number.isFinite(resolvedTableNumber) && resolvedTableNumber > 0
+                  ? resolvedTableNumber
+                  : null,
+            })
+          );
+        }
+      } catch (err) {
+        console.error("❌ Failed to save reservation from QR menu:", err);
+        alert(err?.message || t("Failed to save reservation"));
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    setTakeaway(form);
+    setShowTakeawayForm(false);
+  }, [
+    appendIdentifier,
+    loadReservationTimeSlots,
+    setConcertBookingConfirmLabel,
+    setOrderId,
+    setOrderStatus,
+    setOrderType,
+    setQrVoiceModalOpen,
+    setShowTakeawayForm,
+    setShowStatus,
+    setSubmitting,
+    setTable,
+    setTakeaway,
+    storage,
+    t,
+  ]);
 
   if (showTableSelector) {
     return (
@@ -6782,15 +7078,8 @@ export default function QrMenu() {
             tableDisplayName={scanTargetTableDisplayName}
             guestCount={tableScanGuests}
             guestOptions={scanGuestOptions}
-            onGuestChange={(value) => {
-              const n = Number(value);
-              setTableScanGuests(Number.isFinite(n) && n > 0 ? n : null);
-            }}
-            onStartScan={() => {
-              if (!startTableScannerWithGuests(tableScanGuests)) {
-                return;
-              }
-            }}
+            onGuestChange={handleTableScannerGuestChange}
+            onStartScan={handleTableScannerStart}
             scanReady={tableScanReady}
             onClose={closeTableScanner}
             error={tableScanError}
@@ -6977,9 +7266,7 @@ export default function QrMenu() {
             setShowHelp={setShowHelp}
             platform={platform}
             onPopularClick={handlePopularProductClick}
-            onCustomizationLoaded={(next) =>
-              setOrderSelectCustomization((prev) => ({ ...prev, ...(next || {}) }))
-            }
+            onCustomizationLoaded={handleOrderSelectCustomizationLoaded}
             onConcertReservationSuccess={handleConcertReservationSuccess}
             onFreeConcertReservationStart={handleFreeConcertReservationStart}
             onConcertBookingRequest={handleConcertBookingRequest}
@@ -7090,10 +7377,7 @@ export default function QrMenu() {
                       orderScreenStatus={orderScreenStatus}
                       onShowStatus={openOrderStatus}
                       isOrderStatusOpen={showStatus}
-                      onOpenCart={() => {
-                        setShowStatus(false);
-                        storage.setItem("qr_show_status", "0");
-                      }}
+                      onOpenCart={handleCartOpen}
                       onEditItem={handleEditCartItem}
                       appendIdentifier={appendIdentifier}
                       layout="panel"
@@ -7107,19 +7391,13 @@ export default function QrMenu() {
                   <RequestSongTab t={t} />
                 ) : (
                   <MenuProductsSection
-                    categories={hideAllQrProducts ? [] : categories}
+                    categories={visibleMenuCategories}
                     activeCategory={activeCategory}
                     categoryImages={categoryImages}
-                    products={hideAllQrProducts ? [] : productsForGrid}
+                    products={visibleMenuProducts}
                     onSelectCategory={handleMenuCategorySelect}
                     onCategoryClick={handleMenuCategoryClick}
-                    onOpenProduct={(product) => {
-                      if (reservationPendingCheckIn) {
-                        showReservationPendingCheckInMessage();
-                        return;
-                      }
-                      handleMenuProductOpen(product);
-                    }}
+                    onOpenProduct={handleMenuProductOpenFromSection}
                     t={t}
                     apiUrl={API_URL}
                   />
@@ -7146,10 +7424,7 @@ export default function QrMenu() {
           orderScreenStatus={orderScreenStatus}
           onShowStatus={openOrderStatus}
           isOrderStatusOpen={showStatus}
-          onOpenCart={() => {
-            setShowStatus(false);
-            storage.setItem("qr_show_status", "0");
-          }}
+          onOpenCart={handleCartOpen}
           onEditItem={handleEditCartItem}
           appendIdentifier={appendIdentifier}
           storage={storage}
@@ -7306,7 +7581,7 @@ export default function QrMenu() {
       <VoiceOrderController
         restaurantId={restaurantIdentifier || id || slug}
         tableId={resolvedTableForActions || table}
-        products={hideAllQrProducts ? [] : safeProducts}
+        products={visibleVoiceProducts}
         onAddToCart={handleVoiceDraftAddToCart}
         onSyncDraftToCart={syncVoiceDraftToSharedCart}
         onOpenSharedCart={onOpenSharedCartFromVoice}
@@ -7452,61 +7727,8 @@ export default function QrMenu() {
         open={showAddModal}
         product={selectedProduct}
         extrasGroups={safeExtrasGroups}
-        onClose={() => {
-          const hasCartItems = toArray(safeCart).length > 0;
-          setShowAddModal(false);
-          setReturnHomeAfterAdd(false);
-          setEditingCartItemId(null);
-          if (hasCartItems) {
-            window.dispatchEvent(new Event("qr:cart-open"));
-            return;
-          }
-          setForceHome(false);
-          setShowDeliveryForm(false);
-          setShowTakeawayForm(false);
-          setShowStatus(false);
-        }}
-        onAddToCart={(item) => {
-          if (reservationPendingCheckIn) {
-            showReservationPendingCheckInMessage();
-            return;
-          }
-          const isEditingCartItem = Boolean(editingCartItemId);
-          storage.setItem("qr_cart_auto_open", isEditingCartItem ? "0" : "1");
-          setCart((prev) => {
-            const prevItems = toArray(prev);
-            if (!editingCartItemId) {
-              return [...prevItems, item];
-            }
-            return prevItems.map((existingItem) =>
-              String(existingItem?.unique_id) === String(editingCartItemId)
-                ? { ...item, unique_id: editingCartItemId }
-                : existingItem
-            );
-          });
-          setEditingCartItemId(null);
-          setShowAddModal(false);
-          setShowStatus(false);
-          if (isEditingCartItem) {
-            showQrCartToast(t("Save changes"));
-          } else {
-            showQrCartToast(`${Math.max(1, Number(item?.quantity) || 1)} ${item?.name || t("Unknown product")} added to Cart`);
-            if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
-              window.requestAnimationFrame(() => {
-                window.dispatchEvent(new Event("qr:cart-open"));
-              });
-            } else {
-              window.dispatchEvent(new Event("qr:cart-open"));
-            }
-          }
-          if (returnHomeAfterAdd) {
-            // Home-product flow should return home with cart open.
-            setReturnHomeAfterAdd(false);
-            setForceHome(true);
-            setShowDeliveryForm(false);
-            setShowTakeawayForm(false);
-          }
-        }}
+        onClose={handleProductModalClose}
+        onAddToCart={handleProductModalAddToCart}
         t={t}
         apiUrl={API_URL}
         initialQuantity={editingCartItem?.quantity || 1}
@@ -7524,20 +7746,8 @@ export default function QrMenu() {
           appendIdentifier={appendIdentifier}
           storage={storage}
           accentColor={takeawaySubmitButtonColor}
-          onClose={() => {
-            setShowDeliveryForm(false);
-            setOrderType(null);
-          }}
-          onSubmit={(form) => {
-            setCustomerInfo({
-              name: form.name,
-              phone: form.phone,
-              email: form.email,
-              address: form.address,
-              payment_method: form.payment_method,
-            });
-            setShowDeliveryForm(false);
-          }}
+          onClose={handleCheckoutModalClose}
+          onSubmit={handleCheckoutModalSubmit}
         />
       )}
 
@@ -7556,145 +7766,9 @@ export default function QrMenu() {
           loadReservationTimeSlots={loadReservationTimeSlots}
           loadReservationAvailability={loadReservationAvailability}
           bookingSettings={qrBookingSettings}
-          onClose={() => {
-            setShowTakeawayForm(false);
-            setOrderType(null);
-          }}
-          onAddItem={(form) => {
-            setTakeaway(form);
-            setShowTakeawayForm(false);
-            setShowStatus(false);
-            setForceHome(false);
-            window.dispatchEvent(new Event("qr:voice-order-close"));
-            setQrVoiceModalOpen(false);
-          }}
-          onSubmit={async (form) => {
-            if (!form) {
-              setTakeaway({
-                name: "",
-                phone: "",
-                email: "",
-                pickup_date: "",
-                pickup_time: "",
-                mode: "reservation",
-                table_number: "",
-                reservation_clients: "",
-                reservation_men: "",
-                reservation_women: "",
-                notes: "",
-                payment_method: "",
-              });
-              setShowTakeawayForm(false);
-              return;
-            }
-
-            if (String(form?.mode || "").toLowerCase() === "reservation") {
-              const latestTimeSlots = await loadReservationTimeSlots(
-                form.pickup_date,
-                form.reservation_clients
-              );
-              const normalizedTimeSlots = normalizeReservationTimeSlotOptions(
-                latestTimeSlots?.timeSlots || latestTimeSlots?.time_slots || [],
-                t
-              );
-              const selectedTimeSlot = normalizedTimeSlots.find(
-                (slot) => slot.time === String(form?.pickup_time || "").slice(0, 5) && slot.isAvailable
-              );
-              if (!selectedTimeSlot) {
-                alert(t("Please select a valid reservation time."));
-                return;
-              }
-
-              const selectedTableNumber =
-                String(form?.table_number || "").trim().toLowerCase() === "auto"
-                  ? null
-                  : Number(form?.table_number);
-              if (
-                selectedTableNumber != null &&
-                (!Number.isFinite(selectedTableNumber) || selectedTableNumber <= 0)
-              ) {
-                alert(t("Please select an available table."));
-                return;
-              }
-
-              try {
-                setSubmitting(true);
-                const response = await secureFetch(appendIdentifier("/orders/reservations"), {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    table_number:
-                      Number.isFinite(selectedTableNumber) && selectedTableNumber > 0
-                        ? selectedTableNumber
-                        : null,
-                    reservation_date: form.pickup_date,
-                    reservation_time: form.pickup_time,
-                    reservation_clients: Number(form.reservation_clients) || 1,
-                    reservation_men: hasGuestCompositionValue(form.reservation_men)
-                      ? Number(form.reservation_men) || 0
-                      : null,
-                    reservation_women: hasGuestCompositionValue(form.reservation_women)
-                      ? Number(form.reservation_women) || 0
-                      : null,
-                    reservation_notes: form.notes || "",
-                    customer_name: form.name || null,
-                    customer_phone: form.phone || null,
-                    customer_email: form.email || null,
-                  }),
-                });
-
-                const reservationOrderId = Number(response?.reservation?.id);
-                const resolvedTableNumber = Number(
-                  response?.reservation?.table_number || selectedTableNumber || 0
-                );
-                setTakeaway({
-                  ...form,
-                  table_number:
-                    Number.isFinite(resolvedTableNumber) && resolvedTableNumber > 0
-                      ? String(resolvedTableNumber)
-                      : form.table_number,
-                });
-                setShowTakeawayForm(false);
-                window.dispatchEvent(new Event("qr:voice-order-close"));
-                setQrVoiceModalOpen(false);
-                setOrderType("table");
-                storage.setItem("qr_orderType", "table");
-                if (Number.isFinite(resolvedTableNumber) && resolvedTableNumber > 0) {
-                  setTable(resolvedTableNumber);
-                  storage.setItem("qr_table", String(resolvedTableNumber));
-                }
-                storage.setItem("qr_show_status", "1");
-                setConcertBookingConfirmLabel(false);
-                setOrderStatus("success");
-                setShowStatus(true);
-                if (Number.isFinite(reservationOrderId) && reservationOrderId > 0) {
-                  storage.setItem("qr_force_status_until_closed", "1");
-                  setOrderId(reservationOrderId);
-                  storage.setItem("qr_active_order_id", String(reservationOrderId));
-                  storage.setItem(
-                    "qr_active_order",
-                    JSON.stringify({
-                      orderId: reservationOrderId,
-                      orderType: "table",
-                      table:
-                        Number.isFinite(resolvedTableNumber) && resolvedTableNumber > 0
-                          ? resolvedTableNumber
-                          : null,
-                    })
-                  );
-                }
-              } catch (err) {
-                console.error("❌ Failed to save reservation from QR menu:", err);
-                alert(err?.message || t("Failed to save reservation"));
-              } finally {
-                setSubmitting(false);
-              }
-              return;
-            }
-
-            setTakeaway(form);
-            setShowTakeawayForm(false);
-          }}
+          onClose={handleTakeawayFormClose}
+          onAddItem={handleTakeawayAddItem}
+          onSubmit={handleTakeawayFormSubmit}
           paymentMethod={paymentMethod}
           setPaymentMethod={setPaymentMethod}
         />
