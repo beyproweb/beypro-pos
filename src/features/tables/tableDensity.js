@@ -38,7 +38,7 @@ export const getTableDensityLayout = (value) => {
   if (normalized === TABLE_DENSITY.COMPACT) {
     return {
       density: TABLE_DENSITY.COMPACT,
-      minColumnWidth: 200,
+      minColumnWidth: 160,
       maxColumns: null,
       columnGap: 14,
       rowGap: 14,
@@ -55,7 +55,7 @@ export const getTableDensityLayout = (value) => {
     columnGap: null,
     rowGap: null,
     estimatedItemHeight: 345,
-    gridWrapperClassName: "w-full flex justify-center px-4 sm:px-8",
+    gridWrapperClassName: "w-full flex justify-center px-3 sm:px-8",
     containerMaxWidth: 1600,
   };
 };

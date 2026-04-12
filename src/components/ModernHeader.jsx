@@ -233,7 +233,9 @@ export default function ModernHeader({
   ]);
 
   const isTableOverviewRoute =
-    location.pathname.includes("/tables") || location.pathname.includes("/tableoverview");
+    location.pathname.includes("/tables") ||
+    location.pathname.includes("/tableoverview") ||
+    location.pathname.includes("/view-booking");
   const isPublicShellRoute = isPublicShellPath(location.pathname);
   const isTransactionRoute = location.pathname.includes("/transaction");
   const isDashboardRoute = location.pathname.includes("/dashboard");

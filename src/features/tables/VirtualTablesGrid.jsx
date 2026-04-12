@@ -10,11 +10,10 @@ import {
 
 const GRID_CLASS_NAME = `
   grid
-  grid-cols-1
-  sm:grid-cols-2
+  grid-cols-2
   xl:grid-cols-4
   2xl:grid-cols-4
-  gap-4
+  gap-3
   sm:gap-8
   place-items-stretch
   w-full
@@ -30,13 +29,12 @@ const DEFAULT_VIEWPORT = {
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
 const getColumnsForViewport = (viewportWidth) => {
-  if (viewportWidth < 640) return 1;
   if (viewportWidth >= 1280) return 4;
   return 2;
 };
 
 const getRowGapForViewport = (viewportWidth) => {
-  if (viewportWidth < 640) return 16;
+  if (viewportWidth < 640) return 12;
   if (viewportWidth >= 640) return 32;
   return 12;
 };

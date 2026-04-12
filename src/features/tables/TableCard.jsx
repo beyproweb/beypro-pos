@@ -146,10 +146,13 @@ function TableCard({
     return null;
   }, [waiterCall]);
   const waiterCallLabel = waiterCallType === "bill"
-    ? t("waiter.wantBill")
+    ? t("Bill")
     : waiterCallType === "reorder"
-      ? t("waiter.wantReorder")
+      ? t("Reorder")
       : t("Calling");
+  const waiterResolveLabel = waiterCallType === "bill"
+    ? t("Bill")
+    : t("waiter.handled");
 
   const handleCardClick = React.useCallback(() => {
     handleTableClick(table);
@@ -809,7 +812,7 @@ function TableCard({
                 isLargeCompact ? "shadow-[0_12px_28px_rgba(15,23,42,0.18)]" : "shadow-[0_10px_22px_rgba(15,23,42,0.16)]"
               )}
             >
-              {t("waiter.handled")}
+              {waiterResolveLabel}
             </ActionButton>
           </div>
         ) : null}
@@ -1110,7 +1113,7 @@ function TableCard({
                   onClick={handleResolvedClick}
                   className="bg-emerald-600 hover:bg-emerald-700"
                 >
-                  {t("waiter.handled")}
+                  {waiterResolveLabel}
                 </ActionButton>
               </div>
             )}

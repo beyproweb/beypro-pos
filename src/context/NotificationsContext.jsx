@@ -119,7 +119,100 @@ function normalizeWaiterCallType(value) {
   const normalized = String(value || "")
     .trim()
     .toLowerCase();
-  if (normalized === "bill" || normalized === "reorder") return normalized;
+  if (!normalized) return null;
+  if (["customer_call", "call_waiter", "waiter"].includes(normalized)) return null;
+  if (
+    normalized === "bill" ||
+    normalized === "account" ||
+    normalized === "check" ||
+    normalized === "invoice" ||
+    normalized === "hesap" ||
+    normalized === "addition" ||
+    normalized === "rechnung" ||
+    normalized === "adisyon" ||
+    normalized.includes("bill") ||
+    normalized.includes("account") ||
+    normalized.includes("check") ||
+    normalized.includes("invoice") ||
+    normalized.includes("hesap") ||
+    normalized.includes("addition") ||
+    normalized.includes("rechnung") ||
+    normalized.includes("adisyon")
+  ) {
+    return "bill";
+  }
+  if (
+    normalized === "reorder" ||
+    normalized === "re-order" ||
+    normalized === "repeat" ||
+    normalized === "again" ||
+    normalized === "tekrar" ||
+    normalized === "nachbestellen" ||
+    normalized === "recommander" ||
+    normalized.includes("reorder") ||
+    normalized.includes("re-order") ||
+    normalized.includes("repeat") ||
+    normalized.includes("again") ||
+    normalized.includes("tekrar") ||
+    normalized.includes("nachbestellen") ||
+    normalized.includes("recommander")
+  ) {
+    return "reorder";
+  }
+  if (normalized === "bill_request" || normalized === "request_bill") return "bill";
+  if (normalized === "reorder_request" || normalized === "request_reorder") return "reorder";
+  return null;
+}
+
+function resolveWaiterCallTypeFromPayload(payload = {}) {
+  if (!payload || typeof payload !== "object") return null;
+  const directCandidates = [
+    payload?.call_type,
+    payload?.callType,
+    payload?.request_type,
+    payload?.requestType,
+    payload?.waiter_type,
+    payload?.waiterType,
+    payload?.waiter_request_type,
+    payload?.waiterRequestType,
+    payload?.request,
+    payload?.reason,
+    payload?.kind,
+    payload?.type,
+    payload?.order?.call_type,
+    payload?.order?.callType,
+    payload?.order?.request_type,
+    payload?.order?.requestType,
+    payload?.order?.waiter_type,
+    payload?.order?.waiterType,
+    payload?.extra?.call_type,
+    payload?.extra?.callType,
+    payload?.extra?.request_type,
+    payload?.extra?.requestType,
+    payload?.data?.call_type,
+    payload?.data?.callType,
+    payload?.data?.request_type,
+    payload?.data?.requestType,
+  ];
+  for (const candidate of directCandidates) {
+    const detected = normalizeWaiterCallType(candidate);
+    if (detected) return detected;
+  }
+
+  const textCandidates = [
+    payload?.message,
+    payload?.note,
+    payload?.request_message,
+    payload?.requestMessage,
+    payload?.label,
+    payload?.title,
+    payload?.order?.message,
+    payload?.extra?.message,
+  ];
+  for (const text of textCandidates) {
+    const detected = normalizeWaiterCallType(text);
+    if (detected) return detected;
+  }
   return null;
 }
 
@@ -413,18 +506,7 @@ export function NotificationsProvider({ children }) {
     if (!Number.isFinite(tableNumber) || tableNumber <= 0) return null;
     const key = String(tableNumber);
     const requestedAt = payload?.requested_at || payload?.time || new Date().toISOString();
-    const requestType = normalizeWaiterCallType(
-      payload?.call_type ??
-        payload?.callType ??
-        payload?.request_type ??
-        payload?.requestType ??
-        payload?.type ??
-        payload?.order?.call_type ??
-        payload?.order?.callType ??
-        payload?.order?.request_type ??
-        payload?.order?.requestType ??
-        payload?.order?.type
-    );
+    const requestType = resolveWaiterCallTypeFromPayload(payload);
     setCustomerCalls((prev) => ({
       ...(prev || {}),
       [key]: {

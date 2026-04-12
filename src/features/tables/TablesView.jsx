@@ -1033,13 +1033,15 @@ function TablesView({
           </div>
         )}
       {activeArea === AREA_FILTER_VIEW_BOOKING ? (
-        <div className="w-full max-w-6xl px-4 pb-4 sm:px-8">
-          <div className="rounded-2xl border border-violet-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-base font-semibold text-violet-700">{t("View Booking")}</div>
-              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+        <div className="w-full px-4 pb-4 pt-1 sm:px-6 xl:px-8 2xl:px-10">
+          <div className="w-full py-0.5 sm:py-1">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:gap-6">
+              <div className="shrink-0 whitespace-nowrap text-base font-semibold text-violet-700">
+                {t("View Booking")}
+              </div>
+              <div className="grid w-full gap-3 lg:grid-cols-2 xl:flex-1 xl:grid-cols-[auto_minmax(320px,0.65fr)_auto] xl:items-center">
                 <div
-                  className="w-full gap-2 sm:w-auto"
+                  className="grid w-full gap-1 sm:max-w-sm"
                   style={{
                     display: "grid",
                     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
@@ -1063,13 +1065,13 @@ function TablesView({
                   value={bookingSearch}
                   onChange={(event) => setBookingSearch(event.target.value)}
                   placeholder={t("Search by name or phone")}
-                  className="w-full min-w-0 rounded-xl border border-violet-200 bg-violet-50/40 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-violet-400 focus:bg-white sm:w-80"
+                  className="w-full min-w-0 rounded-xl border border-violet-200 bg-violet-50/40 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-violet-400 focus:bg-white"
                 />
                 <button
                   type="button"
                   onClick={() => onClearBookings?.(filteredBookings, { from: bookingDateFrom, to: bookingDateTo })}
                   disabled={clearingBookings || filteredBookings.length === 0}
-                  className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 xl:w-auto"
                 >
                   {clearingBookings ? t("Clearing...") : t("Clear Bookings")}
                 </button>
@@ -1078,7 +1080,7 @@ function TablesView({
             {concertBookingsLoading && !hasAnyViewBookingRows ? (
               <div className="mt-3 text-sm text-gray-500">{t("Loading...")}</div>
             ) : filteredBookings.length > 0 ? (
-              <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 xl:gap-5 2xl:grid-cols-4 2xl:gap-6">
                 {filteredBookings.map((booking) => {
                   const source = String(booking?.booking_source || "").toLowerCase();
                   const isConcertBooking = source === "concert";
@@ -1304,14 +1306,14 @@ function TablesView({
                   return (
                     <div
                       key={bookingKey}
-                      className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-lg"
+                      className="flex h-full min-h-[280px] flex-col rounded-3xl border border-slate-200 bg-white/90 p-4 shadow-lg sm:p-5"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                             {sourceLabel}
                           </div>
-                          <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
+                          <div className="mt-2 text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
                             {booking.customer_name || t("Guest")}
                           </div>
                           {customerPhone ? (
@@ -1332,7 +1334,7 @@ function TablesView({
                           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                             {t("Table")}
                           </div>
-                          <div className="mt-1 text-2xl font-bold text-slate-900">
+                          <div className="mt-1 text-xl font-bold text-slate-900 sm:text-2xl">
                             {tableLabel || "—"}
                           </div>
                         </div>
@@ -1381,7 +1383,7 @@ function TablesView({
                         </div>
                       ) : null}
 
-                      <div className="mt-5 flex gap-2">
+                      <div className="mt-auto flex gap-2 pt-5">
                         <button
                           type="button"
                           onClick={() =>

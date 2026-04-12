@@ -61,10 +61,12 @@ const resources = {
       },
       "waiter": {
         "call": "Call Waiter",
-        "wantBill": "Want Bill",
-        "wantReorder": "Want Reorder",
+        "wantBill": "Bill",
+        "wantReorder": "Reorder",
         "handled": "Handled"
       },
+      "Bill": "Bill",
+      "Reorder": "Reorder",
       " 🌍 Language & Localization": "🌍 Language & Localization",
       "-- Payment Method --": "-- Payment Method --",
       "-- Select --": "-- Select --",
@@ -2394,10 +2396,12 @@ const resources = {
       },
       "waiter": {
         "call": "Garson Çağır",
-        "wantBill": "Hesap İstiyorum",
-        "wantReorder": "Tekrar Sipariş",
+        "wantBill": "Bill",
+        "wantReorder": "Reorder",
         "handled": "Çözüldü"
       },
+      "Bill": "Hesap",
+      "Reorder": "Tekrar Sipariş",
       "-- Payment Method --": "-- Ödeme Yöntemi --",
       "-- Select --": "-- Seçiniz --",
       "-- Select Category to Delete --": "-- Silinecek Kategori Seçin --",
@@ -4850,10 +4854,12 @@ const resources = {
       },
       "waiter": {
         "call": "Kellner rufen",
-        "wantBill": "Rechnung bitte",
-        "wantReorder": "Nachbestellen",
+        "wantBill": "Bill",
+        "wantReorder": "Reorder",
         "handled": "Erledigt"
       },
+      "Bill": "Rechnung",
+      "Reorder": "Nachbestellen",
       "-- Payment Method --": "-- Zahlungsmethode --",
       "-- Select --": "-- Auswählen --",
       "-- Select Category to Delete --": "-- Kategorie zum Löschen auswählen --",
@@ -7034,10 +7040,12 @@ const resources = {
       },
       "waiter": {
         "call": "Appeler le serveur",
-        "wantBill": "Demander l'addition",
-        "wantReorder": "Recommander",
+        "wantBill": "Bill",
+        "wantReorder": "Reorder",
         "handled": "Traité"
       },
+      "Bill": "Addition",
+      "Reorder": "Recommander",
       "Close Time": "Heure de fermeture",
       "Upload Avatar": "Télécharger un avatar",
       "Avatar uploaded successfully": "Avatar importé avec succès",

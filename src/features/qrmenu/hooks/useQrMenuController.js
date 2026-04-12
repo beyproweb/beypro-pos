@@ -3339,6 +3339,8 @@ function handleReset(options = null) {
       if (waiterRequestType) {
         callWaiterBody.call_type = waiterRequestType;
         callWaiterBody.request_type = waiterRequestType;
+        callWaiterBody.type = waiterRequestType;
+        callWaiterBody.reason = waiterRequestType;
       }
       try {
         await secureFetch(`/public/call-waiter/${encodeURIComponent(restaurantIdentifier)}`, {

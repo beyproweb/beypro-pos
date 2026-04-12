@@ -160,6 +160,16 @@ function TableOverviewRouteWrapper() {
   );
 }
 
+function ViewBookingRouteWrapper() {
+  const location = useLocation();
+
+  return (
+    <ProtectedRoute permission="view-booking" moduleKey="page.tables">
+      <TableOverview key={`${location.pathname}${location.search}`} />
+    </ProtectedRoute>
+  );
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -428,11 +438,7 @@ function AppShell() {
               <Route path="tableoverview" element={<TableOverviewRouteWrapper />} />
               <Route
                 path="view-booking"
-                element={
-                  <ProtectedRoute permission="view-booking" moduleKey="page.tables">
-                    <TableOverview />
-                  </ProtectedRoute>
-                }
+                element={<ViewBookingRouteWrapper />}
               />
               <Route path="transaction/:tableId" element={<TransactionScreen />} />
               <Route path="transaction/phone/:orderId" element={<TransactionScreen />} />

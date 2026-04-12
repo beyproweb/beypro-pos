@@ -5767,7 +5767,7 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
 {activeTab === "takeaway" && (
   <div className="px-6 py-4">
 
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
       {/* ➕ New Takeaway Card */}
       <button
         onClick={async () => {
@@ -6023,7 +6023,7 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
         <span className="text-xl text-gray-400 font-semibold">{t("No open orders.")}</span>
       </div>
     ) : (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-7">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-7">
     {kitchenOpenOrders.map((order) => {
       const orderType = String(order?.order_type || "").trim().toLowerCase();
       const readyAtLabel = kitchenReadyAtByOrderId.get(order.id) || "";
