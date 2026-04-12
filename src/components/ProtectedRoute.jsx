@@ -16,7 +16,8 @@ export default function ProtectedRoute({ children, permission, moduleKey }) {
 
   if (moduleKey && !isModuleAllowed(moduleKey)) {
     console.warn("🧩 Blocked by plan modules:", { moduleKey, userRole: currentUser.role });
-    const isAdmin = currentUser.role?.toLowerCase() === "admin";
+    const role = currentUser.role?.toLowerCase();
+    const isAdmin = role === "admin" || role === "superadmin" || role === "super-admin";
     return <Navigate to={isAdmin ? "/subscription" : "/unauthorized"} replace />;
   }
 
@@ -24,9 +25,11 @@ export default function ProtectedRoute({ children, permission, moduleKey }) {
   console.log("   Required permission:", permission);
   console.log("   Current role:", currentUser.role);
   console.log("   Current permissions:", currentUser.permissions);
+  const role = currentUser.role?.toLowerCase();
+  const isAdminLike = role === "admin" || role === "superadmin" || role === "super-admin";
 
   // ✅ Admin always allowed
-  if (currentUser.role?.toLowerCase() === "admin") {
+  if (isAdminLike) {
     console.log("   Result: ✅ Admin superuser → access granted");
     return children;
   }

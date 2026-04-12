@@ -6,9 +6,10 @@ export function normalizeUser(user, userSettings = {}) {
 
   let role = user.role?.toLowerCase() || "staff";
   let permissions = normalizePermissionList(user.permissions);
+  const isAdminLike = role === "admin" || role === "superadmin" || role === "super-admin";
 
   // Admin → always superuser
-  if (role === "admin") {
+  if (isAdminLike) {
     permissions = ["all"];
   } else if (!permissions.length && userSettings.roles?.[role]) {
     permissions = normalizePermissionList(userSettings.roles[role]);

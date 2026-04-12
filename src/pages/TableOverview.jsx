@@ -5544,16 +5544,14 @@ const areaKeys = React.useMemo(
   () => Object.keys(filteredGroupedTablesByNumberSearch),
   [filteredGroupedTablesByNumberSearch]
 );
-const showViewBookingShortcut =
-  canSeeViewBookingTab && !transactionSettings.disableTableOverviewOrdersFloatingButton;
 const showStandardAreaTabs =
   !isDedicatedViewBookingPage &&
   canSeeTablesGrid &&
   tableSettings.showAreas !== false &&
   areaKeys.length > 0;
 const showAreaTabs = isDedicatedViewBookingPage
-  ? showViewBookingShortcut
-  : showStandardAreaTabs || showViewBookingShortcut || canSeeSongRequestTab;
+  ? canSeeViewBookingTab
+  : showStandardAreaTabs || canSeeViewBookingTab || canSeeSongRequestTab;
 
 const formatAreaLabel = useCallback((area) => {
   const raw = area || "Main Hall";
@@ -5735,7 +5733,6 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
 
       {activeTab === "tables" &&
         canSeeTablesGrid &&
-        !isDedicatedViewBookingPage &&
         !transactionSettings.disableTableOverviewGuestsFloatingButton && (
         <div className="fixed bottom-6 left-6 z-40 flex items-center gap-2 rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 px-5 py-3 text-white shadow-2xl ring-1 ring-white/20">
           <span className="font-semibold">{t("Guests")}</span>
@@ -5757,7 +5754,7 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
       formatAreaLabel={formatAreaLabel}
       t={t}
       cardProps={tableCardProps}
-      showViewBookingTab={showViewBookingShortcut}
+      showViewBookingTab={canSeeViewBookingTab}
       concertBookings={visibleConcertBookingsOverview}
       reservationBookings={visibleReservationBookingsOverview}
       concertBookingsLoading={concertBookingsLoading || reservationBookingsLoading}

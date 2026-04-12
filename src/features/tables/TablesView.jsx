@@ -604,10 +604,10 @@ function TablesView({
           booking?.tableNumber
       );
       const preferredOrderId = Number(
-        booking?.order_id ??
-          booking?.orderId ??
-          booking?.reservation_order_id ??
-          booking?.reservationOrderId
+        booking?.reservation_order_id ??
+          booking?.reservationOrderId ??
+          booking?.order_id ??
+          booking?.orderId
       );
       const tableFromGrid =
         Number.isFinite(tableNumber) && tableNumber > 0 ? tablesByNumber.get(tableNumber) || null : null;
@@ -914,7 +914,7 @@ function TablesView({
             className={[
               "inline-flex min-w-[1.8rem] items-center justify-center rounded-full px-2.5 py-1 text-[11px] font-bold leading-none ring-1 transition",
               isActive
-                ? "bg-black/10 text-white ring-black/10"
+                ? "bg-white/18 text-white ring-white/20"
                 : "bg-slate-900/6 text-slate-600 ring-slate-900/6 dark:bg-white/10 dark:text-slate-100 dark:ring-white/10",
             ].join(" ")}
           >
@@ -938,8 +938,8 @@ function TablesView({
               onClick={() => handleAreaTabClick(AREA_FILTER_ALL)}
               className={getAreaTabClassName(
                 activeArea === AREA_FILTER_ALL,
-                "border-transparent bg-gradient-to-br from-slate-900 via-indigo-800 to-violet-700 text-white ring-black/5 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(79,70,229,0.22)] dark:from-slate-100 dark:via-white dark:to-slate-200 dark:text-slate-900 dark:ring-slate-200/40",
-                "border-slate-200 bg-white text-slate-700 ring-slate-200/70 hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700/60 dark:hover:bg-slate-800"
+                "border-transparent bg-gradient-to-br from-slate-900 via-indigo-800 to-violet-700 text-white ring-white/10 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(79,70,229,0.28)] dark:from-slate-100 dark:via-white dark:to-slate-200 dark:text-slate-900 dark:ring-slate-200/70",
+                "border-slate-200/80 bg-white/72 text-slate-700 ring-white/70 backdrop-blur-xl hover:-translate-y-0.5 hover:bg-white dark:border-slate-700/80 dark:bg-slate-900/60 dark:text-slate-100 dark:ring-white/5 dark:hover:bg-slate-900/78"
               )}
             >
               {renderAreaTabLabel(t("All Areas"), null, activeArea === AREA_FILTER_ALL)}
@@ -955,8 +955,8 @@ function TablesView({
                 onClick={() => handleAreaTabClick(area)}
                 className={getAreaTabClassName(
                   activeArea === area,
-                  "border-transparent bg-gradient-to-br from-sky-500 via-indigo-500 to-violet-600 text-white ring-black/5 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(59,130,246,0.22)]",
-                  "border-slate-200 bg-white text-slate-700 ring-slate-200/70 hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700/60 dark:hover:bg-slate-800"
+                  "border-transparent bg-gradient-to-br from-sky-500 via-indigo-500 to-violet-600 text-white ring-white/10 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(59,130,246,0.28)]",
+                  "border-slate-200/80 bg-white/72 text-slate-700 ring-white/70 backdrop-blur-xl hover:-translate-y-0.5 hover:bg-white dark:border-slate-700/80 dark:bg-slate-900/60 dark:text-slate-100 dark:ring-white/5 dark:hover:bg-slate-900/78"
                 )}
               >
                 {renderAreaTabLabel(formatAreaLabel(area), null, activeArea === area)}
@@ -970,8 +970,8 @@ function TablesView({
               onClick={() => handleAreaTabClick(AREA_FILTER_RESERVED)}
               className={getAreaTabClassName(
                 activeArea === AREA_FILTER_RESERVED,
-                "border-transparent bg-gradient-to-br from-amber-400 via-amber-500 to-orange-600 text-white ring-black/5 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(245,158,11,0.2)]",
-                "border-slate-200 bg-white text-slate-700 ring-slate-200/70 hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700/60 dark:hover:bg-slate-800"
+                "border-transparent bg-gradient-to-br from-amber-400 via-amber-500 to-orange-600 text-white ring-white/10 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(245,158,11,0.25)]",
+                "border-slate-200/80 bg-white/72 text-slate-700 ring-white/70 backdrop-blur-xl hover:-translate-y-0.5 hover:bg-white dark:border-slate-700/80 dark:bg-slate-900/60 dark:text-slate-100 dark:ring-white/5 dark:hover:bg-slate-900/78"
               )}
             >
               {renderAreaTabLabel(t("Reserved"), reservedTablesCount, activeArea === AREA_FILTER_RESERVED)}
@@ -984,8 +984,8 @@ function TablesView({
               onClick={() => handleAreaTabClick(AREA_FILTER_UNPAID)}
               className={getAreaTabClassName(
                 activeArea === AREA_FILTER_UNPAID,
-                "border-transparent bg-gradient-to-br from-rose-500 via-red-600 to-red-700 text-white ring-black/5 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(225,29,72,0.22)]",
-                "border-slate-200 bg-white text-slate-700 ring-slate-200/70 hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700/60 dark:hover:bg-slate-800"
+                "border-transparent bg-gradient-to-br from-rose-500 via-red-600 to-red-700 text-white ring-white/10 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(225,29,72,0.28)]",
+                "border-slate-200/80 bg-white/72 text-slate-700 ring-white/70 backdrop-blur-xl hover:-translate-y-0.5 hover:bg-white dark:border-slate-700/80 dark:bg-slate-900/60 dark:text-slate-100 dark:ring-white/5 dark:hover:bg-slate-900/78"
               )}
             >
               {renderAreaTabLabel(t("Unpaid"), unpaidTablesCount, activeArea === AREA_FILTER_UNPAID)}
@@ -998,8 +998,8 @@ function TablesView({
               onClick={() => handleAreaTabClick(AREA_FILTER_PAID)}
               className={getAreaTabClassName(
                 activeArea === AREA_FILTER_PAID,
-                "border-transparent bg-gradient-to-br from-emerald-400 via-emerald-500 to-teal-600 text-white ring-black/5 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(16,185,129,0.2)]",
-                "border-slate-200 bg-white text-slate-700 ring-slate-200/70 hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700/60 dark:hover:bg-slate-800"
+                "border-transparent bg-gradient-to-br from-emerald-400 via-emerald-500 to-teal-600 text-white ring-white/10 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(16,185,129,0.25)]",
+                "border-slate-200/80 bg-white/72 text-slate-700 ring-white/70 backdrop-blur-xl hover:-translate-y-0.5 hover:bg-white dark:border-slate-700/80 dark:bg-slate-900/60 dark:text-slate-100 dark:ring-white/5 dark:hover:bg-slate-900/78"
               )}
             >
               {renderAreaTabLabel(t("Paid"), paidTablesCount, activeArea === AREA_FILTER_PAID)}
@@ -1012,8 +1012,8 @@ function TablesView({
               onClick={() => handleAreaTabClick(AREA_FILTER_FREE)}
               className={getAreaTabClassName(
                 activeArea === AREA_FILTER_FREE,
-                "border-transparent bg-gradient-to-br from-cyan-500 via-sky-500 to-blue-600 text-white ring-black/5 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(14,165,233,0.2)]",
-                "border-slate-200 bg-white text-slate-700 ring-slate-200/70 hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700/60 dark:hover:bg-slate-800"
+                "border-transparent bg-gradient-to-br from-cyan-500 via-sky-500 to-blue-600 text-white ring-white/10 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(14,165,233,0.25)]",
+                "border-slate-200/80 bg-white/72 text-slate-700 ring-white/70 backdrop-blur-xl hover:-translate-y-0.5 hover:bg-white dark:border-slate-700/80 dark:bg-slate-900/60 dark:text-slate-100 dark:ring-white/5 dark:hover:bg-slate-900/78"
               )}
             >
               {renderAreaTabLabel(t("Free"), freeTablesCount, activeArea === AREA_FILTER_FREE)}
@@ -1029,8 +1029,8 @@ function TablesView({
             onClick={() => handleAreaTabClick(AREA_FILTER_VIEW_BOOKING)}
             className={getAreaTabClassName(
               activeArea === AREA_FILTER_VIEW_BOOKING,
-              "border-transparent bg-gradient-to-br from-violet-500 via-indigo-500 to-fuchsia-500 text-white ring-black/5 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(139,92,246,0.22)]",
-              "border-slate-200 bg-white text-slate-700 ring-slate-200/70 hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700/60 dark:hover:bg-slate-800"
+              "border-transparent bg-gradient-to-br from-violet-500 via-indigo-500 to-fuchsia-500 text-white ring-white/10 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(139,92,246,0.28)]",
+              "border-slate-200/80 bg-white/72 text-slate-700 ring-white/70 backdrop-blur-xl hover:-translate-y-0.5 hover:bg-white dark:border-slate-700/80 dark:bg-slate-900/60 dark:text-slate-100 dark:ring-white/5 dark:hover:bg-slate-900/78"
             )}
           >
             {renderAreaTabLabel(t("View Booking"), rangeBookingCount, activeArea === AREA_FILTER_VIEW_BOOKING)}
@@ -1045,8 +1045,8 @@ function TablesView({
             onClick={() => handleAreaTabClick(AREA_FILTER_SONG_REQUEST)}
             className={getAreaTabClassName(
               activeArea === AREA_FILTER_SONG_REQUEST,
-              "border-transparent bg-gradient-to-br from-fuchsia-500 via-purple-500 to-indigo-600 text-white ring-black/5 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(168,85,247,0.22)]",
-              "border-slate-200 bg-white text-slate-700 ring-slate-200/70 hover:-translate-y-0.5 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700/60 dark:hover:bg-slate-800"
+              "border-transparent bg-gradient-to-br from-fuchsia-500 via-purple-500 to-indigo-600 text-white ring-white/10 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(168,85,247,0.28)]",
+              "border-slate-200/80 bg-white/72 text-slate-700 ring-white/70 backdrop-blur-xl hover:-translate-y-0.5 hover:bg-white dark:border-slate-700/80 dark:bg-slate-900/60 dark:text-slate-100 dark:ring-white/5 dark:hover:bg-slate-900/78"
             )}
           >
             {renderAreaTabLabel(
@@ -1583,10 +1583,10 @@ function TablesView({
       {showAreaTabs ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 p-0">
           <div className="pointer-events-auto w-full px-2 pb-[calc(8px+env(safe-area-inset-bottom))] pt-3 sm:px-4">
-            <div className="mx-auto w-full max-w-[1480px] overflow-hidden rounded-[30px] border border-slate-200 bg-slate-100 shadow-[0_-18px_45px_rgba(15,23,42,0.10)] ring-1 ring-slate-200/70 dark:border-slate-800 dark:bg-slate-950 dark:ring-slate-800/80">
+            <div className="mx-auto w-full max-w-[1480px] overflow-hidden rounded-[30px] border border-slate-200/80 bg-white/95 shadow-[0_-18px_45px_rgba(15,23,42,0.14)] ring-1 ring-slate-200/70 sm:border-white/70 sm:bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,252,0.82))] sm:backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/95 dark:ring-slate-800/80 dark:sm:bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(2,6,23,0.82))]">
               <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-slate-100 via-slate-100/80 to-transparent dark:from-slate-950 dark:via-slate-950/80" />
-                <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-slate-100 via-slate-100/80 to-transparent dark:from-slate-950 dark:via-slate-950/80" />
+                <div className="pointer-events-none absolute inset-y-0 left-0 z-10 hidden w-8 bg-gradient-to-r from-white via-white/80 to-transparent sm:block dark:from-slate-950 dark:via-slate-950/80" />
+                <div className="pointer-events-none absolute inset-y-0 right-0 z-10 hidden w-8 bg-gradient-to-l from-white via-white/80 to-transparent sm:block dark:from-slate-950 dark:via-slate-950/80" />
                 <div
                   ref={areaTabsRailRef}
                   className="flex flex-nowrap items-center justify-start gap-2 overflow-x-auto scroll-smooth scrollbar-hide px-3 py-3 sm:justify-center sm:px-4"

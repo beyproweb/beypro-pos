@@ -6,9 +6,11 @@ export function useHasPermission(perm) {
   const { currentUser } = useAuth();
 
   if (!currentUser) return false;
+  const role = String(currentUser.role || "").toLowerCase();
+  const isAdminLike = role === "admin" || role === "superadmin" || role === "super-admin";
 
   // 🔥 ADMIN ALWAYS HAS FULL ACCESS
-  if (String(currentUser.role || "").toLowerCase() === "admin") {
+  if (isAdminLike) {
     return true;
   }
 
