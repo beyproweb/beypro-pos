@@ -172,6 +172,169 @@ function formatQrPhoneForInput(value) {
   return formatPhoneForInput(value);
 }
 
+function showQrCartToast(message) {
+  toast.success(message, {
+    duration: 2400,
+    position: "top-center",
+    style: {
+      borderRadius: "16px",
+      border: "1px solid rgba(15, 23, 42, 0.08)",
+      background: "rgba(15, 23, 42, 0.96)",
+      color: "#fff",
+      padding: "12px 16px",
+      boxShadow: "0 20px 50px rgba(15, 23, 42, 0.22)",
+      fontSize: "14px",
+      fontWeight: 600,
+    },
+    iconTheme: {
+      primary: "#10B981",
+      secondary: "#fff",
+    },
+  });
+}
+
+function GuestWelcomeAuthModal({
+  open,
+  view,
+  onViewChange,
+  onClose,
+  onAppleLogin,
+  onGoogleLogin,
+  onLogin,
+  onRequestEmailOtp,
+  onRegister,
+  onVerifyEmailOtp,
+  t,
+  brandName,
+  accentColor = "#111827",
+}) {
+  const resolvedAccentColor = normalizeHexColor(accentColor, "#4F46E5");
+  const panelBackground = `radial-gradient(circle at top left, rgba(255,255,255,0.96), ${
+    toRgba(resolvedAccentColor, 0.14) || "rgba(79,70,229,0.14)"
+  } 48%, ${toRgba(resolvedAccentColor, 0.24) || "rgba(79,70,229,0.24)"} 100%)`;
+  const panelGlowStart = toRgba(resolvedAccentColor, 0.24) || "rgba(79,70,229,0.24)";
+  const panelGlowEnd = toRgba(resolvedAccentColor, 0.18) || "rgba(79,70,229,0.18)";
+
+  useEffect(() => {
+    if (!open || typeof document === "undefined") return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[1400]">
+      <button
+        type="button"
+        aria-label={t("Close")}
+        onClick={onClose}
+        className="absolute inset-0 bg-white sm:bg-[rgba(15,23,42,0.58)] sm:backdrop-blur-md"
+      />
+
+      <div className="relative z-[1401] flex min-h-full items-stretch justify-center p-0 sm:items-center sm:p-5">
+        <div className="relative flex min-h-screen w-full max-w-none overflow-hidden rounded-none border-0 bg-white shadow-none sm:max-h-[92vh] sm:min-h-0 sm:max-w-[1040px] sm:rounded-[34px] sm:border sm:border-white/40 sm:bg-white/90 sm:shadow-[0_40px_120px_rgba(15,23,42,0.35)] sm:backdrop-blur-2xl dark:bg-neutral-950 dark:sm:border-white/10 dark:sm:bg-neutral-950/92">
+          <div
+            className="relative hidden w-[42%] overflow-hidden border-r border-white/40 p-7 lg:flex lg:flex-col dark:border-white/10"
+            style={{ backgroundImage: panelBackground }}
+          >
+            <div
+              className="pointer-events-none absolute -left-10 top-0 h-40 w-40 rounded-full blur-3xl"
+              style={{ backgroundColor: panelGlowStart }}
+            />
+            <div
+              className="pointer-events-none absolute bottom-0 right-0 h-40 w-40 rounded-full blur-3xl"
+              style={{ backgroundColor: panelGlowEnd }}
+            />
+            <div className="relative">
+              <div
+                className="inline-flex items-center gap-2 rounded-full border bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] shadow-sm"
+                style={{
+                  borderColor: toRgba(resolvedAccentColor, 0.22) || resolvedAccentColor,
+                  backgroundColor: toRgba(resolvedAccentColor, 0.08) || "rgba(255,255,255,0.8)",
+                  color: resolvedAccentColor,
+                }}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                {t("Welcome, guest")}
+              </div>
+              <h2 className="mt-5 text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">
+                {brandName || t("QR Menu")}
+              </h2>
+              <p className="mt-3 text-sm leading-7 text-slate-600 dark:text-slate-300">
+                {t("Sign in to sync your profile, orders, and checkout details across visits.")}
+              </p>
+              <div className="mt-6 space-y-3">
+                <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm text-slate-700 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
+                  {t("My Orders")}
+                </div>
+                <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm text-slate-700 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
+                  {t("Saved checkout details")}
+                </div>
+                <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm text-slate-700 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
+                  {t("Active and past orders")}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="relative flex min-w-0 flex-1 flex-col min-h-screen sm:min-h-0">
+            <button
+              type="button"
+              onClick={onClose}
+              className="absolute right-4 top-4 z-20 inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-500 transition hover:text-slate-900 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:text-white"
+              aria-label={t("Close")}
+            >
+              ×
+            </button>
+
+            <div className="min-h-0 flex-1">
+              {view === "register" ? (
+                <RegisterPage
+                  t={t}
+                  onRegister={async (payload) => {
+                    await onRegister?.(payload);
+                    onClose?.();
+                  }}
+                  onGoogleLogin={onGoogleLogin}
+                  onAppleLogin={onAppleLogin}
+                  onGoLogin={() => onViewChange?.("login")}
+                  onContinueGuest={onClose}
+                  onBack={onClose}
+                  accentColor={accentColor}
+                />
+              ) : (
+                <LoginPage
+                  t={t}
+                  onLogin={async (payload) => {
+                    await onLogin?.(payload);
+                    onClose?.();
+                  }}
+                  onRequestEmailOtp={onRequestEmailOtp}
+                  onVerifyEmailOtp={async (payload) => {
+                    await onVerifyEmailOtp?.(payload);
+                    onClose?.();
+                  }}
+                  onGoogleLogin={onGoogleLogin}
+                  onAppleLogin={onAppleLogin}
+                  onGoRegister={() => onViewChange?.("register")}
+                  onContinueGuest={onClose}
+                  onBack={onClose}
+                  accentColor={accentColor}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // Responsibility: pure guest composition, branding, and formatting helpers are extracted under src/features/qrmenu/utils and constants.
 
 const normalizeReservationStatus = (value) =>
