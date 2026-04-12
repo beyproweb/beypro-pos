@@ -1,4 +1,9 @@
 import { API_BASE } from "../../../../utils/api";
+import {
+  DEFAULT_LANGUAGE,
+  normalizeLanguageCode,
+  readStoredLanguage,
+} from "../../../../utils/language";
 import { normalizePhoneForApi } from "../../../../utils/phone";
 
 const STORAGE_KEYS = {
@@ -70,6 +75,18 @@ function normalizePhone(value) {
 function normalizeLanguage(value) {
   const raw = normalizeText(value).split(",")[0];
   return raw ? raw.slice(0, 32) : "";
+}
+
+function resolveAuthRequestLanguage(payload, storageArg) {
+  return (
+    normalizeLanguageCode(payload?.language || payload?.lang) ||
+    readStoredLanguage(storageArg) ||
+    (typeof document !== "undefined"
+      ? normalizeLanguageCode(document.documentElement.lang)
+      : null) ||
+    (typeof navigator !== "undefined" ? normalizeLanguageCode(navigator.language) : null) ||
+    DEFAULT_LANGUAGE
+  );
 }
 
 function normalizeBoolean(value) {
@@ -247,6 +264,34 @@ function sanitizeCustomer(user) {
     language: normalizeLanguage(source.language),
     createdAt: source.createdAt || source.created_at || null,
     updatedAt: source.updatedAt || source.updated_at || null,
+  };
+}
+
+function mergeCustomerAuthResponse(response) {
+  const customer =
+    response?.customer && typeof response.customer === "object" ? response.customer : response;
+  const marketplaceUser =
+    response?.marketplace_user && typeof response.marketplace_user === "object"
+      ? response.marketplace_user
+      : null;
+
+  if (!customer || typeof customer !== "object") return customer;
+
+  const customerPhone = normalizePhone(customer.phone);
+  const marketplacePhone = normalizePhone(marketplaceUser?.phone);
+  const canShareMarketplaceVerification =
+    Boolean(marketplaceUser) && (!customerPhone || !marketplacePhone || customerPhone === marketplacePhone);
+  const phoneVerified =
+    normalizeBoolean(customer.phone_verified) ||
+    (canShareMarketplaceVerification && normalizeBoolean(marketplaceUser?.phone_verified));
+
+  return {
+    ...customer,
+    phone: customerPhone || marketplacePhone || customer.phone || marketplaceUser?.phone || "",
+    phone_verified: phoneVerified,
+    phone_verified_at:
+      customer.phone_verified_at ||
+      (phoneVerified ? marketplaceUser?.phone_verified_at || null : null),
   };
 }
 
@@ -428,9 +473,10 @@ function normalizeAuthError(error) {
 }
 
 function persistCustomerAuthResponse(response, context = {}) {
+  const customerPayload = mergeCustomerAuthResponse(response);
   const customer = saveSessionState(
     {
-      customer: response?.customer,
+      customer: customerPayload,
       token: response?.token,
     },
     context?.storage
@@ -587,7 +633,7 @@ export async function restoreCustomerSession(context = {}) {
     );
     const customer = saveSessionState(
       {
-        customer: payload?.customer,
+        customer: mergeCustomerAuthResponse(payload),
         token,
       },
       context?.storage
@@ -764,13 +810,14 @@ export async function requestCustomerPhoneOtp(payload, context = {}) {
   if (!phone) {
     throw createAuthError("Please enter a valid phone number.");
   }
+  const language = resolveAuthRequestLanguage(payload, context?.storage);
 
   const response = await requestCustomerAuth(
     "/public/customer-auth/phone-otp/send",
     {
       method: "POST",
       headers: buildAuthHeaders(context),
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify({ phone, language }),
     },
     context
   );

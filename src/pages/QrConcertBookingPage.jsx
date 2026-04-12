@@ -968,6 +968,7 @@ export default function QrConcertBookingPage() {
         }
         params.set("_ts", cacheBust);
         const query = params.toString();
+        const authToken = getAuthToken();
         const [response, tablesPayload, unavailablePayload, ordersPayload] = await Promise.all([
           secureFetch(
             `/public/concerts/${encodeURIComponent(identifier)}/events/${encodeURIComponent(
@@ -989,9 +990,11 @@ export default function QrConcertBookingPage() {
             console.warn("Failed to load unavailable concert tables:", error);
             return null;
           }),
-          secureFetch(`/orders?_ts=${encodeURIComponent(cacheBust)}`, {
-            cache: "no-store",
-          }).catch(() => []),
+          authToken
+            ? secureFetch(`/orders?_ts=${encodeURIComponent(cacheBust)}`, {
+                cache: "no-store",
+              }).catch(() => [])
+            : Promise.resolve([]),
         ]);
         if (cancelled) return;
         const hasTablesPayload =

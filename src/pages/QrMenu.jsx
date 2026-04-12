@@ -4612,7 +4612,7 @@ function OrderStatusModal({
       hideNativeHeader={false}
       offsetForAppHeader={false}
       t={t}
-      buildUrl={(path) => apiUrl(path)}
+      buildUrl={(path) => `${API_URL}${path.startsWith("/") ? path : `/${path}`}`}
       appendIdentifier={appendIdentifier}
     />
   );
@@ -4949,7 +4949,14 @@ export default function QrMenu() {
     setIsAutoPhoneVerificationChecking(true);
 
     const sessionPhone = normalizeQrPhone(qrCustomerSession?.phone || "");
+    const sessionAlreadyVerified =
+      qrCustomerSession?.phone_verified === true && QR_PHONE_REGEX.test(sessionPhone);
     let cancelled = false;
+
+    if (sessionAlreadyVerified) {
+      setIsAutoPhoneVerificationChecking(false);
+      return;
+    }
 
     (async () => {
       let alreadyVerified = false;

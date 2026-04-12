@@ -904,6 +904,7 @@ export default function QrReservationBookingPage() {
         }
         params.set("_ts", cacheBust);
         const query = params.toString();
+        const authToken = getAuthToken();
         const [response, tablesPayload, unavailablePayload, ordersPayload] = await Promise.all([
           secureFetch(
             `/public/floor-plan/${encodeURIComponent(identifier)}${query ? `?${query}` : ""}`,
@@ -924,9 +925,11 @@ export default function QrReservationBookingPage() {
             console.warn("Failed to load unavailable reservation tables:", error);
             return null;
           }),
-          secureFetch(`/orders?_ts=${encodeURIComponent(cacheBust)}`, {
-            cache: "no-store",
-          }).catch(() => []),
+          authToken
+            ? secureFetch(`/orders?_ts=${encodeURIComponent(cacheBust)}`, {
+                cache: "no-store",
+              }).catch(() => [])
+            : Promise.resolve([]),
         ]);
         if (cancelled) return;
         const hasTablesPayload =
