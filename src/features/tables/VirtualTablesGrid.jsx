@@ -28,6 +28,27 @@ const DEFAULT_VIEWPORT = {
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
+const findNearestScrollContainer = (startNode) => {
+  if (typeof window === "undefined") return null;
+  let node = startNode?.parentElement || null;
+
+  while (node) {
+    const styles = window.getComputedStyle(node);
+    const overflowY = styles?.overflowY || "";
+    const isScrollable =
+      (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") &&
+      node.scrollHeight > node.clientHeight;
+
+    if (isScrollable) {
+      return node;
+    }
+
+    node = node.parentElement;
+  }
+
+  return null;
+};
+
 const getColumnsForViewport = (viewportWidth) => {
   if (viewportWidth >= 1280) return 4;
   return 2;
@@ -84,7 +105,8 @@ const findRowIndexForOffset = (prefixHeights, offset) => {
   return clamp(left, 0, Math.max(0, prefixHeights.length - 2));
 };
 
-function VirtualTablesGrid({
+function VirtualTablesGrid(
+  {
   items,
   renderItem,
   itemKey,
@@ -96,12 +118,15 @@ function VirtualTablesGrid({
   columnGap = null,
   rowGap = null,
   containerMaxWidth = 1600,
-}) {
+  },
+  ref
+) {
   const renderCount = useRenderCount("TableGrid", { logEvery: 1 });
   const onTableGridProfileRender = React.useMemo(() => createProfilerOnRender("TableGrid"), []);
   const showRenderCounter = isTablePerfDebugEnabled();
   const list = Array.isArray(items) ? items : [];
   const containerRef = React.useRef(null);
+  const scrollContainerRef = React.useRef(null);
   const resizeObserversRef = React.useRef(new Map());
   const rowNodesRef = React.useRef(new Map());
   const rowRefCallbacksRef = React.useRef(new Map());
@@ -118,6 +143,34 @@ function VirtualTablesGrid({
   const [measuredRowHeights, setMeasuredRowHeights] = React.useState({});
   const measuredRowHeightsRef = React.useRef({});
   const dynamicGridEnabled = Number(minColumnWidth) > 0;
+
+  const resolveScrollContainer = React.useCallback(() => {
+    const nextContainer = findNearestScrollContainer(containerRef.current);
+    scrollContainerRef.current = nextContainer;
+    return nextContainer;
+  }, []);
+
+  const scrollToTop = React.useCallback(
+    ({ behavior = "smooth" } = {}) => {
+      const scrollContainer = scrollContainerRef.current || resolveScrollContainer();
+      if (!scrollContainer?.scrollTo) return false;
+      scrollContainer.scrollTo({ top: 0, behavior });
+      return true;
+    },
+    [resolveScrollContainer]
+  );
+
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      scrollToTop,
+    }),
+    [scrollToTop]
+  );
+
+  React.useEffect(() => {
+    resolveScrollContainer();
+  }, [resolveScrollContainer]);
 
   React.useEffect(() => {
     measuredRowHeightsRef.current = measuredRowHeights || {};
@@ -541,4 +594,6 @@ const areVirtualTablesGridPropsEqual = (prevProps, nextProps) => {
   return isEqual;
 };
 
-export default React.memo(VirtualTablesGrid, areVirtualTablesGridPropsEqual);
+const ForwardedVirtualTablesGrid = React.forwardRef(VirtualTablesGrid);
+
+export default React.memo(ForwardedVirtualTablesGrid, areVirtualTablesGridPropsEqual);

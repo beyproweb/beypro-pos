@@ -29,6 +29,26 @@ const AREA_FILTER_PAID = "__PAID__";
 const AREA_FILTER_FREE = "__FREE__";
 const AREA_FILTER_VIEW_BOOKING = "__VIEW_BOOKING__";
 const AREA_FILTER_SONG_REQUEST = "__SONG_REQUEST__";
+const findNearestScrollContainer = (startNode) => {
+  if (typeof window === "undefined") return null;
+  let node = startNode?.parentElement || null;
+
+  while (node) {
+    const styles = window.getComputedStyle(node);
+    const overflowY = styles?.overflowY || "";
+    const isScrollable =
+      (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") &&
+      node.scrollHeight > node.clientHeight;
+
+    if (isScrollable) {
+      return node;
+    }
+
+    node = node.parentElement;
+  }
+
+  return null;
+};
 const formatDateInputValue = (value = new Date()) => {
   const date = value instanceof Date ? value : new Date(value);
   if (!Number.isFinite(date.getTime())) return "";
@@ -412,8 +432,11 @@ function TablesView({
   const renderCount = useRenderCount("TableList", { logEvery: 1 });
   const onTableListProfileRender = React.useMemo(() => createProfilerOnRender("TableList"), []);
   const showRenderCounter = isTablePerfDebugEnabled();
+  const viewRootRef = React.useRef(null);
+  const viewScrollContainerRef = React.useRef(null);
   const areaTabsRailRef = React.useRef(null);
   const areaTabRefs = React.useRef(new Map());
+  const tableGridRef = React.useRef(null);
   const tableTimers = useTableTimers({ ordersByTable, productPrepById });
   const [bookingSearch, setBookingSearch] = React.useState("");
   const [bookingDateFrom, setBookingDateFrom] = React.useState(() => formatDateInputValue(new Date()));
@@ -831,6 +854,20 @@ function TablesView({
     },
     [setActiveArea]
   );
+  const resolveViewScrollContainer = React.useCallback(() => {
+    const nextContainer = findNearestScrollContainer(viewRootRef.current);
+    viewScrollContainerRef.current = nextContainer;
+    return nextContainer;
+  }, []);
+  const scrollViewToTop = React.useCallback(() => {
+    if (tableGridRef.current?.scrollToTop?.({ behavior: "smooth" })) {
+      return;
+    }
+
+    const scrollContainer = viewScrollContainerRef.current || resolveViewScrollContainer();
+    if (!scrollContainer?.scrollTo) return;
+    scrollContainer.scrollTo({ top: 0, behavior: "smooth" });
+  }, [resolveViewScrollContainer]);
   const scrollAreaTabIntoView = React.useCallback((area) => {
     const rail = areaTabsRailRef.current;
     const tab = areaTabRefs.current.get(area);
@@ -851,11 +888,12 @@ function TablesView({
   const handleAreaTabClick = React.useCallback(
     (area) => {
       handleAreaSelect(area);
+      scrollViewToTop();
       window.requestAnimationFrame(() => {
         scrollAreaTabIntoView(area);
       });
     },
-    [handleAreaSelect, scrollAreaTabIntoView]
+    [handleAreaSelect, scrollAreaTabIntoView, scrollViewToTop]
   );
   const getAreaTabClassName = React.useCallback(
     (isActive, activeClassName, inactiveClassName) =>
@@ -1035,12 +1073,16 @@ function TablesView({
   const getTableKey = React.useCallback((table) => table.tableNumber, []);
 
   React.useEffect(() => {
+    resolveViewScrollContainer();
+  }, [resolveViewScrollContainer]);
+
+  React.useEffect(() => {
     scrollAreaTabIntoView(activeArea);
   }, [activeArea, scrollAreaTabIntoView]);
 
   return (
     <React.Profiler id="TableList" onRender={onTableListProfileRender}>
-      <div className="flex w-full flex-col items-center pb-28 sm:pb-32">
+      <div ref={viewRootRef} className="flex w-full flex-col items-center pb-28 sm:pb-32">
         {showRenderCounter && (
           <div className="mb-2 flex w-full justify-end px-4 sm:px-8">
             <RenderCounter label="TableList" value={renderCount} />
@@ -1498,6 +1540,7 @@ function TablesView({
 
       {activeArea !== AREA_FILTER_VIEW_BOOKING && activeArea !== AREA_FILTER_SONG_REQUEST ? (
         <VirtualTablesGrid
+          ref={tableGridRef}
           items={visibleTables}
           renderItem={renderTable}
           itemKey={getTableKey}

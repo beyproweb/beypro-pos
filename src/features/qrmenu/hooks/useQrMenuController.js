@@ -199,8 +199,59 @@ const normalizeEntryDateYmd = (value) => {
   return `${yyyy}-${mm}-${dd}`;
 };
 const normalizeCancellationReason = (value) => String(value ?? "").trim();
+const normalizeComparableText = (value) => String(value ?? "").trim().toLowerCase();
+const normalizeComparablePhone = (value) => String(value ?? "").replace(/\D+/g, "");
 const resolveCancellationReason = (primary, fallback = "") =>
   normalizeCancellationReason(primary) || normalizeCancellationReason(fallback);
+const readScopedCustomerSession = (storageApi) => {
+  try {
+    const raw = storageApi?.getItem?.("qr_customer_session");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+const extractCustomerSessionHints = (session) => {
+  if (!session || typeof session !== "object") {
+    return { customerId: null, email: "", phone: "", name: "" };
+  }
+  const customerId = Number(session?.id || session?.customer_id || session?.customerId || 0);
+  return {
+    customerId: Number.isFinite(customerId) && customerId > 0 ? customerId : null,
+    email: normalizeComparableText(session?.email),
+    phone: normalizeComparablePhone(session?.phone),
+    name: normalizeComparableText(session?.username || session?.name),
+  };
+};
+const orderMatchesCustomerHints = (order, hints) => {
+  if (!order || typeof order !== "object" || !hints) return false;
+  const orderCustomerId = Number(
+    order?.customer_id ?? order?.customerId ?? order?.customer?.id ?? order?.reservation?.customer_id ?? 0
+  );
+  const orderEmail = normalizeComparableText(
+    order?.customer_email ?? order?.email ?? order?.customer?.email ?? order?.reservation?.customer_email
+  );
+  const orderPhone = normalizeComparablePhone(
+    order?.customer_phone ?? order?.phone ?? order?.customer?.phone ?? order?.reservation?.customer_phone
+  );
+  const orderName = normalizeComparableText(
+    order?.customer_name ?? order?.username ?? order?.name ?? order?.customer?.username ?? order?.customer?.name
+  );
+
+  return Boolean(
+    (hints.customerId && orderCustomerId === hints.customerId) ||
+      (hints.email && orderEmail && orderEmail === hints.email) ||
+      (hints.phone && orderPhone && orderPhone === hints.phone) ||
+      (hints.name && orderName && orderName === hints.name)
+  );
+};
+const toOrderTimestamp = (value) => {
+  if (!value) return 0;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 const extractCancellationReason = (source) => {
   if (!source || typeof source !== "object") return "";
   return resolveCancellationReason(
@@ -416,6 +467,63 @@ const shareUrl = useMemo(() => {
 const parseArray = useCallback((raw) => {
   return Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
 }, []);
+const resolveActiveOrderFromCustomerSession = useCallback(async () => {
+  const session = readScopedCustomerSession(storage);
+  const hints = extractCustomerSessionHints(session);
+  const queryPaths = [];
+  if (hints.customerId) {
+    queryPaths.push(`/orders?customer_id=${encodeURIComponent(hints.customerId)}`);
+  }
+  if (hints.phone) {
+    queryPaths.push(`/orders?customer_phone=${encodeURIComponent(hints.phone)}`);
+  }
+  if (hints.email) {
+    queryPaths.push(`/orders?customer_email=${encodeURIComponent(hints.email)}`);
+  }
+  if (hints.name) {
+    queryPaths.push(`/orders?customer_name=${encodeURIComponent(hints.name)}`);
+  }
+  if (queryPaths.length === 0) return null;
+
+  const token = getStoredToken();
+  const opts = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+  const matches = [];
+  const seenIds = new Set();
+
+  for (const path of queryPaths) {
+    try {
+      const payload = await secureFetch(appendIdentifier(path), opts);
+      const rows = parseArray(payload);
+      rows.forEach((row) => {
+        const rowId = Number(row?.id);
+        if (!Number.isFinite(rowId) || rowId <= 0 || seenIds.has(rowId)) return;
+        if (!orderMatchesCustomerHints(row, hints)) return;
+        const status = String(row?.status || "").toLowerCase();
+        if (isTerminalOrderStatus(status)) return;
+        seenIds.add(rowId);
+        matches.push(row);
+      });
+    } catch {
+      // Try the remaining query variants.
+    }
+  }
+
+  if (matches.length === 0) return null;
+
+  matches.sort((left, right) => {
+    const leftTs = Math.max(
+      toOrderTimestamp(left?.updated_at || left?.updatedAt),
+      toOrderTimestamp(left?.created_at || left?.createdAt)
+    );
+    const rightTs = Math.max(
+      toOrderTimestamp(right?.updated_at || right?.updatedAt),
+      toOrderTimestamp(right?.created_at || right?.createdAt)
+    );
+    return rightTs - leftTs;
+  });
+
+  return matches[0] || null;
+}, [appendIdentifier, getStoredToken, parseArray, storage]);
 const parseOrderItemsPayload = useCallback((raw) => {
   if (Array.isArray(raw)) return raw;
   if (Array.isArray(raw?.data)) return raw.data;
@@ -1758,8 +1866,53 @@ if (savedTable) {
   }
 }
 
+      // 3️⃣ Fallback: if the user re-logged in and the active order id is gone,
+      // rebuild status context from the current customer session.
+      const sessionOrder = await resolveActiveOrderFromCustomerSession();
+      if (sessionOrder) {
+        const status = String(sessionOrder?.status || "").toLowerCase();
+        const reservationAwareStatus = resolveReservationAwareStatus(sessionOrder, status);
+        if (isCheckedInReservationEntry(sessionOrder, reservationAwareStatus)) {
+          markOrderCheckedIn(sessionOrder);
+        }
+        const stickyStatus =
+          Number.isFinite(Number(sessionOrder?.id)) &&
+          checkedInOrdersRef.current.has(Number(sessionOrder?.id))
+            ? "checked_in"
+            : reservationAwareStatus;
+        const normalizedOrderType = String(sessionOrder?.order_type || "").toLowerCase();
+        const nextOrderType =
+          normalizedOrderType === "table" || normalizedOrderType === "reservation"
+            ? "table"
+            : "online";
+        const nextTable =
+          nextOrderType === "table" ? Number(sessionOrder?.table_number || sessionOrder?.tableNumber) || null : null;
 
-      // 3️⃣ Nothing to restore
+        setOrderStatus("success");
+        setShowStatus(wantsStatusOpen);
+        storage.setItem("qr_show_status", wantsStatusOpen ? "1" : "0");
+        setActiveOrder(sessionOrder);
+        setOrderScreenStatus(stickyStatus || null);
+        setLoyaltyEligibilityFromOrder(sessionOrder);
+        setOrderCancelReason((prev) =>
+          isCancelledLikeStatus(reservationAwareStatus)
+            ? resolveCancellationReason(getOrderCancellationReason(sessionOrder), prev)
+            : ""
+        );
+        setOrderType(nextOrderType);
+        setTable(nextTable);
+        setOrderId(sessionOrder.id);
+        storage.setItem("qr_active_order_id", String(sessionOrder.id));
+        storage.setItem("qr_orderType", nextOrderType);
+        if (nextOrderType === "table" && Number.isFinite(Number(nextTable)) && Number(nextTable) > 0) {
+          storage.setItem("qr_table", String(nextTable));
+          storage.setItem("qr_selected_table", String(nextTable));
+        }
+        return;
+      }
+
+
+      // 4️⃣ Nothing to restore
       setShowStatus(false);
       storage.setItem("qr_show_status", "0");
       storage.removeItem(FORCE_STATUS_UNTIL_CLOSE_KEY);
@@ -1772,7 +1925,7 @@ if (savedTable) {
       resetToTypePicker();
     }
   })();
-}, [appendIdentifier, qrMode, initialTableFromUrl]);
+}, [appendIdentifier, getStoredToken, initialTableFromUrl, qrMode, resolveActiveOrderFromCustomerSession]);
 
   const dismissReservationStatusLock = useCallback(
     ({ clearActiveOrder = false, keepStatusOpen = false } = {}) => {

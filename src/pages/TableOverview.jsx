@@ -1676,12 +1676,18 @@ const handleCheckinReservation = useCallback(
       (shouldPreferStandaloneReservationRecord
         ? standaloneReservationRecordId
         : null) ??
+        reservationInfo?.reservation_order_id ??
+        reservationInfo?.reservationOrderId ??
         reservationInfo?.order_id ??
         reservationInfo?.orderId ??
         reservationInfo?.id ??
+        table?.reservationFallback?.reservation_order_id ??
+        table?.reservationFallback?.reservationOrderId ??
         table?.reservationFallback?.order_id ??
         table?.reservationFallback?.orderId ??
         table?.reservationFallback?.id ??
+        table?.order?.reservation?.reservation_order_id ??
+        table?.order?.reservation?.reservationOrderId ??
         table?.order?.reservation?.order_id ??
         table?.order?.reservation?.orderId ??
         table?.order?.reservation?.id
