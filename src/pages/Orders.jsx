@@ -11,6 +11,8 @@ import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { useSetting } from "../components/hooks/useSetting";
 import { DEFAULT_TRANSACTION_SETTINGS } from "../constants/transactionSettingsDefaults";
+import { useSessionLock } from "../context/SessionLockContext";
+import { useAuth } from "../context/AuthContext";
 import { printViaBridge } from "../utils/receiptPrinter";
 import { fetchOrderWithItems } from "../utils/orderPrinting";
 import { useOrdersController } from "../features/orders/controller/useOrdersController";
@@ -54,6 +56,8 @@ function uiReducer(state, action) {
 export default function Orders({ orders: propOrders }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
+  const { lock } = useSessionLock();
   const paymentMethods = usePaymentMethods();
   const methodOptionSource = useMemo(
     () => (paymentMethods.length ? paymentMethods : DEFAULT_PAYMENT_METHODS),
@@ -123,6 +127,10 @@ export default function Orders({ orders: propOrders }) {
     DEFAULT_TRANSACTION_SETTINGS
   );
   useSetting("transactions", setTransactionSettings, DEFAULT_TRANSACTION_SETTINGS);
+  const [userSettings, setUserSettings] = useState({ pinRequired: true });
+  useSetting("users", setUserSettings, { pinRequired: true });
+  const isPinLoginEnabled = userSettings?.pinRequired !== false;
+  const handleManualLock = currentUser && isPinLoginEnabled ? () => lock("manual") : undefined;
 
   const [notificationSettings, setNotificationSettings] = useState({
     enabled: true,
@@ -416,6 +424,7 @@ export default function Orders({ orders: propOrders }) {
         assignedOrderCountForSelectedDriver={assignedOrderCountForSelectedDriver}
         selectedDriverId={selectedDriverId}
         onSelectedDriverChange={uiActions.handleSelectedDriverChange}
+        onLockClick={handleManualLock}
         t={t}
       />
 

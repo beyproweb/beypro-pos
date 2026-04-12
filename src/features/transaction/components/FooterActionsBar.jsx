@@ -6,6 +6,7 @@ import {
   Trash2,
   CircleX,
   BadgePercent,
+  Lock,
 } from "lucide-react";
 
 function FooterActionsBar({
@@ -30,6 +31,7 @@ function FooterActionsBar({
   footerCancelDisabled,
   openCancelModal,
   setShowDiscountModal,
+  onLockClick,
 }) {
   return (
     <div className="hidden lg:block fixed bottom-0 left-0 right-0 z-30 w-full border-t border-slate-200/70 bg-slate-50/90 px-3 py-2.5 backdrop-blur-md dark:border-slate-800/70 dark:bg-slate-950/75">
@@ -119,6 +121,21 @@ function FooterActionsBar({
           <BadgePercent className="h-5 w-5" aria-hidden="true" />
           {t("Discount")}
         </button>
+
+        {onLockClick && (
+          <button
+            type="button"
+            onClick={onLockClick}
+            aria-label={t("Lock", { defaultValue: "Lock" })}
+            title={t("Lock", { defaultValue: "Lock" })}
+            className="ml-auto inline-flex min-w-[180px] items-center justify-center gap-3 rounded-2xl border border-slate-900/10 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 px-5 py-2.5 text-base font-semibold text-white shadow-[0_16px_40px_rgba(15,23,42,0.18)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_45px_rgba(15,23,42,0.22)] active:scale-[0.98] dark:border-white/10"
+          >
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white/12 ring-1 ring-white/15">
+              <Lock className="h-5 w-5" aria-hidden="true" />
+            </span>
+            {t("Lock", { defaultValue: "Lock" })}
+          </button>
+        )}
       </div>
     </div>
   );

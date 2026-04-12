@@ -25,7 +25,9 @@ import {
   Wallet,
 } from "lucide-react";
 import { useHeader } from "../context/HeaderContext";
+import { useSessionLock } from "../context/SessionLockContext";
 import { useRegisterGuard } from "../hooks/useRegisterGuard";
+import { useSetting } from "../components/hooks/useSetting";
 import { toCategorySlug } from "../utils/slugCategory"; 
 import { useAuth } from "../context/AuthContext";
 import { useAppearance } from "../context/AppearanceContext";
@@ -150,9 +152,14 @@ export default function TransactionScreen() {
   const location = useLocation();
   const { t, i18n } = useTranslation(); // ✅ Enable translations
   const { currentUser } = useAuth();
+  const { lock } = useSessionLock();
   const appearanceContext = useAppearance();
   const appearance = appearanceContext?.appearance;
+  const [userSettings, setUserSettings] = useState({ pinRequired: true });
   const [subOrders, setSubOrders] = useState([]);
+  useSetting("users", setUserSettings, { pinRequired: true });
+  const isPinLoginEnabled = userSettings?.pinRequired !== false;
+  const handleManualLock = currentUser && isPinLoginEnabled ? () => lock("manual") : undefined;
   const suborderItems = useMemo(() => {
     if (!Array.isArray(subOrders)) return [];
     return subOrders.flatMap((sub) => normalizeSuborderItems(sub?.items));
@@ -2986,7 +2993,7 @@ const vm = useMemo(
     </div>
   </section>
 
-      <FooterActionsBar {...vm.footerProps} />
+      <FooterActionsBar {...vm.footerProps} onLockClick={handleManualLock} />
 
     </div>
 

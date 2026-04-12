@@ -34,7 +34,7 @@ import {
   Globe,
   Trash2,
 } from "lucide-react";
-import { Card, CardContent } from "../components/ui/card";
+import { Card } from "../components/ui/card";
 import { toast } from "react-toastify";
 import { useHasPermission } from "../components/hooks/useHasPermission";
 import useDateRangeState from "../hooks/reports/useDateRangeState";
@@ -533,9 +533,9 @@ export default function Reports() {
   };
 
   const ChartCard = ({ title, children, actions }) => (
-    <div className="bg-white dark:bg-gray-900 p-4 rounded-2xl shadow space-y-2 h-full">
-      <div className="flex justify-between items-center">
-        <h3 className="font-semibold text-lg text-gray-700 dark:text-white">{title}</h3>
+    <div className="h-full space-y-4 rounded-[28px] border border-slate-200/70 bg-white/95 p-4 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.35)] dark:border-slate-800 dark:bg-slate-900/90 sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h3 className="text-lg font-semibold text-slate-800 dark:text-white sm:text-xl">{title}</h3>
         {actions}
       </div>
       <div>{children}</div>
@@ -543,7 +543,8 @@ export default function Reports() {
   );
 
   return (
-    <div className="min-h-screen px-6 py-8 space-y-8">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.14),_transparent_28%),linear-gradient(180deg,_#f8fbff_0%,_#f4f7fb_32%,_#eef2f7_100%)] px-3 py-4 sm:px-6 sm:py-8">
+      <div className="mx-auto max-w-7xl space-y-5 sm:space-y-8">
       <DateRangeSelector
         range={dateRange}
         onRangeChange={setDateRange}
@@ -552,34 +553,193 @@ export default function Reports() {
         onCustomStartChange={setCustomStart}
         onCustomEndChange={setCustomEnd}
         todayIcon={<CalendarIcon className="w-4 h-4" />}
+        className="sticky top-3 z-20 rounded-[28px] border border-white/70 bg-white/80 p-3 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.45)] backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/80 sm:p-4"
       >
-        <div className="flex gap-2">
+        <div className="contents sm:flex sm:gap-2">
           <Button
             variant="outline"
             onClick={() => setShowExportModal(true)}
-            className="flex items-center gap-2"
+            className="inline-flex h-8 w-full min-w-0 items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-semibold leading-none tracking-tight whitespace-nowrap sm:h-11 sm:gap-2 sm:rounded-2xl sm:px-4 sm:text-sm sm:tracking-normal"
           >
-            <Download className="w-4 h-4" />
-            {t("Export")}
+            <Download className="hidden h-3.5 w-3.5 sm:block sm:h-4 sm:w-4" />
+            <span className="sm:hidden">{t("Exp")}</span>
+            <span className="hidden sm:inline">{t("Export")}</span>
           </Button>
+          <Link to="/reports/operational" className="block w-full sm:w-auto">
+            <Button
+              variant="default"
+              className="h-8 w-full min-w-0 rounded-xl bg-indigo-600 px-1 text-[10px] font-semibold leading-none tracking-tight whitespace-nowrap shadow-lg shadow-indigo-500/20 hover:bg-indigo-700 sm:h-11 sm:rounded-2xl sm:px-4 sm:text-sm sm:tracking-normal"
+            >
+              <span className="sm:hidden">{t("Ops")}</span>
+              <span className="hidden sm:inline">{t("Operational")}</span>
+            </Button>
+          </Link>
         </div>
       </DateRangeSelector>
 
-      <div className="rounded-2xl border border-slate-200 bg-gradient-to-r from-sky-50 to-indigo-50 px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-slate-700">
-            {t("Operational Efficiency")}
+      <SectionState
+        loading={overviewLoading || cashHistoryLoading}
+        error={overviewError || cashHistoryError}
+        onRetry={() => {
+          refetchOverview();
+          refetchCashHistory();
+        }}
+        loadingMessage={sectionLoadingMessage}
+      >
+        <div className="rounded-[28px] border border-slate-200/70 bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-[0_30px_80px_-40px_rgba(15,23,42,0.35)] overflow-hidden">
+          <div className="border-b border-slate-200/70 px-4 py-4 sm:px-6 sm:py-5">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-3 text-slate-700">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-200">
+                  <Wallet className="h-5 w-5 text-slate-600" />
+                </span>
+                <div>
+                  <h3 className="text-base font-semibold sm:text-lg">{t("Cash Register")}</h3>
+                  <p className="text-xs text-slate-500 sm:text-sm">
+                    {t("Opening cash, live availability, and daily events")}
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="text-xs text-slate-500">
-            {t("New dashboard that correlates customers, staff hours, and cleaning signals.")}
-          </div>
+
+          {(() => {
+            const todayStr = customStart || from;
+            const isRegisterOpenToday =
+              String(cashRegisterState || "").toLowerCase() === "open" &&
+              dateRange === "today";
+
+            const filteredHistory = cashRegisterHistory.filter((row) => {
+              const rowDate = row.date?.slice(0, 10);
+              if (!rowDate) return false;
+              if (dateRange === "today") return rowDate === todayStr;
+              if (dateRange === "week") {
+                return rowDate >= from && rowDate <= to;
+              }
+              if (dateRange === "custom") {
+                return rowDate >= customStart && rowDate <= customEnd;
+              }
+              return true;
+            });
+
+            const hasTodayRow = filteredHistory.some(
+              (row) => row?.date?.slice(0, 10) === todayStr
+            );
+            const historyRows = isRegisterOpenToday && !hasTodayRow
+              ? [
+                  {
+                    date: todayStr,
+                    opening_cash: cashOpening,
+                    closing_cash: 0,
+                    cash_sales: 0,
+                    supplier_expenses: 0,
+                    staff_expenses: 0,
+                    register_expenses: 0,
+                    register_entries: 0,
+                    __syntheticOpen: true,
+                  },
+                  ...filteredHistory,
+                ]
+              : filteredHistory;
+
+            return (
+              <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 sm:gap-4 sm:p-6 lg:grid-cols-3 xl:grid-cols-4">
+                {historyRows.map((row) => {
+                  const dayKey = row?.date?.slice(0, 10) || "";
+                  const eventsForDay = groupedRegisterEvents[dayKey] || [];
+                  const openingCash = parseFloat(row.opening_cash || 0);
+                  const cashSales = parseFloat(row.cash_sales || 0);
+                  const registerEntries = parseFloat(row.register_entries || 0);
+                  const supplierExpenses = parseFloat(row.supplier_expenses || 0);
+                  const staffExpenses = parseFloat(row.staff_expenses || 0);
+                  const registerExpenses = parseFloat(row.register_expenses || 0);
+                  const expensesForDay =
+                    supplierExpenses + staffExpenses + registerExpenses;
+                  const computedAvailable =
+                    openingCash + cashSales + registerEntries - expensesForDay;
+
+                  const isTodayRow = dayKey === todayStr;
+                  const showLiveAvailable =
+                    isTodayRow && isRegisterOpenToday && !row.closing_cash;
+                  const availableForDisplay = showLiveAvailable
+                    ? parseFloat(cashAvailable || 0)
+                    : computedAvailable;
+
+                  return (
+                    <div
+                      key={dayKey || row.date}
+                      className="rounded-3xl border border-slate-200/70 bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.2)]"
+                    >
+                      <div className="flex h-full flex-col gap-3 p-4 sm:p-5">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-3 text-sm font-semibold text-slate-700">
+                            <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-emerald-100">
+                              <Wallet className="h-4 w-4 text-emerald-600" />
+                            </span>
+                            <span className="text-sm sm:text-base">
+                              {new Date(row.date).toLocaleDateString()}
+                            </span>
+                          </div>
+                          {showLiveAvailable ? (
+                            <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold text-emerald-700">
+                              {t("Open")}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="space-y-2 text-sm text-slate-600">
+                          <div className="flex justify-between gap-3">
+                            <span>{t("Opening Cash")}</span>
+                            <span className="font-semibold text-slate-900">
+                              {formatCurrency(openingCash)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-3">
+                            <span>{t("Cash Sales")}</span>
+                            <span className="font-semibold text-slate-900">
+                              {formatCurrency(cashSales)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-3">
+                            <span>{t("Expenses")}</span>
+                            <span className="font-semibold text-slate-900">
+                              {formatCurrency(expensesForDay)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-3 rounded-2xl bg-slate-100/80 px-3 py-2">
+                            <span>{t("Cash Available")}</span>
+                            <span className="font-semibold text-slate-900">
+                              {formatCurrency(availableForDisplay)}
+                            </span>
+                          </div>
+                        </div>
+
+                        <details className="mt-auto text-xs text-slate-500">
+                          <summary className="cursor-pointer font-medium underline underline-offset-2">
+                            {t("Show Events")}
+                          </summary>
+                          <ul className="mt-2 space-y-1">
+                            {eventsForDay.map((event) => (
+                              <li key={event.id} className="flex justify-between gap-2">
+                                <span className="truncate">
+                                  {event.note || event.reason}
+                                </span>
+                                <span className="font-medium text-slate-700">
+                                  {formatCurrency(parseFloat(event.amount || 0))}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
-        <Link to="/reports/operational">
-          <Button variant="default" className="bg-indigo-600 hover:bg-indigo-700">
-            {t("Open Operational Report")}
-          </Button>
-        </Link>
-      </div>
+      </SectionState>
 
       <SectionState
         loading={false}
@@ -591,83 +751,83 @@ export default function Reports() {
         loadingMessage={sectionLoadingMessage}
       >
         <div className="grid gap-4 lg:gap-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
             <div className="rounded-3xl overflow-hidden border border-blue-200/60 shadow-[0_20px_60px_-30px_rgba(30,64,175,0.45)] bg-gradient-to-br from-blue-400 via-blue-600 to-indigo-700 text-white">
-              <div className="p-6 flex flex-col gap-3">
+              <div className="flex h-full flex-col gap-2 p-4 sm:gap-3 sm:p-6">
                 <div className="flex items-center gap-3 text-sm font-semibold">
-                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20">
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/20">
                     <CalendarIcon className="h-5 w-5 text-white" />
                   </span>
-                  <span className="text-lg">{t("Daily Sales")}</span>
+                  <span className="text-sm sm:text-lg">{t("Daily Sales")}</span>
                 </div>
-                <div className="text-3xl sm:text-4xl font-extrabold tracking-tight">
+                <div className="text-xl font-extrabold tracking-tight sm:text-4xl">
                   {kpiLoading ? t("Loading...") : formatCurrency(dailySales)}
                 </div>
-                <div className="text-sm text-blue-100/90">
+                <div className="mt-auto text-xs text-blue-100/90 sm:text-sm">
                   {kpiLoading ? t("Updating data") : t("Updated just now")}
                 </div>
               </div>
             </div>
 
             <div className="rounded-3xl border border-slate-200/70 bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.25)]">
-              <div className="p-6 flex flex-col gap-3">
-                <div className="flex items-center justify-between">
+              <div className="flex h-full flex-col gap-2 p-4 sm:gap-3 sm:p-6">
+                <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-3 text-sm font-semibold text-slate-700">
-                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100">
+                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-100">
                       <TrendingUp className="h-5 w-5 text-emerald-600" />
                     </span>
-                    <span className="text-lg">{t("Profit")}</span>
+                    <span className="text-sm sm:text-lg">{t("Profit")}</span>
                   </div>
                   <button
                     type="button"
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm"
+                    className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm"
                     aria-label={t("Download")}
                   >
                     <Download className="h-5 w-5" />
                   </button>
                 </div>
-                <div className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+                <div className="text-xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
                   {kpiLoading ? t("Loading...") : formatCurrency(profit)}
                 </div>
-                <div className="text-sm text-emerald-600 font-medium">
+                <div className="mt-auto text-xs font-medium text-emerald-600 sm:text-sm">
                   {kpiLoading ? t("Updating data") : t("Updated just now")}
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
             <div className="rounded-3xl border border-slate-200/70 bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.25)]">
-              <div className="p-6 flex flex-col gap-3">
+              <div className="flex h-full flex-col gap-2 p-4 sm:gap-3 sm:p-6">
                 <div className="flex items-center gap-3 text-sm font-semibold text-slate-700">
-                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-200">
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-200">
                     <Wallet className="h-5 w-5 text-slate-600" />
                   </span>
-                  <span className="text-lg">{t("Net Sales")}</span>
+                  <span className="text-sm sm:text-lg">{t("Net Sales")}</span>
                 </div>
-                <div className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+                <div className="text-xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
                   {kpiLoading ? t("Loading...") : formatCurrency(netSales)}
                 </div>
-                <div className="text-sm text-slate-500">
+                <div className="mt-auto text-xs text-slate-500 sm:text-sm">
                   {kpiLoading ? t("Updating data") : t("Updated just now")}
                 </div>
               </div>
             </div>
 
             <div className="rounded-3xl border border-rose-200/70 bg-gradient-to-br from-white via-rose-50 to-rose-100 shadow-[0_20px_60px_-30px_rgba(190,18,60,0.25)]">
-              <div className="p-6 flex flex-col gap-3">
+              <div className="flex h-full flex-col gap-2 p-4 sm:gap-3 sm:p-6">
                 <div className="flex items-center gap-3 text-sm font-semibold text-rose-700">
-                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-rose-100">
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rose-100">
                     <CreditCard className="h-5 w-5 text-rose-600" />
                   </span>
-                  <span className="text-lg">
+                  <span className="text-sm sm:text-lg">
                     {dateRange === "today" ? t("Expenses Today") : t("Expenses")}
                   </span>
                 </div>
-                <div className="text-3xl sm:text-4xl font-extrabold tracking-tight text-rose-600">
+                <div className="text-xl font-extrabold tracking-tight text-rose-600 sm:text-4xl">
                   {expensesKpiLoading ? t("Loading...") : formatCurrency(expensesToday)}
                 </div>
-                <div className="text-sm text-rose-500">
+                <div className="text-xs text-rose-500 sm:text-sm">
                   {expensesKpiLoading ? t("Updating data") : t("Updated just now")}
                 </div>
                 {expensesKpiError ? (
@@ -677,47 +837,92 @@ export default function Reports() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-3">
             <div className="rounded-3xl border border-slate-200/70 bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.2)]">
-              <div className="p-5 flex flex-col gap-2">
+              <div className="flex h-full flex-col gap-2 p-4 sm:p-5">
                 <div className="flex items-center gap-3 text-sm font-semibold text-slate-700">
                   <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-blue-100">
                     <BarChart3 className="h-4 w-4 text-blue-600" />
                   </span>
-                  <span className="text-base">{t("Gross Sales")}</span>
+                  <span className="text-sm sm:text-base">{t("Gross Sales")}</span>
                 </div>
-                <div className="text-2xl font-bold text-slate-900">
+                <div className="text-lg font-bold text-slate-900 sm:text-2xl">
                   {kpiLoading ? t("Loading...") : formatCurrency(grossSales)}
                 </div>
               </div>
             </div>
 
             <div className="rounded-3xl border border-slate-200/70 bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.2)]">
-              <div className="p-5 flex flex-col gap-2">
+              <div className="flex h-full flex-col gap-2 p-4 sm:p-5">
                 <div className="flex items-center gap-3 text-sm font-semibold text-slate-700">
                   <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-indigo-100">
                     <Receipt className="h-4 w-4 text-indigo-600" />
                   </span>
-                  <span className="text-base">{t("Avg Order Value")}</span>
+                  <span className="text-sm sm:text-base">{t("Avg Order Value")}</span>
                 </div>
-                <div className="text-2xl font-bold text-slate-900">
+                <div className="text-lg font-bold text-slate-900 sm:text-2xl">
                   {kpiLoading ? t("Loading...") : formatCurrency(summary?.average_order_value || 0)}
                 </div>
               </div>
             </div>
 
-            <div className="rounded-3xl border border-slate-200/70 bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.2)]">
-              <div className="p-5 flex flex-col gap-2">
+            <div className="col-span-2 rounded-3xl border border-slate-200/70 bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.2)] xl:col-span-1">
+              <div className="flex h-full flex-col gap-2 p-4 sm:p-5">
                 <div className="flex items-center gap-3 text-sm font-semibold text-slate-700">
                   <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-amber-100">
                     <ShoppingBag className="h-4 w-4 text-amber-600" />
                   </span>
-                  <span className="text-base">{t("Total Items Sold")}</span>
+                  <span className="text-sm sm:text-base">{t("Total Items Sold")}</span>
                 </div>
-                <div className="text-2xl font-bold text-slate-900">
+                <div className="text-lg font-bold text-slate-900 sm:text-2xl">
                   {kpiLoading ? t("Loading...") : totalItemsSold.toLocaleString()}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </SectionState>
+
+      <SectionState
+        loading={overviewLoading}
+        error={overviewError}
+        onRetry={refetchOverview}
+        loadingMessage={sectionLoadingMessage}
+      >
+        <div className="rounded-[28px] border border-slate-200/70 bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-[0_30px_80px_-40px_rgba(15,23,42,0.35)] overflow-hidden">
+          <div className="border-b border-slate-200/70 px-4 py-4 sm:px-6 sm:py-5">
+            <h3 className="text-lg font-semibold text-slate-800 sm:text-2xl">
+              {t("Sales by Payment Method")}
+            </h3>
+          </div>
+          <div className="space-y-4 p-4 sm:space-y-6 sm:p-6">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+              {paymentData.map(({ method, value, percent }) => (
+                <div
+                  key={method}
+                  className="rounded-3xl border border-slate-200/70 bg-gradient-to-br from-white via-slate-50 to-slate-100 p-4 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.2)] sm:p-5"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-slate-700 sm:text-base">
+                        {method}
+                      </div>
+                      <div className="mt-2 text-xl font-extrabold tracking-tight text-indigo-700 sm:text-2xl">
+                        {formatCurrency(value)}
+                      </div>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-indigo-100 px-2.5 py-1 text-[11px] font-semibold text-indigo-700">
+                      {(percent || 0).toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between rounded-2xl bg-slate-100/80 px-4 py-3 text-sm text-slate-600">
+              <span className="font-medium">{t("Total Payments")}</span>
+              <span className="text-base font-semibold text-indigo-700 sm:text-lg">
+                {formatCurrency(totalPayments)}
+              </span>
             </div>
           </div>
         </div>
@@ -745,7 +950,7 @@ export default function Reports() {
             </div>
           </div>
 
-          <div className="mt-4 grid gap-4 lg:grid-cols-4">
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
             <div className="rounded-2xl border border-rose-200/60 bg-gradient-to-br from-white via-rose-50 to-rose-100 p-4 shadow-sm dark:border-rose-900/30 dark:from-rose-950/10 dark:via-rose-900/20 dark:to-rose-950/30">
               <p className="text-xs font-semibold uppercase tracking-wide text-rose-700">
                 {t("Total Waste (₺)")}
@@ -764,7 +969,7 @@ export default function Reports() {
               </p>
             </div>
 
-            <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-4 shadow-sm lg:col-span-2 dark:border-slate-800 dark:bg-slate-900/70">
+            <div className="col-span-2 rounded-2xl border border-slate-200/70 bg-white/90 p-4 shadow-sm lg:col-span-2 dark:border-slate-800 dark:bg-slate-900/70">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                   {t("Top Wasted Products")}
@@ -807,7 +1012,7 @@ export default function Reports() {
               </div>
             </div>
 
-            <div className="lg:col-span-4 rounded-2xl border border-slate-200/70 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+            <div className="col-span-2 rounded-2xl border border-slate-200/70 bg-white/90 p-4 shadow-sm lg:col-span-4 dark:border-slate-800 dark:bg-slate-900/70">
               <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                 {t("Waste by Reason")}
               </p>
@@ -840,196 +1045,6 @@ export default function Reports() {
       </SectionState>
 
       <SectionState
-        loading={overviewLoading || cashHistoryLoading}
-        error={overviewError || cashHistoryError}
-        onRetry={() => {
-          refetchOverview();
-          refetchCashHistory();
-        }}
-        loadingMessage={sectionLoadingMessage}
-      >
-        <Card className="space-y-4 p-4">
-          <CardContent>
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between mb-4">
-              <div className="flex items-center gap-3 text-slate-700">
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-200">
-                  <Wallet className="h-5 w-5 text-slate-600" />
-                </span>
-                <h3 className="text-lg font-semibold">{t("Cash Register")}</h3>
-              </div>
-              <DateRangeSelector
-                range={dateRange}
-                onRangeChange={setDateRange}
-                customStart={customStart}
-                customEnd={customEnd}
-                onCustomStartChange={setCustomStart}
-                onCustomEndChange={setCustomEnd}
-                className="w-full lg:w-auto"
-              />
-            </div>
-
-            {(() => {
-              const todayStr = customStart || from;
-              const isRegisterOpenToday =
-                String(cashRegisterState || "").toLowerCase() === "open" &&
-                dateRange === "today";
-
-              const filteredHistory = cashRegisterHistory.filter((row) => {
-                const rowDate = row.date?.slice(0, 10);
-                if (!rowDate) return false;
-                if (dateRange === "today") return rowDate === todayStr;
-                if (dateRange === "week") {
-                  return rowDate >= from && rowDate <= to;
-                }
-                if (dateRange === "custom") {
-                  return rowDate >= customStart && rowDate <= customEnd;
-                }
-                return true;
-              });
-
-              const hasTodayRow = filteredHistory.some(
-                (row) => row?.date?.slice(0, 10) === todayStr
-              );
-              const historyRows = isRegisterOpenToday && !hasTodayRow
-                ? [
-                    {
-                      date: todayStr,
-                      opening_cash: cashOpening,
-                      closing_cash: 0,
-                      cash_sales: 0,
-                      supplier_expenses: 0,
-                      staff_expenses: 0,
-                      register_expenses: 0,
-                      register_entries: 0,
-                      __syntheticOpen: true,
-                    },
-                    ...filteredHistory,
-                  ]
-                : filteredHistory;
-
-              return (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {historyRows.map((row) => {
-                    const dayKey = row?.date?.slice(0, 10) || "";
-                    const eventsForDay = groupedRegisterEvents[dayKey] || [];
-                    const openingCash = parseFloat(row.opening_cash || 0);
-                    const cashSales = parseFloat(row.cash_sales || 0);
-                    const registerEntries = parseFloat(row.register_entries || 0);
-                    const supplierExpenses = parseFloat(row.supplier_expenses || 0);
-                    const staffExpenses = parseFloat(row.staff_expenses || 0);
-                    const registerExpenses = parseFloat(row.register_expenses || 0);
-                    const expensesForDay =
-                      supplierExpenses + staffExpenses + registerExpenses;
-                    const computedAvailable =
-                      openingCash + cashSales + registerEntries - expensesForDay;
-
-                    const isTodayRow = dayKey === todayStr;
-                    const showLiveAvailable =
-                      isTodayRow && isRegisterOpenToday && !row.closing_cash;
-                    const availableForDisplay = showLiveAvailable
-                      ? parseFloat(cashAvailable || 0)
-                      : computedAvailable;
-
-                    return (
-                      <div
-                        key={dayKey || row.date}
-                        className="rounded-2xl bg-gradient-to-br from-slate-50 to-blue-50 dark:from-gray-800 dark:to-gray-900 border border-white/10 shadow p-4 space-y-2"
-                      >
-                        <div className="font-semibold text-gray-800 dark:text-white text-sm">
-                          <div className="flex items-center justify-between gap-2">
-                            <span>{new Date(row.date).toLocaleDateString()}</span>
-                            {showLiveAvailable ? (
-                              <span className="text-[10px] px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-semibold">
-                                {t("Open")}
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span>{t("Opening Cash")}</span>
-                          <span>{formatCurrency(openingCash)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span>{t("Cash Sales")}</span>
-                          <span>{formatCurrency(cashSales)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span>{t("Expenses")}</span>
-                          <span>{formatCurrency(expensesForDay)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span>{t("Cash Available")}</span>
-                          <span className="font-semibold">
-                            {formatCurrency(availableForDisplay)}
-                          </span>
-                        </div>
-                        <details className="text-xs text-gray-600 dark:text-gray-300">
-                          <summary className="cursor-pointer underline font-medium">
-                            {t("Show Events")}
-                          </summary>
-                          <ul className="mt-2 space-y-1">
-                            {eventsForDay.map((event) => (
-                              <li key={event.id} className="flex justify-between gap-2">
-                                <span className="truncate">
-                                  {event.note || event.reason}
-                                </span>
-                                <span>
-                                  {formatCurrency(parseFloat(event.amount || 0))}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        </details>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-          </CardContent>
-        </Card>
-      </SectionState>
-
-      <SectionState
-        loading={overviewLoading}
-        error={overviewError}
-        onRetry={refetchOverview}
-        loadingMessage={sectionLoadingMessage}
-      >
-        <div className="rounded-[28px] border border-slate-200/70 bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-[0_30px_80px_-40px_rgba(15,23,42,0.35)] overflow-hidden">
-          <div className="px-6 py-5 border-b border-slate-200/70">
-            <h3 className="text-xl sm:text-2xl font-semibold text-slate-800">
-              {t("Sales by Payment Method")}
-            </h3>
-          </div>
-          <div className="p-6 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {paymentData.map(({ method, value, percent }) => (
-                <div
-                  key={method}
-                  className="rounded-2xl border border-slate-200/70 bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.35)] p-5 flex flex-col gap-3 min-h-[140px]"
-                >
-                  <div className="text-lg font-semibold text-slate-700 truncate">
-                    {method}
-                  </div>
-                  <div className="text-2xl font-semibold text-indigo-700">
-                    {formatCurrency(value)}
-                  </div>
-                  <div className="text-sm text-slate-500">{(percent || 0).toFixed(1)}%</div>
-                </div>
-              ))}
-            </div>
-            <div className="flex justify-end border-t border-slate-200/70 pt-4 text-slate-600">
-              <span className="text-base">{t("Total Payments")}:</span>
-              <span className="ml-2 text-lg font-semibold text-indigo-700">
-                {formatCurrency(totalPayments)}
-              </span>
-            </div>
-          </div>
-        </div>
-      </SectionState>
-
-      <SectionState
         loading={overviewLoading}
         error={overviewError}
         onRetry={refetchOverview}
@@ -1042,11 +1057,11 @@ export default function Reports() {
             </h3>
           </div>
           <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-              <div className="rounded-2xl bg-gradient-to-r from-blue-100 via-blue-50 to-blue-100 border border-blue-200/70 p-4 text-base text-blue-900">
+            <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 xl:grid-cols-3">
+              <div className="rounded-2xl bg-gradient-to-r from-blue-100 via-blue-50 to-blue-100 border border-blue-200/70 p-4 text-base text-blue-900 sm:col-span-1">
                 {t("Dine-in")}: <b>{formatCurrency(dineInTotal)}</b>
               </div>
-              <div className="rounded-2xl bg-gradient-to-r from-emerald-100 via-emerald-50 to-emerald-100 border border-emerald-200/70 p-4 text-base text-emerald-900">
+              <div className="rounded-2xl bg-gradient-to-r from-emerald-100 via-emerald-50 to-emerald-100 border border-emerald-200/70 p-4 text-base text-emerald-900 sm:col-span-1">
                 {t("Online")}:{" "}
                 <b>
                   {formatCurrency(
@@ -1057,7 +1072,7 @@ export default function Reports() {
                   )}
                 </b>
               </div>
-              <div className="rounded-2xl bg-gradient-to-r from-amber-100 via-amber-50 to-amber-100 border border-amber-200/70 p-4 text-base text-amber-900">
+              <div className="rounded-2xl bg-gradient-to-r from-amber-100 via-amber-50 to-amber-100 border border-amber-200/70 p-4 text-base text-amber-900 sm:col-span-2 xl:col-span-1">
                 {t("Phone")}: <b>{formatCurrency(phoneTotal)}</b>
               </div>
             </div>
@@ -1236,7 +1251,7 @@ export default function Reports() {
           <ChartCard
             title={t("Sales by Category")}
             actions={
-              <div className="flex gap-2 items-center">
+              <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
                 <select
                   value={categoryRange}
                   onChange={(event) => {
@@ -1246,7 +1261,7 @@ export default function Reports() {
                       block: "center",
                     });
                   }}
-                  className="border rounded px-2 py-1 text-sm bg-white dark:bg-gray-800 dark:text-white"
+                  className="h-11 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm dark:border-slate-700 dark:bg-gray-800 dark:text-white"
                 >
                   <option value="today">{t("Today")}</option>
                   <option value="week">{t("This Week")}</option>
@@ -1258,15 +1273,15 @@ export default function Reports() {
                       type="date"
                       value={customCategoryFrom}
                       onChange={(event) => setCustomCategoryFrom(event.target.value)}
-                      className="border rounded px-2 py-1 text-sm"
+                      className="h-11 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm dark:border-slate-700 dark:bg-gray-800 dark:text-white"
                     />
                     <input
                       type="date"
                       value={customCategoryTo}
                       onChange={(event) => setCustomCategoryTo(event.target.value)}
-                      className="border rounded px-2 py-1 text-sm"
+                      className="h-11 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm dark:border-slate-700 dark:bg-gray-800 dark:text-white"
                     />
-                    <Button size="sm" variant="outline" onClick={refetchCategory}>
+                    <Button size="sm" variant="outline" onClick={refetchCategory} className="h-11 rounded-2xl px-5">
                       {t("Apply")}
                     </Button>
                   </>
@@ -1344,7 +1359,7 @@ export default function Reports() {
             <h3 className="text-xl sm:text-2xl font-semibold text-slate-800">
               {t("Category Trends")}
             </h3>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
               <select
                 value={categoryTrendRange}
                 onChange={(event) => setCategoryTrendRange(event.target.value)}
@@ -1423,11 +1438,11 @@ export default function Reports() {
       >
         <div ref={salesTrendsRef}>
           <div className="rounded-[28px] border border-slate-200/70 bg-gradient-to-br from-white via-slate-50 to-slate-100 shadow-[0_30px_80px_-40px_rgba(15,23,42,0.35)] overflow-hidden">
-            <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-5 border-b border-slate-200/70">
+            <div className="flex flex-col gap-4 px-6 py-5 border-b border-slate-200/70 xl:flex-row xl:items-center xl:justify-between">
               <h3 className="text-xl sm:text-2xl font-semibold text-slate-800">
                 {t("Sales Trends")}
               </h3>
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex w-full flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center xl:w-auto">
                 <select
                   value={salesViewType}
                   onChange={(event) => {
@@ -1462,13 +1477,14 @@ export default function Reports() {
             </div>
 
             <div className="px-6 pt-4">
-              <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-3 text-sm text-slate-500 sm:flex-row sm:flex-wrap sm:items-center">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <span>{t("Chart Type")}:</span>
                   <Button
                     variant={salesChartType === "area" ? "default" : "outline"}
                     size="sm"
                     onClick={() => setSalesChartType("area")}
+                    className="h-10 rounded-2xl"
                   >
                     {t("Area")}
                   </Button>
@@ -1476,6 +1492,7 @@ export default function Reports() {
                     variant={salesChartType === "line" ? "default" : "outline"}
                     size="sm"
                     onClick={() => setSalesChartType("line")}
+                    className="h-10 rounded-2xl"
                   >
                     {t("Line")}
                   </Button>
@@ -1484,14 +1501,14 @@ export default function Reports() {
                   <input
                     ref={yMinRef}
                     defaultValue="1000"
-                    className="h-9 w-24 text-sm px-3 rounded-lg border border-slate-200"
+                    className="h-10 w-24 rounded-2xl border border-slate-200 px-3 text-sm"
                     placeholder={`${config?.symbol || ""} ${t("Min")}`}
                   />
                   <span>–</span>
                   <input
                     ref={yMaxRef}
                     defaultValue="150000"
-                    className="h-9 w-28 text-sm px-3 rounded-lg border border-slate-200"
+                    className="h-10 w-28 rounded-2xl border border-slate-200 px-3 text-sm"
                     placeholder={`${config?.symbol || ""} ${t("Max")}`}
                   />
                 </div>
@@ -1637,7 +1654,7 @@ export default function Reports() {
                   {t("Profit & Loss Breakdown")}
                 </h3>
               </div>
-              <div className="flex items-center rounded-2xl bg-slate-100/80 border border-slate-200/70 p-1 text-slate-600 shadow-inner">
+            <div className="flex w-full flex-wrap items-center rounded-2xl border border-slate-200/70 bg-slate-100/80 p-1 text-slate-600 shadow-inner sm:w-auto">
                 {["daily", "weekly", "monthly"].map((option) => (
                   <button
                     key={option}
@@ -1650,7 +1667,7 @@ export default function Reports() {
                       });
                     }}
                     className={[
-                      "px-4 py-2 text-sm sm:text-base font-medium rounded-xl transition",
+                      "flex-1 px-4 py-2 text-sm font-medium rounded-xl transition sm:flex-none sm:text-base",
                       timeframe === option
                         ? "bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow"
                         : "text-slate-600 hover:text-slate-800",
@@ -1717,8 +1734,8 @@ export default function Reports() {
       </SectionState>
 
       {showExportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl p-6 w-[90%] max-w-lg space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 backdrop-blur-sm sm:items-center">
+          <div className="w-full max-w-lg space-y-4 rounded-t-[28px] bg-white p-6 shadow-xl dark:bg-gray-900 sm:w-[90%] sm:rounded-2xl">
             <h2 className="text-xl font-bold text-gray-800 dark:text-white">
               {t("Export Report Data")}
             </h2>
@@ -1746,6 +1763,7 @@ export default function Reports() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

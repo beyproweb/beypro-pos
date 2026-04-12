@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { Lock } from "lucide-react";
 import OrdersFiltersBar from "./OrdersFiltersBar";
 
 const OrdersActionBar = memo(function OrdersActionBar({
@@ -12,12 +13,13 @@ const OrdersActionBar = memo(function OrdersActionBar({
   assignedOrderCountForSelectedDriver,
   selectedDriverId,
   onSelectedDriverChange,
+  onLockClick,
   t,
 }) {
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 w-full border-t border-slate-200/70 bg-slate-50/90 px-3 py-2.5 backdrop-blur-md dark:border-slate-800/70 dark:bg-slate-950/75">
       <div className="mx-auto w-full max-w-6xl">
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-6 xl:grid-cols-7">
           <OrdersFiltersBar
             statusFilter={statusFilter}
             onStatusFilterChange={onStatusFilterChange}
@@ -90,6 +92,19 @@ const OrdersActionBar = memo(function OrdersActionBar({
               </svg>
             </span>
           </div>
+
+          {onLockClick && (
+            <button
+              type="button"
+              onClick={onLockClick}
+              aria-label={t("Lock", { defaultValue: "Lock" })}
+              title={t("Lock", { defaultValue: "Lock" })}
+              className="inline-flex h-[46px] items-center justify-center gap-2 rounded-xl border border-slate-900/10 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 px-4 text-base font-semibold text-white shadow-md transition hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98] dark:border-white/10"
+            >
+              <Lock className="h-4.5 w-4.5" aria-hidden="true" />
+              {t("Lock", { defaultValue: "Lock" })}
+            </button>
+          )}
         </div>
       </div>
     </div>

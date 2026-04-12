@@ -1,5 +1,5 @@
 import React from "react";
-import { Phone } from "lucide-react";
+import { Lock, Phone } from "lucide-react";
 import { useTableTimers } from "./hooks/useTableTimers";
 import TableCard from "./TableCard";
 import VirtualTablesGrid from "./VirtualTablesGrid";
@@ -407,6 +407,7 @@ function TablesView({
   onCompleteSongRequest,
   onCancelSongRequest,
   tableDensity = "comfortable",
+  onLockClick,
 }) {
   const renderCount = useRenderCount("TableList", { logEvery: 1 });
   const onTableListProfileRender = React.useMemo(() => createProfilerOnRender("TableList"), []);
@@ -992,6 +993,18 @@ function TablesView({
             {t("Song Request")} ({Array.isArray(songRequests) ? songRequests.length : 0})
           </button>
         ) : null}
+        {onLockClick ? (
+          <button
+            type="button"
+            onClick={onLockClick}
+            className="shrink-0 whitespace-nowrap inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition active:scale-[0.98] hover:-translate-y-0.5 hover:shadow-lg sm:px-5"
+            aria-label={t("Lock", { defaultValue: "Lock" })}
+            title={t("Lock", { defaultValue: "Lock" })}
+          >
+            <Lock className="h-4 w-4" aria-hidden="true" />
+            {t("Lock", { defaultValue: "Lock" })}
+          </button>
+        ) : null}
       </>
     ),
     [
@@ -999,6 +1012,7 @@ function TablesView({
       getAreaTabClassName,
       groupedTables,
       handleAreaTabClick,
+      onLockClick,
       paidTablesCount,
       rangeBookingCount,
       reservedTablesCount,

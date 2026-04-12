@@ -78,6 +78,7 @@ import {
   isReservationCheckinNotFoundError,
   postReservationCheckinWithFallback,
 } from "../utils/reservationCheckin";
+import { useSessionLock } from "../context/SessionLockContext";
 
 const PERF_DEBUG_ENABLED = isTablePerfDebugEnabled();
 const DEFAULT_STRESS_CONFIG = Object.freeze({
@@ -619,6 +620,7 @@ export default function TableOverview() {
   const { formatCurrency } = useCurrency();
   const navigate = useNavigate();
   const location = useLocation();
+  const { lock } = useSessionLock();
   const isDedicatedViewBookingPage = location.pathname === "/view-booking";
   const lastDayKeyRef = useRef(formatLocalYmd(new Date()));
   const tabFromUrl = React.useMemo(() => {
@@ -677,8 +679,12 @@ export default function TableOverview() {
   const tableConfigsFetchRef = useRef({ requestId: 0, controller: null });
   const recentlyClosedRef = useRef(new Map()); // Track recently closed orders: key=orderId|tableNumber, value=timestamp
   const [closedOrdersVersion, setClosedOrdersVersion] = useState(0); // Increment to force ordersByTable recompute
-  const { loading: authLoading } = useAuth();
+  const { currentUser, loading: authLoading } = useAuth();
   const { appearance, setAppearance, saveAppearance } = useAppearance();
+  const [userSettings, setUserSettings] = useState({ pinRequired: true });
+  useSetting("users", setUserSettings, { pinRequired: true });
+  const isPinLoginEnabled = userSettings?.pinRequired !== false;
+  const handleSessionLock = currentUser && isPinLoginEnabled ? () => lock("manual") : undefined;
   const tableDensity = normalizeTableDensity(
     appearance?.table_density ?? DEFAULT_TABLE_DENSITY
   );
@@ -5702,6 +5708,7 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
         </div>
       )}
       {canSeePacketTab &&
+        !isDedicatedViewBookingPage &&
         activeTab !== "packet" &&
         packetOrdersCount > 0 &&
         !transactionSettings.disableTableOverviewOrdersFloatingButton && (
@@ -5759,6 +5766,7 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
       onCompleteSongRequest={(request) => updateSongRequestStatus(request, "completed")}
       onCancelSongRequest={(request) => updateSongRequestStatus(request, "cancelled")}
       tableDensity={tableDensity}
+      onLockClick={handleSessionLock}
     />
   )}
 
