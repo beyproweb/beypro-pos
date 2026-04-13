@@ -3485,7 +3485,12 @@ function handleReset(options = null) {
           ? normalizedCallType
           : null;
       const callWaiterBody = {
+        identifier: restaurantIdentifier,
+        restaurant_identifier: restaurantIdentifier,
+        restaurantIdentifier,
         table_number: tableNumber,
+        table: tableNumber,
+        table_no: tableNumber,
         // Manual "Call waiter" should always be audible on POS.
         source: "qr_menu",
       };
@@ -3495,29 +3500,40 @@ function handleReset(options = null) {
         callWaiterBody.type = waiterRequestType;
         callWaiterBody.reason = waiterRequestType;
       }
-      try {
-        await secureFetch(`/public/call-waiter/${encodeURIComponent(restaurantIdentifier)}`, {
-          method: "POST",
-          ...authOpts,
-          body: JSON.stringify(callWaiterBody),
-        });
-      } catch (primaryErr) {
-        const retryLegacy = /401|404|405|unauthorized|token missing/i.test(
-          String(primaryErr?.message || "")
-        );
-        if (!retryLegacy) throw primaryErr;
-        // Backward-compat for older production API shape.
-        await secureFetch(
-          `/public/call-waiter?identifier=${encodeURIComponent(restaurantIdentifier)}`,
-          {
+      const waiterEndpoints = [
+        `/public/call-waiter/${encodeURIComponent(restaurantIdentifier)}`,
+        `/public/call-waiter?identifier=${encodeURIComponent(restaurantIdentifier)}`,
+      ];
+      let lastError = null;
+      let delivered = false;
+
+      for (const endpoint of waiterEndpoints) {
+        try {
+          await secureFetch(endpoint, {
             method: "POST",
             ...authOpts,
-            body: JSON.stringify({
-              ...callWaiterBody,
-              identifier: restaurantIdentifier,
-            }),
+            body: JSON.stringify(callWaiterBody),
+          });
+          delivered = true;
+          break;
+        } catch (requestErr) {
+          lastError = requestErr;
+          const requestStatus = Number(requestErr?.details?.status || 0);
+          if (requestStatus === 429) {
+            throw requestErr;
           }
-        );
+          if (import.meta.env.DEV) {
+            console.warn("call waiter endpoint failed", {
+              endpoint,
+              status: requestStatus || null,
+              message: String(requestErr?.message || ""),
+            });
+          }
+        }
+      }
+
+      if (!delivered) {
+        throw lastError || new Error("Call waiter request failed");
       }
       setCallWaiterCooldownUntil(Date.now() + 15000);
       return { ok: true };

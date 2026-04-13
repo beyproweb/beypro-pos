@@ -1664,6 +1664,54 @@ const handleDeleteReservation = useCallback(
 const handleCheckinReservation = useCallback(
   async (table, reservationInfo) => {
     const tableNumber = Number(table?.tableNumber ?? table?.order?.table_number ?? table?.table_number);
+    const freshReservations = await loadReservationBookingsForOverview({ force: true });
+    const freshConcertBookings = await loadConcertBookingsForOverview({ force: true });
+    const resolveLatestReservationInfo = (rows = []) => {
+      const incomingReservationId = Number(
+        reservationInfo?.id ?? table?.reservationFallback?.id ?? table?.order?.reservation?.id
+      );
+      const incomingOrderId = Number(
+        reservationInfo?.reservation_order_id ??
+          reservationInfo?.reservationOrderId ??
+          reservationInfo?.order_id ??
+          reservationInfo?.orderId ??
+          table?.reservationFallback?.reservation_order_id ??
+          table?.reservationFallback?.reservationOrderId ??
+          table?.reservationFallback?.order_id ??
+          table?.reservationFallback?.orderId ??
+          table?.order?.reservation?.reservation_order_id ??
+          table?.order?.reservation?.reservationOrderId ??
+          table?.order?.reservation?.order_id ??
+          table?.order?.reservation?.orderId ??
+          table?.order?.id
+      );
+      return (Array.isArray(rows) ? rows : [])
+        .filter((row) => {
+          const rowReservationId = Number(row?.id);
+          const rowOrderId = Number(
+            row?.reservation_order_id ?? row?.reservationOrderId ?? row?.order_id ?? row?.orderId
+          );
+          const rowTableNumber = Number(row?.table_number ?? row?.tableNumber ?? row?.table);
+          if (Number.isFinite(incomingReservationId) && incomingReservationId > 0 && rowReservationId === incomingReservationId) {
+            return true;
+          }
+          if (Number.isFinite(incomingOrderId) && incomingOrderId > 0 && rowOrderId === incomingOrderId) {
+            return true;
+          }
+          return Number.isFinite(tableNumber) && tableNumber > 0 && rowTableNumber === tableNumber;
+        })
+        .sort((a, b) => {
+          const aMs = parseLooseDateToMs(a?.updated_at) || parseLooseDateToMs(a?.created_at) || Number(a?.id) || 0;
+          const bMs = parseLooseDateToMs(b?.updated_at) || parseLooseDateToMs(b?.created_at) || Number(b?.id) || 0;
+          return bMs - aMs;
+        })[0] || null;
+    };
+    reservationInfo = resolveLatestReservationInfo(freshReservations) || reservationInfo || null;
+    const concertBookingsForFlow = Array.isArray(freshConcertBookings)
+      ? freshConcertBookings
+      : Array.isArray(concertBookings)
+        ? concertBookings
+        : [];
     const standaloneReservationRecordId = Number(
       reservationInfo?.id ?? table?.reservationFallback?.id
     );
@@ -1822,7 +1870,7 @@ const handleCheckinReservation = useCallback(
 
     const hasConcertBookingOnTable =
       Number.isFinite(tableNumber) &&
-      (Array.isArray(concertBookings) ? concertBookings : []).some((booking) => {
+      concertBookingsForFlow.some((booking) => {
         if (!isConcertBookingRelevantForTableState(booking)) return false;
         const reservedTableNumber = Number(
           booking?.reserved_table_number ?? booking?.reservedTableNumber
@@ -1837,7 +1885,7 @@ const handleCheckinReservation = useCallback(
       });
     const hasConfirmedConcertBookingOnTable =
       Number.isFinite(tableNumber) &&
-      (Array.isArray(concertBookings) ? concertBookings : []).some((booking) => {
+      concertBookingsForFlow.some((booking) => {
         if (!isConcertBookingRelevantForTableState(booking)) return false;
         const reservedTableNumber = Number(
           booking?.reserved_table_number ?? booking?.reservedTableNumber
@@ -2181,7 +2229,7 @@ const handleCheckinReservation = useCallback(
             return Number.isFinite(idFromList) && idFromList > 0 ? idFromList : null;
           };
 
-          let targetConcertBookingId = resolveConcertBookingId(concertBookings);
+          let targetConcertBookingId = resolveConcertBookingId(concertBookingsForFlow);
           if (!Number.isFinite(targetConcertBookingId) || targetConcertBookingId <= 0) {
             const freshConcertBookings = await loadConcertBookingsForOverview();
             targetConcertBookingId = resolveConcertBookingId(freshConcertBookings);
@@ -2516,6 +2564,8 @@ const handleCheckinReservation = useCallback(
     concertBookings,
     fetchOrders,
     handleCloseTable,
+    loadConcertBookingsForOverview,
+    loadReservationBookingsForOverview,
     markBookingCheckedInInViewBookingLists,
     markBookingConfirmedLocally,
     setOrders,
@@ -3488,11 +3538,40 @@ useEffect(() => {
             .filter((value) => Number.isFinite(value) && value > 0)
         )
       );
-      const primaryTargetOrderId = candidateOrderIds[0] ?? null;
+      let resolvedCandidateOrderIds = candidateOrderIds;
 
       setReservationBookingUpdatingKey(bookingKey);
       try {
         if (nextStatusNormalized === "confirmed") {
+          if (resolvedCandidateOrderIds.length === 0) {
+            const freshReservations = await loadReservationBookingsForOverview({ force: true });
+            const freshMatch = (Array.isArray(freshReservations) ? freshReservations : []).find((row) => {
+              const rowReservationId = Number(row?.id);
+              const rowOrderId = Number(
+                row?.reservation_order_id ?? row?.reservationOrderId ?? row?.order_id ?? row?.orderId
+              );
+              const rowTableNumber = Number(row?.table_number ?? row?.tableNumber ?? row?.table);
+              return (
+                (Number.isFinite(targetReservationId) && rowReservationId === targetReservationId) ||
+                (Number.isFinite(preferredOrderId) && rowOrderId === preferredOrderId) ||
+                (Number.isFinite(tableNumber) && rowTableNumber === tableNumber)
+              );
+            }) || null;
+            resolvedCandidateOrderIds = Array.from(
+              new Set(
+                [
+                  freshMatch?.order_id,
+                  freshMatch?.orderId,
+                  freshMatch?.reservation_order_id,
+                  freshMatch?.reservationOrderId,
+                  ...candidateOrderIds,
+                ]
+                  .map((value) => Number(value))
+                  .filter((value) => Number.isFinite(value) && value > 0)
+              )
+            );
+          }
+          const primaryTargetOrderId = resolvedCandidateOrderIds[0] ?? null;
           if (!Number.isFinite(primaryTargetOrderId) || primaryTargetOrderId <= 0) {
             toast.warning(t("Reservation record not found"));
             return;
@@ -3512,7 +3591,7 @@ useEffect(() => {
           });
           let resolvedConfirmedOrderId = primaryTargetOrderId;
           let lastResolvableError = null;
-          for (const candidateId of candidateOrderIds) {
+          for (const candidateId of resolvedCandidateOrderIds) {
             try {
               await secureFetch(`/orders/${candidateId}/status`, {
                 method: "PUT",
@@ -5733,6 +5812,7 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
 
       {activeTab === "tables" &&
         canSeeTablesGrid &&
+        !isDedicatedViewBookingPage &&
         !transactionSettings.disableTableOverviewGuestsFloatingButton && (
         <div className="fixed bottom-6 left-6 z-40 flex items-center gap-2 rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 px-5 py-3 text-white shadow-2xl ring-1 ring-white/20">
           <span className="font-semibold">{t("Guests")}</span>
