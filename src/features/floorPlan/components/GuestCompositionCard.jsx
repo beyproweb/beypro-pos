@@ -117,6 +117,7 @@ export default function GuestCompositionCard({
   policyMessage = "",
   accentColor = "#111827",
   compact = false,
+  allowZeroSelection = false,
 }) {
   const resolvedAccentColor = normalizeHexColor(accentColor, "#111827");
   const accentTextColor = getReadableTextColor(resolvedAccentColor);
@@ -130,18 +131,41 @@ export default function GuestCompositionCard({
     : [];
   const minGuests = sortedGuestOptions[0] || 0;
   const maxGuests = sortedGuestOptions[sortedGuestOptions.length - 1] || 0;
-  const selectedGuestValue = sortedGuestOptions.includes(Number(selectedGuests || 0))
-    ? Number(selectedGuests || 0)
-    : minGuests;
-  const selectedGuestIndex = sortedGuestOptions.findIndex((option) => option === selectedGuestValue);
-  const canDecreaseGuests = selectedGuestIndex > 0;
-  const canIncreaseGuests = selectedGuestIndex >= 0 && selectedGuestIndex < sortedGuestOptions.length - 1;
+  const parsedSelectedGuests = Number(selectedGuests || 0);
+  const selectedGuestValue =
+    allowZeroSelection && (!Number.isFinite(parsedSelectedGuests) || parsedSelectedGuests <= 0)
+      ? 0
+      : sortedGuestOptions.includes(parsedSelectedGuests)
+        ? parsedSelectedGuests
+        : minGuests;
+  const canDecreaseGuests = selectedGuestValue > 0;
+  const canIncreaseGuests =
+    selectedGuestValue <= 0
+      ? sortedGuestOptions.length > 0
+      : sortedGuestOptions.some((option) => option > selectedGuestValue);
 
   const handleGuestStep = (direction) => {
     if (!hasTotalPicker || typeof onGuestCountChange !== "function") return;
-    const nextIndex = selectedGuestIndex + direction;
-    if (nextIndex < 0 || nextIndex >= sortedGuestOptions.length) return;
-    onGuestCountChange(sortedGuestOptions[nextIndex]);
+    if (direction > 0) {
+      if (selectedGuestValue <= 0) {
+        if (sortedGuestOptions.length > 0) onGuestCountChange(sortedGuestOptions[0]);
+        return;
+      }
+      const nextOption = sortedGuestOptions.find((option) => option > selectedGuestValue);
+      if (Number.isFinite(nextOption)) onGuestCountChange(nextOption);
+      return;
+    }
+    if (direction < 0) {
+      if (selectedGuestValue <= 0) return;
+      const previousOption = [...sortedGuestOptions]
+        .reverse()
+        .find((option) => option < selectedGuestValue);
+      if (Number.isFinite(previousOption)) {
+        onGuestCountChange(previousOption);
+        return;
+      }
+      if (allowZeroSelection) onGuestCountChange(0);
+    }
   };
 
   return (

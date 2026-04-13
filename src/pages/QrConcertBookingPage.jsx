@@ -686,10 +686,11 @@ export default function QrConcertBookingPage() {
   const [floorPlanRefreshTick, setFloorPlanRefreshTick] = React.useState(0);
   const liveRefreshTimerRef = React.useRef(null);
   const tableSnapshotRef = React.useRef([]);
+  const [guestAmountConfirmed, setGuestAmountConfirmed] = React.useState(false);
   const [form, setForm] = React.useState({
     ticket_type_id: prefetchedDefaultTicketType ? String(prefetchedDefaultTicketType.id) : "",
     quantity: "1",
-    guests_count: "2",
+    guests_count: "0",
     male_guests_count: "",
     female_guests_count: "",
     table_number: "",
@@ -978,6 +979,10 @@ export default function QrConcertBookingPage() {
       return { ...prev, ...nextComposition };
     });
   }, [form.guests_count, guestCompositionEffectiveFieldMode, guestCompositionVisible]);
+
+  React.useEffect(() => {
+    setGuestAmountConfirmed((prev) => (prev ? false : prev));
+  }, [isTableBooking, form.ticket_type_id, form.guests_count, form.male_guests_count, form.female_guests_count]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -1368,6 +1373,22 @@ export default function QrConcertBookingPage() {
     []
   );
 
+  const handleConfirmGuests = React.useCallback(() => {
+    if (!isTableBooking) return;
+    if (guestCompositionError) {
+      focusInvalidField("guest_split");
+      toast.warning(guestCompositionError);
+      return;
+    }
+    if (selectedGuests <= 0) {
+      focusInvalidField("guest_split");
+      toast.warning(t("Please select guest amount."));
+      return;
+    }
+    setInvalidField("");
+    setGuestAmountConfirmed(true);
+  }, [focusInvalidField, guestCompositionError, isTableBooking, selectedGuests, t]);
+
   const handleSubmit = React.useCallback(async () => {
     if (!canSubmit || !identifier || !concertId || !selectedTicketType) {
       if (formErrors.phone) {
@@ -1663,24 +1684,34 @@ export default function QrConcertBookingPage() {
     return null;
   }
 
-  const primaryActionLabel = isTableBooking && !hasConfirmedTable
-    ? t("Choose Table")
-    : submitting
-      ? t("Saving...")
-      : isTableBooking
-        ? t("Reserve Now")
-        : t("Buy Ticket");
-  const primaryActionHelper = isTableBooking && !hasConfirmedTable
-    ? t("Pick your table from the live floor plan.")
-    : quantity > 0
-      ? `${t("Total")}: ${formatCurrency(total)}`
-      : "";
-  const primaryActionHandler = isTableBooking && !hasConfirmedTable
-    ? () => setPickerOpen(true)
-    : handleSubmit;
-  const primaryActionDisabled = isTableBooking && !hasConfirmedTable
-    ? !selectedTicketType || pickerOpen
-    : !canSubmit;
+  const needsGuestAmountConfirmation =
+    isTableBooking && !hasConfirmedTable && !guestAmountConfirmed;
+  const primaryActionLabel = needsGuestAmountConfirmation
+    ? t("Confirm Guests")
+    : isTableBooking && !hasConfirmedTable
+      ? t("Choose Table")
+      : submitting
+        ? t("Saving...")
+        : isTableBooking
+          ? t("Reserve Now")
+          : t("Buy Ticket");
+  const primaryActionHelper = needsGuestAmountConfirmation
+    ? t("Confirm guest amount before choosing table.")
+    : isTableBooking && !hasConfirmedTable
+      ? t("Pick your table from the live floor plan.")
+      : quantity > 0
+        ? `${t("Total")}: ${formatCurrency(total)}`
+        : "";
+  const primaryActionHandler = needsGuestAmountConfirmation
+    ? handleConfirmGuests
+    : isTableBooking && !hasConfirmedTable
+      ? () => setPickerOpen(true)
+      : handleSubmit;
+  const primaryActionDisabled = needsGuestAmountConfirmation
+    ? !selectedTicketType || pickerOpen || selectedGuests <= 0 || Boolean(guestCompositionError)
+    : isTableBooking && !hasConfirmedTable
+      ? !selectedTicketType || pickerOpen
+      : !canSubmit;
   const concertInfoDate = formatConcertDisplayDate(event?.event_date || event?.eventDate);
   const concertInfoTime = String(event?.event_time || event?.eventTime || "").trim();
   const concertInfoSubtitle =
@@ -1787,6 +1818,7 @@ export default function QrConcertBookingPage() {
                 policyMessage={guestCompositionMessage}
                 accentColor={accentColor}
                 compact
+                allowZeroSelection
               />
             </div>
           </BookingSection>
@@ -1884,7 +1916,7 @@ export default function QrConcertBookingPage() {
         </BookingSection>
       ) : null}
 
-      {isTableBooking ? (
+      {isTableBooking && (selectedTableRecord || selectedTableState) ? (
         <BookingSection
           step={tableStepNumber}
           title=""
