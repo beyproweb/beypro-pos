@@ -5616,6 +5616,10 @@ export default function QrMenu() {
       showCallWaiterFeedback(t("Waiter can be called after check-in."));
       return;
     }
+    console.warn('Showing "Unable to call waiter right now." feedback', {
+      callType,
+      result: result || null,
+    });
     showCallWaiterFeedback(t("Unable to call waiter right now."));
   }, [handleCallWaiter, showCallWaiterFeedback, t]);
 

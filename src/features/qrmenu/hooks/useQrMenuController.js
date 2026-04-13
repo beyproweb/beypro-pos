@@ -3522,13 +3522,15 @@ function handleReset(options = null) {
           if (requestStatus === 429) {
             throw requestErr;
           }
-          if (import.meta.env.DEV) {
-            console.warn("call waiter endpoint failed", {
-              endpoint,
-              status: requestStatus || null,
-              message: String(requestErr?.message || ""),
-            });
-          }
+          console.warn("call waiter endpoint failed", {
+            endpoint,
+            status: requestStatus || null,
+            message: String(requestErr?.message || ""),
+            details: requestErr?.details || null,
+            restaurantIdentifier,
+            tableNumber,
+            waiterRequestType,
+          });
         }
       }
 
@@ -3543,7 +3545,28 @@ function handleReset(options = null) {
         setCallWaiterCooldownUntil(Date.now() + 15000);
         return { ok: false, reason: "cooldown", retryAfterMs: 15000 };
       }
-      return { ok: false, reason: "failed" };
+      console.warn("handleCallWaiter failed", {
+        restaurantIdentifier,
+        tableNumber,
+        callType,
+        activeOrderId: Number(activeOrder?.id || 0) || null,
+        orderScreenStatus: orderScreenStatus || activeOrder?.status || "",
+        errorMessage: String(err?.message || ""),
+        errorDetails: err?.details || null,
+      });
+      return {
+        ok: false,
+        reason: "failed",
+        debug: {
+          restaurantIdentifier,
+          tableNumber,
+          callType,
+          activeOrderId: Number(activeOrder?.id || 0) || null,
+          orderScreenStatus: orderScreenStatus || activeOrder?.status || "",
+          errorMessage: String(err?.message || ""),
+          errorDetails: err?.details || null,
+        },
+      };
     } finally {
       setCallingWaiter(false);
     }
