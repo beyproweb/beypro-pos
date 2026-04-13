@@ -3445,12 +3445,74 @@ function handleReset(options = null) {
 		}
 
   const handleCallWaiter = useCallback(async (callType = null) => {
-    const tableNumber =
+    let tableNumber =
       Number(table) ||
       Number(storage.getItem("qr_table")) ||
       Number(storage.getItem("qr_selected_table")) ||
+      Number(initialTableFromUrl) ||
+      Number(activeOrder?.table_number) ||
+      Number(activeOrder?.tableNumber) ||
+      Number(activeOrder?.table) ||
+      Number(activeOrder?.reservation?.table_number) ||
+      Number(activeOrder?.reservation?.tableNumber) ||
+      Number(activeOrder?.reservation?.table) ||
       null;
+    if (!Number.isFinite(tableNumber) || tableNumber <= 0) {
+      const persistedActiveOrderId =
+        Number(orderId) || Number(storage.getItem("qr_active_order_id")) || null;
+      if (Number.isFinite(persistedActiveOrderId) && persistedActiveOrderId > 0) {
+        try {
+          const token = getStoredToken();
+          const orderPayload = await secureFetch(
+            appendIdentifier(`/orders/${persistedActiveOrderId}`),
+            token ? { headers: { Authorization: `Bearer ${token}` } } : {}
+          );
+          const recoveredTableNumber =
+            Number(orderPayload?.table_number) ||
+            Number(orderPayload?.tableNumber) ||
+            Number(orderPayload?.table) ||
+            Number(orderPayload?.reservation?.table_number) ||
+            Number(orderPayload?.reservation?.tableNumber) ||
+            Number(orderPayload?.reservation?.table) ||
+            null;
+          if (Number.isFinite(recoveredTableNumber) && recoveredTableNumber > 0) {
+            tableNumber = recoveredTableNumber;
+            setTable(recoveredTableNumber);
+          }
+        } catch (recoverErr) {
+          console.warn("handleCallWaiter failed to recover table from active order", {
+            activeOrderId: persistedActiveOrderId,
+            errorMessage: String(recoverErr?.message || ""),
+            errorDetails: recoverErr?.details || null,
+          });
+        }
+      }
+    }
+    if (Number.isFinite(tableNumber) && tableNumber > 0) {
+      try {
+        storage.setItem("qr_table", String(tableNumber));
+        storage.setItem("qr_selected_table", String(tableNumber));
+      } catch {
+        // ignore storage write failures
+      }
+    }
     if (!restaurantIdentifier || !Number.isFinite(tableNumber) || tableNumber <= 0) {
+      console.warn("handleCallWaiter missing table context", {
+        restaurantIdentifier,
+        stateTable: table ?? null,
+        storageQrTable: storage.getItem("qr_table"),
+        storageSelectedTable: storage.getItem("qr_selected_table"),
+        initialTableFromUrl: initialTableFromUrl ?? null,
+        orderId: Number(orderId || 0) || null,
+        storageActiveOrderId: Number(storage.getItem("qr_active_order_id") || 0) || null,
+        activeOrderId: Number(activeOrder?.id || 0) || null,
+        activeOrderTable: activeOrder?.table_number ?? activeOrder?.tableNumber ?? activeOrder?.table ?? null,
+        activeReservationTable:
+          activeOrder?.reservation?.table_number ??
+          activeOrder?.reservation?.tableNumber ??
+          activeOrder?.reservation?.table ??
+          null,
+      });
       return { ok: false, reason: "missing_table" };
     }
 
@@ -3572,8 +3634,11 @@ function handleReset(options = null) {
     }
   }, [
     activeOrder,
+    appendIdentifier,
     callWaiterCooldownUntil,
     getStoredToken,
+    initialTableFromUrl,
+    orderId,
     orderScreenStatus,
     restaurantIdentifier,
     storage,

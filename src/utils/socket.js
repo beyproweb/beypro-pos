@@ -41,14 +41,31 @@ const socket = io(SOCKET_URL, {
   timeout: 20000,
 });
 
-// 🧠 Helper to safely get restaurant ID
+// 🧠 Helper to safely get restaurant ID from common auth storage shapes
 function getRestaurantId() {
   try {
-    const user = JSON.parse(localStorage.getItem("beyproUser") || "{}");
-    return user?.restaurant_id || null;
+    const toId = (value) => {
+      const normalized = String(value ?? "").trim();
+      return normalized || null;
+    };
+
+    const directLocal = toId(localStorage.getItem("restaurant_id"));
+    if (directLocal) return directLocal;
+
+    const directSession = toId(sessionStorage.getItem("restaurant_id"));
+    if (directSession) return directSession;
+
+    const localUser = JSON.parse(localStorage.getItem("beyproUser") || "{}");
+    const localUserId = toId(localUser?.restaurant_id);
+    if (localUserId) return localUserId;
+
+    const sessionUser = JSON.parse(sessionStorage.getItem("beyproUser") || "{}");
+    const sessionUserId = toId(sessionUser?.restaurant_id);
+    if (sessionUserId) return sessionUserId;
   } catch {
-    return null;
+    // ignore parsing/storage errors
   }
+  return null;
 }
 
 // 🟢 On first connect
@@ -58,8 +75,8 @@ socket.on("connect", () => {
   if (restaurantId) {
     socket.emit("join_restaurant", restaurantId);
     console.log(`[SOCKET] 👥 Joined restaurant_${restaurantId}`);
-  } else if (!window.__isQrMenuPage) {
-    console.warn("[SOCKET] ⚠️ No restaurant_id found in localStorage on connect");
+  } else if (!window.__isQrMenuPage && isDev) {
+    console.warn("[SOCKET] ⚠️ No restaurant_id found for room join on connect");
   }
 
   // 🧩 Safety rejoin few seconds after connect
@@ -84,10 +101,10 @@ socket.io.on("reconnect_attempt", (attempt) => {
 
 // 🔁 Rejoin whenever app reloads or localStorage changes
 window.addEventListener("storage", () => {
-  const user = JSON.parse(localStorage.getItem("beyproUser") || "{}");
-  if (user?.restaurant_id) {
-    socket.emit("join_restaurant", user.restaurant_id);
-    console.log(`[SOCKET] 🧩 Auto rejoined restaurant_${user.restaurant_id} from storage change`);
+  const restaurantId = getRestaurantId();
+  if (restaurantId) {
+    socket.emit("join_restaurant", restaurantId);
+    console.log(`[SOCKET] 🧩 Auto rejoined restaurant_${restaurantId} from storage change`);
   }
 });
 
