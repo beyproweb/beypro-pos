@@ -36,19 +36,35 @@ function toRgba(value, alpha) {
   return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
 }
 
-function GuestCounter({ label, value, onDecrease, onIncrease, disabled = false, accentColor = "#111827" }) {
+function GuestCounter({
+  label,
+  value,
+  onDecrease,
+  onIncrease,
+  disabled = false,
+  accentColor = "#111827",
+  compact = false,
+}) {
   const resolvedAccentColor = normalizeHexColor(accentColor, "#111827");
   return (
-    <div className="rounded-[24px] border border-neutral-200 bg-white/90 p-4 dark:border-neutral-800 dark:bg-neutral-900/80">
+    <div
+      className={[
+        "rounded-[24px] border border-neutral-200 bg-white/90 dark:border-neutral-800 dark:bg-neutral-900/80",
+        compact ? "p-3" : "p-4",
+      ].join(" ")}
+    >
       <div className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500 dark:text-neutral-400">
         {label}
       </div>
-      <div className="mt-3 flex items-center justify-between gap-3">
+      <div className={[compact ? "mt-2.5" : "mt-3", "flex items-center justify-between gap-3"].join(" ")}>
         <button
           type="button"
           onClick={onDecrease}
           disabled={disabled}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border text-xl font-semibold disabled:opacity-40"
+          className={[
+            "inline-flex items-center justify-center rounded-2xl border text-xl font-semibold disabled:opacity-40",
+            compact ? "h-10 w-10" : "h-11 w-11",
+          ].join(" ")}
           style={{
             borderColor: toRgba(resolvedAccentColor, 0.22) || resolvedAccentColor,
             backgroundColor: toRgba(resolvedAccentColor, 0.08) || "#F8FAFC",
@@ -64,7 +80,10 @@ function GuestCounter({ label, value, onDecrease, onIncrease, disabled = false, 
           type="button"
           onClick={onIncrease}
           disabled={disabled}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border text-xl font-semibold disabled:opacity-40"
+          className={[
+            "inline-flex items-center justify-center rounded-2xl border text-xl font-semibold disabled:opacity-40",
+            compact ? "h-10 w-10" : "h-11 w-11",
+          ].join(" ")}
           style={{
             borderColor: toRgba(resolvedAccentColor, 0.22) || resolvedAccentColor,
             backgroundColor: toRgba(resolvedAccentColor, 0.08) || "#F8FAFC",
@@ -97,6 +116,7 @@ export default function GuestCompositionCard({
   error = "",
   policyMessage = "",
   accentColor = "#111827",
+  compact = false,
 }) {
   const resolvedAccentColor = normalizeHexColor(accentColor, "#111827");
   const accentTextColor = getReadableTextColor(resolvedAccentColor);
@@ -125,27 +145,40 @@ export default function GuestCompositionCard({
   };
 
   return (
-    <div className="space-y-3">
+    <div className={compact ? "space-y-2.5" : "space-y-3"}>
       {/* Title + description */}
-      <div>
-        <div className="text-base font-semibold text-neutral-950 dark:text-white">{title}</div>
-        {description ? (
-          <div className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{description}</div>
-        ) : null}
-      </div>
+      {title || description ? (
+        <div>
+          {title ? (
+            <div className="text-base font-semibold text-neutral-950 dark:text-white">{title}</div>
+          ) : null}
+          {description ? (
+            <div className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{description}</div>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Total guest count picker */}
       {hasTotalPicker ? (
         <div>
-          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500 dark:text-neutral-400">
-            {guestsLabel}
-          </div>
-          <div className="rounded-[24px] border border-neutral-200 bg-white/90 p-4 dark:border-neutral-800 dark:bg-neutral-900/80">
+          {guestsLabel ? (
+            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500 dark:text-neutral-400">
+              {guestsLabel}
+            </div>
+          ) : null}
+          <div
+            className={[
+              "rounded-[24px] border border-neutral-200 bg-white/90 dark:border-neutral-800 dark:bg-neutral-900/80",
+              compact ? "p-3" : "p-4",
+            ].join(" ")}
+          >
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500 dark:text-neutral-400">
-                  {guestsLabel}
-                </div>
+                {guestsLabel ? (
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500 dark:text-neutral-400">
+                    {guestsLabel}
+                  </div>
+                ) : null}
                 <div className="mt-2 flex items-end gap-2">
                   <span className="text-3xl font-semibold text-neutral-950 dark:text-white">
                     {selectedGuestValue}
@@ -160,7 +193,10 @@ export default function GuestCompositionCard({
                   type="button"
                   onClick={() => handleGuestStep(-1)}
                   disabled={!canDecreaseGuests}
-                  className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border text-xl font-semibold transition disabled:opacity-40"
+                  className={[
+                    "inline-flex items-center justify-center rounded-2xl border text-xl font-semibold transition disabled:opacity-40",
+                    compact ? "h-10 w-10" : "h-11 w-11",
+                  ].join(" ")}
                   style={{
                     borderColor: toRgba(resolvedAccentColor, 0.22) || resolvedAccentColor,
                     backgroundColor: toRgba(resolvedAccentColor, 0.08) || "#F8FAFC",
@@ -173,7 +209,10 @@ export default function GuestCompositionCard({
                   type="button"
                   onClick={() => handleGuestStep(1)}
                   disabled={!canIncreaseGuests}
-                  className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border text-xl font-semibold transition disabled:opacity-40"
+                  className={[
+                    "inline-flex items-center justify-center rounded-2xl border text-xl font-semibold transition disabled:opacity-40",
+                    compact ? "h-10 w-10" : "h-11 w-11",
+                  ].join(" ")}
                   style={{
                     borderColor: toRgba(resolvedAccentColor, 0.22) || resolvedAccentColor,
                     backgroundColor: resolvedAccentColor,
@@ -191,7 +230,7 @@ export default function GuestCompositionCard({
 
       {/* Men / women split */}
       {hasSplit ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className={["grid grid-cols-1 sm:grid-cols-2", compact ? "gap-2.5" : "gap-3"].join(" ")}>
           <GuestCounter
             label={menLabel}
             value={menCount}
@@ -199,6 +238,7 @@ export default function GuestCompositionCard({
             onIncrease={() => onMenChange?.(1)}
             disabled={locked}
             accentColor={resolvedAccentColor}
+            compact={compact}
           />
           <GuestCounter
             label={womenLabel}
@@ -207,6 +247,7 @@ export default function GuestCompositionCard({
             onIncrease={() => onWomenChange?.(1)}
             disabled={locked}
             accentColor={resolvedAccentColor}
+            compact={compact}
           />
         </div>
       ) : null}
@@ -214,7 +255,10 @@ export default function GuestCompositionCard({
       {/* Policy + error messages */}
       {policyMessage && !error ? (
         <div
-          className="rounded-2xl border px-4 py-3 text-sm"
+          className={[
+            "rounded-2xl border text-sm",
+            compact ? "px-3 py-2.5" : "px-4 py-3",
+          ].join(" ")}
           style={{
             borderColor: toRgba(resolvedAccentColor, 0.2) || resolvedAccentColor,
             backgroundColor: toRgba(resolvedAccentColor, 0.08) || "rgba(248,250,252,0.9)",
@@ -225,7 +269,12 @@ export default function GuestCompositionCard({
         </div>
       ) : null}
       {error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900/30 dark:bg-rose-950/30 dark:text-rose-100">
+        <div
+          className={[
+            "rounded-2xl border border-rose-200 bg-rose-50 text-sm text-rose-800 dark:border-rose-900/30 dark:bg-rose-950/30 dark:text-rose-100",
+            compact ? "px-3 py-2.5" : "px-4 py-3",
+          ].join(" ")}
+        >
           {error}
         </div>
       ) : null}

@@ -63,7 +63,7 @@ function translateFloorPlanReason(reason, t) {
 
   const capacityMatch = normalizedReason.match(/^Capacity\s+(\d+)$/i);
   if (capacityMatch) {
-    return t("Capacity {{count}}", { count: Number(capacityMatch[1]) || 0 });
+    return t(" {{count}}", { count: Number(capacityMatch[1]) || 0 });
   }
 
   return t(normalizedReason);
@@ -320,7 +320,7 @@ export default function FloorPlanPickerModal({
         </div>
 
         <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col overflow-hidden px-3 py-3 sm:px-4 sm:py-4">
-          <div className="min-h-0 flex-1 overflow-y-auto pb-8 sm:pb-10">
+          <div className="min-h-0 flex-1 overflow-y-auto pb-3 sm:pb-4">
             <div className="sticky top-0 z-10 -mx-1 mb-2 border-b border-black/5 bg-[#fafaf9]/95 px-1 pb-1.5 backdrop-blur dark:border-white/10 dark:bg-[#09090b]/95">
               <div className="flex items-center justify-center gap-2">
                 <div ref={statusMenuRef} className="relative min-w-0 w-[42.5%]">

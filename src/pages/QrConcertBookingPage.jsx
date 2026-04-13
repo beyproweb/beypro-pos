@@ -22,6 +22,7 @@ import BookingPageLayout from "../features/floorPlan/components/BookingPageLayou
 import BookingSection from "../features/floorPlan/components/BookingSection";
 import BookingSummaryCard from "../features/floorPlan/components/BookingSummaryCard";
 import FloorPlanPickerModal from "../features/floorPlan/components/FloorPlanPickerModal";
+import GuestCompositionCard from "../features/floorPlan/components/GuestCompositionCard";
 import QuantityStepperCard from "../features/floorPlan/components/QuantityStepperCard";
 import RegisteredCustomerBadge from "../features/floorPlan/components/RegisteredCustomerBadge";
 import {
@@ -190,6 +191,33 @@ function normalizeConcertDateYmd(value) {
   if (!raw) return "";
   const datePrefix = raw.match(/^(\d{4}-\d{2}-\d{2})/);
   return datePrefix ? datePrefix[1] : "";
+}
+
+function formatConcertDisplayDate(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch;
+    const parsed = new Date(`${year}-${month}-${day}T12:00:00`);
+    if (Number.isFinite(parsed.getTime())) {
+      return new Intl.DateTimeFormat(undefined, {
+        month: "short",
+        day: "numeric",
+      }).format(parsed);
+    }
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isFinite(parsed.getTime())) {
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+    }).format(parsed);
+  }
+
+  return raw.replace(/^\d{4}[-/.]/, "");
 }
 
 function getConcertOrderStatus(order) {
@@ -836,9 +864,13 @@ export default function QrConcertBookingPage() {
   const bypassTicketTypeStep =
     isFreeConcert ||
     (routeBookingDefaults.requestedBookingType === "table" && Boolean(selectedTicketType?.is_table_package));
-  const guestStepNumber = bypassTicketTypeStep ? 2 : 3;
-  const tableStepNumber = isTableBooking ? (bypassTicketTypeStep ? 2 : 3) : null;
-  const confirmationStepNumber = isTableBooking ? tableStepNumber + 1 : guestStepNumber + 1;
+  const tableGuestStepNumber = isTableBooking ? 2 : null;
+  const ticketTypeStepNumber = bypassTicketTypeStep ? null : isTableBooking ? 3 : 2;
+  const guestStepNumber = showGuestStep ? (ticketTypeStepNumber ? ticketTypeStepNumber + 1 : 2) : null;
+  const tableStepNumber = isTableBooking ? (ticketTypeStepNumber ? ticketTypeStepNumber + 1 : 3) : null;
+  const confirmationStepNumber = isTableBooking
+    ? (tableStepNumber || 0) + 1
+    : (guestStepNumber || ticketTypeStepNumber || 1) + 1;
   const accentColor = String(branding?.concert_reservation_button_color || branding?.primary_color || "#111827");
   const baseUnitPrice = Number(selectedTicketType?.price ?? event?.ticket_price ?? 0) || 0;
   const maxGuestsForTable = React.useMemo(() => {
@@ -1350,10 +1382,10 @@ export default function QrConcertBookingPage() {
               ? "email"
               : !selectedTicketType
                 ? "ticket_type"
+                : guestCompositionError
+                  ? "guest_split"
                 : isTableBooking && !Number(form.table_number || 0)
                   ? "table_number"
-                  : guestCompositionError
-                    ? "table_number"
                     : "";
       if (firstInvalidKey) focusInvalidField(firstInvalidKey);
       return;
@@ -1649,52 +1681,123 @@ export default function QrConcertBookingPage() {
   const primaryActionDisabled = isTableBooking && !hasConfirmedTable
     ? !selectedTicketType || pickerOpen
     : !canSubmit;
+  const concertInfoDate = formatConcertDisplayDate(event?.event_date || event?.eventDate);
+  const concertInfoTime = String(event?.event_time || event?.eventTime || "").trim();
+  const concertInfoSubtitle =
+    event?.artist_name && event?.artist_name !== event?.event_title ? String(event.artist_name) : "";
 
   return (
     <>
       <BookingPageLayout
-      title={t("Concert Booking")}
-      subtitle={loading ? t("Loading event") : t("Premium event checkout flow")}
-      onBack={handleBack}
-      accentColor={accentColor}
-      showHeaderIndicator={false}
-      actionLabel={primaryActionLabel}
-      actionHelper={primaryActionHelper}
-      onAction={primaryActionHandler}
-      actionDisabled={primaryActionDisabled}
-    >
-      <BookingSection
-        step={1}
-        title={t("Event Info")}
-        description={t("Review the event details before choosing a package.")}
+        title={t("Concert Booking")}
+        subtitle={loading ? t("Loading event") : t("Premium event checkout flow")}
+        onBack={handleBack}
+        accentColor={accentColor}
+        showHeaderIndicator={false}
+        actionLabel={primaryActionLabel}
+        actionHelper={primaryActionHelper}
+        onAction={primaryActionHandler}
+        actionDisabled={primaryActionDisabled}
+        compactMobile
       >
-        <div className="overflow-hidden rounded-[24px] border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
-          {event?.event_image ? (
-            <img
-              src={String(event.event_image).startsWith("http") ? event.event_image : `/uploads/${String(event.event_image).replace(/^\/?uploads\//, "")}`}
-              alt={event?.event_title || event?.artist_name || t("Concert")}
-              className="h-48 w-full object-cover"
-            />
-          ) : null}
-          <div className="space-y-2 p-4">
-            <div className="text-lg font-semibold text-neutral-950 dark:text-white">
-              {event?.event_title || event?.artist_name || t("Concert")}
-            </div>
-            <div className="text-sm text-neutral-500 dark:text-neutral-400">
-              {[event?.artist_name, event?.event_date, event?.event_time].filter(Boolean).join(" • ")}
+        <BookingSection
+          step={1}
+          title=""
+          description=""
+          compact
+        >
+          <div className="rounded-2xl bg-white p-4 shadow-sm dark:bg-neutral-950">
+            <div className="flex items-center gap-3.5">
+              {event?.event_image ? (
+                <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900">
+                  <img
+                    src={String(event.event_image).startsWith("http") ? event.event_image : `/uploads/${String(event.event_image).replace(/^\/?uploads\//, "")}`}
+                    alt={event?.event_title || event?.artist_name || t("Concert")}
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              ) : null}
+              <div className="min-w-0 flex-1 space-y-1.5 border-l-2 pl-3" style={{ borderLeftColor: accentColor }}>
+                <div className="truncate text-xl font-bold leading-tight text-neutral-950 dark:text-white">
+                  {event?.event_title || event?.artist_name || t("Concert")}
+                </div>
+                {concertInfoSubtitle ? (
+                  <div className="truncate text-sm font-medium text-neutral-600 dark:text-neutral-300">
+                    {concertInfoSubtitle}
+                  </div>
+                ) : null}
+                <div className="text-sm text-neutral-500 dark:text-neutral-400">
+                  {[concertInfoDate, concertInfoTime].filter(Boolean).join(" • ")}
+                </div>
+              </div>
             </div>
             {event?.description ? (
-              <div className="text-sm text-neutral-700 dark:text-neutral-300">{event.description}</div>
+              <div className="mt-2 line-clamp-2 text-sm text-neutral-600 dark:text-neutral-300">
+                {event.description}
+              </div>
             ) : null}
           </div>
-        </div>
-      </BookingSection>
+        </BookingSection>
+
+        {isTableBooking ? (
+          <BookingSection
+            step={tableGuestStepNumber}
+            title=""
+            description={t("Select number of guests")}
+            compact
+          >
+            <div
+              ref={setFieldRef("guest_split")}
+              className={[
+                "rounded-[24px] transition",
+                invalidField === "guest_split"
+                  ? "border border-rose-300 bg-rose-50/70 p-2 dark:border-rose-900/40 dark:bg-rose-950/20"
+                  : "",
+              ].join(" ")}
+            >
+              <GuestCompositionCard
+                title=""
+                description=""
+                guestOptions={guestOptions}
+                selectedGuests={selectedGuests}
+                onGuestCountChange={(option) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    guests_count: String(option),
+                    table_number: "",
+                  }))
+                }
+                guestsLabel=""
+                menLabel={t("Men")}
+                womenLabel={t("Women")}
+                menCount={guestCompositionVisible ? menCount : undefined}
+                womenCount={guestCompositionVisible ? womenCount : undefined}
+                onMenChange={
+                  guestCompositionVisible
+                    ? (delta) => handleGuestCompositionDelta("male_guests_count", delta)
+                    : undefined
+                }
+                onWomenChange={
+                  guestCompositionVisible
+                    ? (delta) => handleGuestCompositionDelta("female_guests_count", delta)
+                    : undefined
+                }
+                locked={guestCompositionRule === "couple_only"}
+                error={guestCompositionError}
+                policyMessage={guestCompositionMessage}
+                accentColor={accentColor}
+                compact
+              />
+            </div>
+          </BookingSection>
+        ) : null}
 
       {bypassTicketTypeStep ? null : (
         <BookingSection
-          step={2}
+          step={ticketTypeStepNumber}
           title={t("Ticket Type")}
           description={t("Choose the package or ticket you want to book.")}
+          compact
         >
           <div
             ref={setFieldRef("ticket_type")}
@@ -1719,7 +1822,7 @@ export default function QrConcertBookingPage() {
                     }))
                   }
                   className={[
-                    "w-full rounded-[24px] border px-4 py-4 text-left transition",
+                    "w-full rounded-[24px] border px-4 py-3 text-left transition",
                     selected
                       ? "border-slate-900 bg-slate-900 text-white"
                       : "border-neutral-200 bg-white text-neutral-900 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50",
@@ -1756,6 +1859,7 @@ export default function QrConcertBookingPage() {
           step={guestStepNumber}
           title={t("Quantity")}
           description={t("Choose how many tickets you want to buy.")}
+          compact
         >
           <QuantityStepperCard
             label={t("Quantity")}
@@ -1775,6 +1879,7 @@ export default function QrConcertBookingPage() {
             decreaseDisabled={selectedTicketQuantity <= 1}
             increaseDisabled={selectedTicketQuantity >= ticketQuantityMax}
             helperText={t("Up to {{count}} tickets", { count: ticketQuantityMax })}
+            compact
           />
         </BookingSection>
       ) : null}
@@ -1784,6 +1889,7 @@ export default function QrConcertBookingPage() {
           step={tableStepNumber}
           title=""
           description=""
+          compact
           rightSlot={
             floorPlanLoading ? (
               <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
@@ -1796,19 +1902,21 @@ export default function QrConcertBookingPage() {
             ref={setFieldRef("table_number")}
             className={invalidField === "table_number" ? "rounded-[28px] border border-rose-400 bg-rose-50/70 p-2 ring-4 ring-rose-100 dark:border-rose-500 dark:bg-rose-950/20 dark:ring-rose-950/40" : ""}
           >
-            <div className="rounded-[20px] border border-neutral-200 bg-white px-4 py-3 text-sm dark:border-neutral-800 dark:bg-neutral-950">
-              <div className="font-semibold text-neutral-950 dark:text-white">
-                {selectedTableRecord || selectedTableState
-                  ? formatTableLabel(selectedTableRecord || selectedTableState, t("Table"))
-                  : t("No table selected yet")}
-              </div>
-              <div className="mt-1 text-neutral-500 dark:text-neutral-400">
-                {selectedTableState?.reason
-                  ? selectedTableState.reason
-                  : selectedTableState?.capacity
-                    ? t("Capacity {{count}} guests", { count: selectedTableState.capacity })
-                    : t("Use the footer button to open the floor plan.")}
-              </div>
+            <div className="rounded-[20px] border border-neutral-200 bg-white px-4 py-2.5 text-sm dark:border-neutral-800 dark:bg-neutral-950">
+              {selectedTableRecord || selectedTableState ? (
+                <>
+                  <div className="font-semibold text-neutral-950 dark:text-white">
+                    {formatTableLabel(selectedTableRecord || selectedTableState, t("Table"))}
+                  </div>
+                  <div className="mt-1 text-neutral-500 dark:text-neutral-400">
+                    {selectedTableState?.reason
+                      ? selectedTableState.reason
+                      : selectedTableState?.capacity
+                        ? t("Capacity {{count}} guests", { count: selectedTableState.capacity })
+                        : ""}
+                  </div>
+                </>
+              ) : null}
             </div>
           </div>
         </BookingSection>
@@ -1820,6 +1928,7 @@ export default function QrConcertBookingPage() {
             step={confirmationStepNumber}
             title={t("Confirmation")}
             description={t("Review the final summary before placing the booking.")}
+            compact
           >
             <RegisteredCustomerBadge
               customer={{
@@ -1862,32 +1971,6 @@ export default function QrConcertBookingPage() {
         selectedTableNumber={form.table_number}
         accentColor={accentColor}
         statusFilterKeys={["available", "pending_hold", "occupied", "blocked"]}
-        guestCompositionProps={{
-          title: t("Guest Split"),
-          description: t("Match the package to the group arriving at the venue."),
-          guestOptions,
-          selectedGuests,
-          onGuestCountChange: (option) =>
-            setForm((prev) => ({
-              ...prev,
-              guests_count: String(option),
-              table_number: "",
-            })),
-          guestsLabel: t("Guests"),
-          menLabel: t("Men"),
-          womenLabel: t("Women"),
-          menCount: guestCompositionVisible ? menCount : undefined,
-          womenCount: guestCompositionVisible ? womenCount : undefined,
-          onMenChange: guestCompositionVisible
-            ? (delta) => handleGuestCompositionDelta("male_guests_count", delta)
-            : undefined,
-          onWomenChange: guestCompositionVisible
-            ? (delta) => handleGuestCompositionDelta("female_guests_count", delta)
-            : undefined,
-          locked: guestCompositionRule === "couple_only",
-          error: guestCompositionError,
-          policyMessage: guestCompositionMessage,
-        }}
         onClose={() => setPickerOpen(false)}
         onConfirm={(node) => {
           setForm((prev) => ({ ...prev, table_number: String(node.table_number || "") }));

@@ -70,7 +70,6 @@ export default function FloorPlanView({
   }, [viewportPadding]);
   const containerRef = React.useRef(null);
   const [containerWidth, setContainerWidth] = React.useState(0);
-  const hasLayout = Boolean(layout);
   const canvas = React.useMemo(() => resolveFloorPlanCanvas(layout?.canvas), [layout?.canvas]);
   const measurementElements = Array.isArray(boundsElements) && boundsElements.length ? boundsElements : elements;
   const renderSize = React.useMemo(
@@ -180,25 +179,58 @@ export default function FloorPlanView({
   React.useEffect(() => {
     const node = containerRef.current;
     if (!node) return undefined;
+    let timeoutId = null;
+    let animationFrameId = null;
 
-    const measure = () => {
-      setContainerWidth(Math.max(0, node.clientWidth - (compactPadding ? 0 : 24)));
+    const commitWidth = (nextWidth) => {
+      const normalized = Math.max(0, Math.round(nextWidth));
+      setContainerWidth((prev) => (Math.abs(prev - normalized) >= 1 ? normalized : prev));
     };
 
-    measure();
-    const rafId = window.requestAnimationFrame(measure);
+    const readWidth = () => Math.max(0, node.clientWidth - (compactPadding ? 0 : 24));
+    const scheduleMeasure = (delayMs = 72) => {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+      timeoutId = window.setTimeout(() => {
+        if (animationFrameId) {
+          window.cancelAnimationFrame(animationFrameId);
+        }
+        animationFrameId = window.requestAnimationFrame(() => {
+          commitWidth(readWidth());
+        });
+      }, Math.max(0, delayMs));
+    };
+
+    scheduleMeasure(0);
+
     if (typeof ResizeObserver === "undefined") {
+      const handleWindowResize = () => scheduleMeasure(90);
+      window.addEventListener("resize", handleWindowResize);
       return () => {
-        window.cancelAnimationFrame(rafId);
+        window.removeEventListener("resize", handleWindowResize);
+        if (timeoutId) {
+          window.clearTimeout(timeoutId);
+        }
+        if (animationFrameId) {
+          window.cancelAnimationFrame(animationFrameId);
+        }
       };
     }
-    const observer = new ResizeObserver(measure);
+    const observer = new ResizeObserver(() => {
+      scheduleMeasure(72);
+    });
     observer.observe(node);
     return () => {
-      window.cancelAnimationFrame(rafId);
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+      if (animationFrameId) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
       observer.disconnect();
     };
-  }, [compactPadding, hasLayout]);
+  }, [compactPadding]);
 
   const overflowClass =
     scrollMode === "horizontal"
