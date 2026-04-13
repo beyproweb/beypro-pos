@@ -96,6 +96,21 @@ const getBookingStatusToneClass = (status) => {
   return "border-amber-200 bg-amber-50 text-amber-700";
 };
 
+const getWaiterCallType = (waiterCall) => {
+  const normalized = String(
+    waiterCall?.callType ??
+      waiterCall?.requestType ??
+      waiterCall?.call_type ??
+      waiterCall?.request_type ??
+      waiterCall?.type ??
+      ""
+  )
+    .trim()
+    .toLowerCase();
+  if (normalized === "bill" || normalized === "reorder") return normalized;
+  return null;
+};
+
 const VIEW_BOOKING_TERMINAL_STATUSES = new Set([
   "checked_out",
   "closed",
@@ -1323,6 +1338,29 @@ function TablesView({
                   const bookingSuborders = Array.isArray(bookingOrder?.suborders)
                     ? bookingOrder.suborders
                     : [];
+                  const bookingTableNumber = Number(
+                    bookingActionContext?.tableNumber ??
+                      bookingTable?.tableNumber ??
+                      bookingTable?.table_number ??
+                      booking?.reserved_table_number ??
+                      booking?.reservedTableNumber ??
+                      booking?.table_number ??
+                      booking?.tableNumber
+                  );
+                  const waiterCall =
+                    Number.isFinite(bookingTableNumber) && bookingTableNumber > 0
+                      ? cardProps?.waiterCallsByTable?.[String(bookingTableNumber)] || null
+                      : null;
+                  const isCallingWaiter = Boolean(waiterCall);
+                  const waiterCallType = getWaiterCallType(waiterCall);
+                  const waiterCallLabel = waiterCallType === "bill"
+                    ? t("Bill")
+                    : waiterCallType === "reorder"
+                      ? t("Reorder")
+                      : t("Calling");
+                  const waiterResolveLabel = waiterCallType === "bill"
+                    ? t("Bill")
+                    : t("waiter.handled");
                   const bookingHasOrderItems = bookingItems.length > 0;
                   const bookingHasSuborderItems = bookingSuborders.some(
                     (suborder) => Array.isArray(suborder?.items) && suborder.items.length > 0
@@ -1388,7 +1426,11 @@ function TablesView({
                   return (
                     <div
                       key={bookingKey}
-                      className="flex h-full min-h-[280px] flex-col rounded-3xl border border-slate-200 bg-white/90 p-4 shadow-lg sm:p-5"
+                      className={`flex h-full min-h-[280px] flex-col rounded-3xl border bg-white/90 p-4 shadow-lg sm:p-5 ${
+                        isCallingWaiter
+                          ? "border-rose-300 ring-2 ring-rose-500/70"
+                          : "border-slate-200"
+                      }`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -1438,6 +1480,11 @@ function TablesView({
                             {t("Total")} {totalLabel}
                           </span>
                         ) : null}
+                        {isCallingWaiter ? (
+                          <span className="inline-flex animate-pulse rounded-full border border-rose-200 bg-rose-600 px-3 py-1 text-xs font-semibold text-white">
+                            {waiterCallLabel}
+                          </span>
+                        ) : null}
                         {booking.ticket_type_name ? (
                           <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
                             {booking.ticket_type_name}
@@ -1462,6 +1509,21 @@ function TablesView({
                           <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
                             {`${t("Women")} ${Number.isFinite(bookingWomenCount) ? bookingWomenCount : 0}`}
                           </span>
+                        </div>
+                      ) : null}
+
+                      {isCallingWaiter &&
+                      typeof cardProps?.handleResolveWaiterCall === "function" &&
+                      Number.isFinite(bookingTableNumber) &&
+                      bookingTableNumber > 0 ? (
+                        <div className="mt-4 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => cardProps.handleResolveWaiterCall(bookingTableNumber)}
+                            className="inline-flex h-10 w-full items-center justify-center rounded-2xl bg-emerald-600 text-sm font-semibold text-white transition hover:bg-emerald-700"
+                          >
+                            {waiterResolveLabel}
+                          </button>
                         </div>
                       ) : null}
 
