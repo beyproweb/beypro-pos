@@ -2564,8 +2564,6 @@ const handleCheckinReservation = useCallback(
     concertBookings,
     fetchOrders,
     handleCloseTable,
-    loadConcertBookingsForOverview,
-    loadReservationBookingsForOverview,
     markBookingCheckedInInViewBookingLists,
     markBookingConfirmedLocally,
     setOrders,
