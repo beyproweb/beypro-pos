@@ -29,7 +29,23 @@ export default function NotificationsTab() {
   };
 
   const availableSounds = [
-    "new_order.mp3", "alert.mp3", "chime.mp3", "alarm.mp3", "cash.mp3", "success.mp3", "horn.mp3", "warning.mp3", "yemeksepeti.mp3", "none",
+    "new_order.mp3",
+    "alert.mp3",
+    "chime.mp3",
+    "alarm.mp3",
+    "cash.mp3",
+    "success.mp3",
+    "horn.mp3",
+    "warning.mp3",
+    "yemeksepeti.mp3",
+    "CallBell.mp3",
+    "billbeel.mp3",
+    "kudouk.mp3",
+    "pidifiti.mp3",
+    "pilonn.mp3",
+    "plascash.mp3",
+    "tingo.mp3",
+    "none",
   ];
 
   const roles = ["kitchen", "cashier", "manager"];
