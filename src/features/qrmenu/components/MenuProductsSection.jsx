@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import ProductCard from "./ProductCard";
 
 const CategoryTopBar = React.memo(function CategoryTopBar({
@@ -85,20 +86,20 @@ const CategoryTopBar = React.memo(function CategoryTopBar({
   );
 
   return (
-    <div className="relative w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm shadow-sm px-2 py-1">
+    <div className="relative">
       <div
         ref={scrollRef}
-        className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide px-0.5"
+        className="flex gap-3 overflow-x-auto scroll-smooth scrollbar-hide px-0.5"
         style={{ scrollBehavior: "smooth" }}
       >
         {categoryList.map((cat, idx) => {
-          const key = cat?.toLowerCase?.();
+          const key = (cat || "").trim().toLowerCase();
           const imgSrc = categoryImages?.[key];
           const active = activeCategory === cat;
           const resolvedSrc = imgSrc
-            ? /^https?:\/\//.test(imgSrc)
-              ? imgSrc
-              : `${apiUrl}/uploads/${imgSrc.replace(/^\/?uploads\//, "")}`
+            ? /^https?:\/\//.test(String(imgSrc))
+              ? String(imgSrc)
+              : `${apiUrl}/uploads/${String(imgSrc).replace(/^\/?uploads\//, "")}`
             : "";
           return (
             <button
@@ -109,26 +110,27 @@ const CategoryTopBar = React.memo(function CategoryTopBar({
                 onCategoryClick?.(cat);
                 scrollToCategory(idx);
               }}
-              className={`group flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[13px] font-medium transition-all whitespace-nowrap border
-                ${
-                  active
-                    ? "bg-neutral-900 text-white border-neutral-900 dark:bg-white dark:text-neutral-900 dark:border-white"
-                    : "bg-neutral-100 text-neutral-700 border-neutral-200 hover:bg-neutral-200 hover:text-neutral-900 dark:bg-neutral-800 dark:text-neutral-200 dark:border-neutral-700 dark:hover:bg-neutral-700 dark:hover:text-white"
-                }`}
+              className={`flex-none w-32 min-w-[120px] rounded-2xl border bg-white/90 dark:bg-neutral-900/75 shadow-sm transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 ${
+                active
+                  ? "border-gray-900 text-gray-900 dark:border-white dark:text-white"
+                  : "border-gray-200 text-gray-700 dark:border-neutral-800 dark:text-neutral-200"
+              }`}
             >
-              <div className="relative w-6 h-6 rounded-full overflow-hidden border border-neutral-300 dark:border-neutral-700 bg-white/70">
-                <img
-                  src={resolvedSrc || categoryFallbackSrc}
-                  alt={cat}
-                  className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-300"
-                  loading="lazy"
-                  onError={(e) => {
-                    e.currentTarget.onerror = null;
-                    e.currentTarget.src = categoryFallbackSrc;
-                  }}
-                />
+              <div className="p-3 flex flex-col items-center gap-2">
+                <div className="w-full aspect-square rounded-xl overflow-hidden bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800">
+                  <img
+                    src={resolvedSrc || categoryFallbackSrc}
+                    alt={cat}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = categoryFallbackSrc;
+                    }}
+                  />
+                </div>
+                <span className="text-xs font-semibold leading-tight text-center truncate w-full">{cat}</span>
               </div>
-              <span className="tracking-wide">{cat}</span>
             </button>
           );
         })}
@@ -138,9 +140,9 @@ const CategoryTopBar = React.memo(function CategoryTopBar({
           type="button"
           onClick={() => handleScroll("left")}
           aria-label="Scroll categories left"
-          className="absolute left-1 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-full bg-white/80 p-1 text-sm text-neutral-600 shadow-lg backdrop-blur-sm transition hover:bg-white dark:bg-neutral-900/80 dark:text-neutral-300"
+          className="absolute left-1 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-1 shadow-md backdrop-blur transition hover:bg-white dark:bg-neutral-900/80"
         >
-          ‹
+          <ChevronLeft className="w-4 h-4 text-neutral-800 dark:text-neutral-100" />
         </button>
       )}
       {canScroll.canScrollRight && (
@@ -148,9 +150,9 @@ const CategoryTopBar = React.memo(function CategoryTopBar({
           type="button"
           onClick={() => handleScroll("right")}
           aria-label="Scroll categories right"
-          className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-full bg-white/80 p-1 text-sm text-neutral-600 shadow-lg backdrop-blur-sm transition hover:bg-white dark:bg-neutral-900/80 dark:text-neutral-300"
+          className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-1 shadow-md backdrop-blur transition hover:bg-white dark:bg-neutral-900/80"
         >
-          ›
+          <ChevronRight className="w-4 h-4 text-neutral-800 dark:text-neutral-100" />
         </button>
       )}
     </div>
