@@ -4709,7 +4709,7 @@ function OrderTypePromptModal({
               style={shopIsOpen ? enabledActionStyle : undefined}
             >
               <Bike className="w-5 h-5" />
-              {shopIsOpen ? t("Delivery") : t("Shop Closed")}
+              {shopIsOpen ? t("Delivery") : t("Delivery is closed")}
             </button>
           ) : (
             <div className="rounded-2xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-sm font-semibold text-rose-600 dark:text-rose-300">
@@ -5543,6 +5543,40 @@ export default function QrMenu() {
   const allowTableOrder = boolish(orderSelectCustomization?.table_order_enabled, true);
   const tableQrScanEnabled = boolish(orderSelectCustomization?.table_qr_scan_enabled, true);
   const hideAllQrProducts = boolish(orderSelectCustomization?.disable_all_products, false);
+  const menuBrowseHeaderContent = isMenuBrowseMode ? (
+    <div className="flex items-center gap-3">
+      <button
+        type="button"
+        onClick={() => openLandingHome()}
+        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-neutral-200/80 bg-white/70 text-neutral-600 transition hover:border-neutral-300 hover:bg-white hover:text-neutral-900 dark:border-neutral-800 dark:bg-neutral-900/75 dark:text-neutral-300 dark:hover:bg-neutral-900 dark:hover:text-neutral-100"
+        aria-label={t("Back")}
+      >
+        <ChevronLeft className="h-4.5 w-4.5" />
+      </button>
+      <div className="relative flex-1">
+        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400 dark:text-neutral-500" />
+        <input
+          type="search"
+          value={menuSearch}
+          onChange={(event) => setMenuSearch(event.target.value)}
+          placeholder={t("Search menu")}
+          className="w-full rounded-xl border border-neutral-200 bg-white py-2.5 pl-10 pr-10 text-sm text-neutral-900 shadow-sm outline-none transition focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-50"
+          autoComplete="off"
+          inputMode="search"
+        />
+        {menuSearch ? (
+          <button
+            type="button"
+            onClick={() => setMenuSearch("")}
+            className="absolute right-2.5 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-neutral-100 text-neutral-600 transition hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+            aria-label={t("Clear")}
+          >
+            ×
+          </button>
+        ) : null}
+      </div>
+    </div>
+  ) : null;
   const editingCartItem = useMemo(
     () =>
       editingCartItemId
@@ -7645,6 +7679,7 @@ export default function QrMenu() {
                   loadingShopHours={false}
                   shopHoursDropdownRef={null}
                   showInfo={false}
+                  toolbarCenterContent={menuBrowseHeaderContent}
                 />
                 <HeaderDrawer
                   isOpen={isAppHeaderDrawerOpen}
@@ -7661,45 +7696,6 @@ export default function QrMenu() {
                   onRequestAuthView={openFullScreenAuth}
                 />
               </>
-            ) : null}
-
-            {isMenuBrowseMode ? (
-              <div className="border-b border-black/5 bg-white/92 backdrop-blur dark:border-white/10 dark:bg-neutral-950/92">
-                <div className="w-full max-w-[1400px] mx-auto px-3 sm:px-4 md:px-6 lg:px-6 xl:px-8 py-3">
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={openLandingHome}
-                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-neutral-200 bg-white text-neutral-900 shadow-sm transition hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
-                      aria-label={t("Back")}
-                    >
-                      <ChevronLeft className="h-5 w-5" />
-                    </button>
-                    <div className="relative flex-1">
-                      <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400 dark:text-neutral-500" />
-                      <input
-                        type="search"
-                        value={menuSearch}
-                        onChange={(event) => setMenuSearch(event.target.value)}
-                        placeholder={t("Search menu")}
-                        className="w-full rounded-2xl border border-neutral-200 bg-white py-3 pl-11 pr-11 text-sm text-neutral-900 shadow-sm outline-none transition focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-50"
-                        autoComplete="off"
-                        inputMode="search"
-                      />
-                      {menuSearch ? (
-                        <button
-                          type="button"
-                          onClick={() => setMenuSearch("")}
-                          className="absolute right-3 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-neutral-100 text-neutral-600 transition hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-                          aria-label={t("Clear")}
-                        >
-                          ×
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              </div>
             ) : null}
 
             <div className="w-full max-w-[1400px] mx-auto px-3 sm:px-4 md:px-6 lg:px-6 xl:px-8 pb-32">

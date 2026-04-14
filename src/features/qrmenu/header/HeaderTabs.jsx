@@ -61,6 +61,7 @@ function HeaderTabs({
   t,
   onOpenMarketplace,
   languageControl = null,
+  toolbarCenterContent = null,
 }) {
   const isToolbar = layout === "toolbar";
   const resolvedAccentColor = normalizeHexColor(accentColor, "#111827");
@@ -128,6 +129,7 @@ function HeaderTabs({
   const hasVisibleSegments = visibleSegments.length > 0;
   const compactLogoSrc = String(mainTitleLogo || "").trim();
   const showCompactBrandSlot = isToolbar && showCompactBranding;
+  const hasToolbarCenterContent = isToolbar && Boolean(toolbarCenterContent);
 
   const segmentControl = hasVisibleSegments ? (
     <div
@@ -204,7 +206,9 @@ function HeaderTabs({
         ) : null}
       </div>
 
-      {showCompactBrandSlot ? (
+      {hasToolbarCenterContent ? (
+        <div className="min-w-0 flex-1 px-0.5">{toolbarCenterContent}</div>
+      ) : showCompactBrandSlot ? (
         <div className="min-w-0 flex-1 px-0.5">
           <div className="flex h-10 sm:h-11 items-center justify-center">
             {compactLogoSrc ? (

@@ -34,6 +34,7 @@ function Header({
   languageControl,
   showInfo = true,
   onOpenMarketplace,
+  toolbarCenterContent = null,
 }) {
   const [showCompactBranding, setShowCompactBranding] = React.useState(false);
 
@@ -84,6 +85,7 @@ function Header({
             t={t}
             onOpenMarketplace={onOpenMarketplace}
             languageControl={languageControl}
+            toolbarCenterContent={toolbarCenterContent}
           />
         </div>
       </header>
