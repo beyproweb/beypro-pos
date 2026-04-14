@@ -5523,7 +5523,6 @@ export default function QrMenu() {
   const homeLabel = t("Home");
   const callWaiterLabel = t("Call Waiter");
   const reOrderLabel = "Re-Order";
-  const aiOrderLabel = t("AI Order");
   const cartLabel = t("Your Order");
   const scanTargetTable = useMemo(
     () => toArray(tables).find((tbl) => Number(tbl?.tableNumber) === Number(tableScanTarget)) || null,
@@ -5543,7 +5542,20 @@ export default function QrMenu() {
   const allowTableOrder = boolish(orderSelectCustomization?.table_order_enabled, true);
   const tableQrScanEnabled = boolish(orderSelectCustomization?.table_qr_scan_enabled, true);
   const hideAllQrProducts = boolish(orderSelectCustomization?.disable_all_products, false);
-  const menuBrowseHeaderContent = isMenuBrowseMode ? (
+  const editingCartItem = useMemo(
+    () =>
+      editingCartItemId
+        ? cartItems.find((item) => String(item?.unique_id) === String(editingCartItemId)) || null
+        : null,
+    [cartItems, editingCartItemId]
+  );
+  const cartNewItemsCount = useMemo(
+    () => cartItems.filter((item) => !item?.locked).length,
+    [cartItems]
+  );
+  const isTableOrderProductPage = !showHome && resolvedOrderTypeForActions === "table";
+  const showHeaderSearchControls = isMenuBrowseMode || isTableOrderProductPage;
+  const menuBrowseHeaderContent = showHeaderSearchControls ? (
     <div className="flex items-center gap-3">
       <button
         type="button"
@@ -5577,18 +5589,6 @@ export default function QrMenu() {
       </div>
     </div>
   ) : null;
-  const editingCartItem = useMemo(
-    () =>
-      editingCartItemId
-        ? cartItems.find((item) => String(item?.unique_id) === String(editingCartItemId)) || null
-        : null,
-    [cartItems, editingCartItemId]
-  );
-  const cartNewItemsCount = useMemo(
-    () => cartItems.filter((item) => !item?.locked).length,
-    [cartItems]
-  );
-  const isTableOrderProductPage = !showHome && resolvedOrderTypeForActions === "table";
   const takeawayMode = String(takeaway?.mode || "").toLowerCase();
   const isReservationProductPage =
     !showHome &&
@@ -5605,6 +5605,7 @@ export default function QrMenu() {
     !showTableSelector &&
     hasBottomNavContext &&
     (!showHome || showStatus) &&
+    !isTableOrderProductPage &&
     !isCartDrawerOpen;
   const showCustomerAuthWelcomeModal = isManualAuthModalOpen;
   const visibleMenuCategories = useMemo(
@@ -6059,10 +6060,6 @@ export default function QrMenu() {
     [reservationPendingCheckIn, safeProducts, setCart, showReservationPendingCheckInMessage, t]
   );
 
-  const onOpenVoiceFromNav = useCallback(() => {
-    window.dispatchEvent(new Event("qr:voice-order-open"));
-  }, []);
-
   const onReOrderFromNav = useCallback(async () => {
     // Use the same restore logic as "Order Another" so table flow does not fall back to home.
     window.dispatchEvent(new Event("qr:voice-order-close"));
@@ -6265,8 +6262,6 @@ export default function QrMenu() {
   const disableCallWaiterAction = !showCallWaiterButton || callWaiterButtonDisabled;
   const disableReorderAction = !canUseReorderSlot || disableBottomNavForCancelledStatus;
   const disableCartAction = !canOpenCartFromNav || disableBottomNavForCancelledStatus;
-  const disableVoiceAction =
-    !canStartVoiceFromNav || disableBottomNavForCancelledStatus || hideAllQrProducts;
   const shouldAnimateCartNavButton = cartNewItemsCount > 0 && !disableCartAction;
   const loggedInCustomerPrefill = useMemo(
     () => ({
@@ -7800,11 +7795,11 @@ export default function QrMenu() {
               {callWaiterFeedback}
             </div>
           ) : null}
-          <div className="mx-auto grid w-full max-w-xl grid-cols-5 gap-2 rounded-2xl border border-neutral-200 bg-white/95 p-2 shadow-[0_10px_35px_rgba(0,0,0,0.2)] backdrop-blur">
+          <div className="mx-auto grid w-full max-w-xl grid-cols-4 gap-1.5 rounded-2xl border border-neutral-200 bg-white/95 p-1.5 shadow-[0_10px_35px_rgba(0,0,0,0.2)] backdrop-blur sm:gap-2 sm:p-2">
             <button
               type="button"
               onClick={onGoHomeFromNav}
-              className="inline-flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border border-slate-300 bg-gradient-to-b from-slate-100 to-white px-1 text-[11px] font-semibold leading-none text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900 active:scale-[0.98]"
+              className="inline-flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border border-slate-300 bg-gradient-to-b from-slate-100 to-white px-0.5 text-[10px] font-semibold leading-none text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900 active:scale-[0.98] sm:min-h-[60px] sm:px-1 sm:text-[11px]"
               aria-label={homeLabel}
             >
               <House className="h-[18px] w-[18px]" aria-hidden="true" />
@@ -7815,7 +7810,7 @@ export default function QrMenu() {
               type="button"
               onClick={onCallWaiterClick}
               disabled={disableCallWaiterAction}
-              className={`relative inline-flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border px-1 text-[11px] font-semibold leading-none transition ${
+              className={`relative inline-flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border px-0.5 text-[10px] font-semibold leading-none transition sm:min-h-[60px] sm:px-1 sm:text-[11px] ${
                 disableCallWaiterAction
                   ? "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
                   : "border-red-500 bg-red-600 text-white hover:bg-red-700 active:scale-[0.98]"
@@ -7839,7 +7834,7 @@ export default function QrMenu() {
               type="button"
               onClick={onReorderSlotClick}
               disabled={disableReorderAction}
-              className={`inline-flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border px-1 text-[11px] font-semibold leading-none transition ${
+              className={`inline-flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border px-0.5 text-[10px] font-semibold leading-none transition sm:min-h-[60px] sm:px-1 sm:text-[11px] ${
                 !disableReorderAction
                   ? "border-amber-500 bg-amber-500 text-white hover:bg-amber-600 active:scale-[0.98]"
                   : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
@@ -7854,7 +7849,7 @@ export default function QrMenu() {
               type="button"
               onClick={onOpenCartFromNav}
               disabled={disableCartAction}
-              className={`relative inline-flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border px-1 text-[11px] font-semibold leading-none transition ${
+              className={`relative inline-flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border px-0.5 text-[10px] font-semibold leading-none transition sm:min-h-[60px] sm:px-1 sm:text-[11px] ${
                 !disableCartAction
                   ? "border-emerald-500 bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.98]"
                   : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
@@ -7883,20 +7878,6 @@ export default function QrMenu() {
               ) : null}
             </button>
 
-            <button
-              type="button"
-              onClick={onOpenVoiceFromNav}
-              disabled={disableVoiceAction}
-              className={`inline-flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border px-1 text-[11px] font-semibold leading-none transition ${
-                !disableVoiceAction
-                  ? "border-violet-500 bg-violet-600 text-white hover:bg-violet-700 active:scale-[0.98]"
-                  : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
-              }`}
-              aria-label={aiOrderLabel}
-            >
-              <Sparkles className="h-[18px] w-[18px]" aria-hidden="true" />
-              <span className="block whitespace-nowrap">{aiOrderLabel}</span>
-            </button>
           </div>
         </div>
       )}
