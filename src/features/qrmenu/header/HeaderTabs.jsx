@@ -43,6 +43,7 @@ function HeaderTabs({
   isDrawerOpen = false,
   onOpenDrawer,
   onSelect,
+  menuEnabled = true,
   reservationEnabled = true,
   tableEnabled = true,
   deliveryEnabled = true,
@@ -114,7 +115,7 @@ function HeaderTabs({
     {
       key: "menu",
       label: t("Menu"),
-      enabled: true,
+      enabled: menuEnabled,
     },
     {
       key: "request_song",

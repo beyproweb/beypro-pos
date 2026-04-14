@@ -115,7 +115,7 @@ export function normalizeQrBookingSettings(raw = {}) {
     booking_time_interval_minutes: Math.max(
       5,
       Math.min(
-        180,
+        240,
         asPositiveInt(
           source.booking_time_interval_minutes,
           QR_BOOKING_DEFAULTS.booking_time_interval_minutes

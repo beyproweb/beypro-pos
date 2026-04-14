@@ -7,6 +7,7 @@ function Header({
   isDrawerOpen = false,
   onOpenDrawer,
   onSelect,
+  menuEnabled = true,
   reservationEnabled = true,
   tableEnabled = true,
   deliveryEnabled = true,
@@ -65,6 +66,7 @@ function Header({
             isDrawerOpen={isDrawerOpen}
             onOpenDrawer={onOpenDrawer}
             onSelect={onSelect}
+            menuEnabled={menuEnabled}
             reservationEnabled={reservationEnabled}
             tableEnabled={tableEnabled}
             deliveryEnabled={deliveryEnabled}
@@ -94,6 +96,7 @@ function Header({
           isDrawerOpen={isDrawerOpen}
           onOpenDrawer={onOpenDrawer}
           onSelect={onSelect}
+          menuEnabled={menuEnabled}
           reservationEnabled={reservationEnabled}
           tableEnabled={tableEnabled}
           deliveryEnabled={deliveryEnabled}

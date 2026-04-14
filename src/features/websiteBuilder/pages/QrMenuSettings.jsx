@@ -326,6 +326,7 @@ export default function QrMenuSettings() {
   const [loadingLink, setLoadingLink] = useState(false);
   const qrRef = useRef();
   const [savingDelivery, setSavingDelivery] = useState(false);
+  const [savingMenuTab, setSavingMenuTab] = useState(false);
   const [savingReservationPickup, setSavingReservationPickup] = useState(false);
   const [savingTableOrder, setSavingTableOrder] = useState(false);
   const [savingTableQrScan, setSavingTableQrScan] = useState(false);
@@ -431,6 +432,7 @@ export default function QrMenuSettings() {
   social_tiktok: "",
   social_website: "",
   delivery_enabled: true,
+  menu_tab_enabled: true,
   delivery_zone_cities: [],
   delivery_range_km: 5,
   delivery_origin_location: "",
@@ -1376,6 +1378,25 @@ async function saveAllCustomization() {
       updateField("delivery_enabled", !nextValue);
     } finally {
       setSavingDelivery(false);
+    }
+  };
+
+  const toggleMenuTab = async () => {
+    const nextValue = !settings.menu_tab_enabled;
+    updateField("menu_tab_enabled", nextValue);
+    setSavingMenuTab(true);
+    try {
+      await secureFetch("/settings/qr-menu-customization", {
+        method: "POST",
+        body: JSON.stringify({ menu_tab_enabled: nextValue }),
+      });
+      toast.success(nextValue ? t("Menu is open") : t("Menu is closed"));
+    } catch (err) {
+      console.error("❌ Failed to toggle menu tab:", err);
+      toast.error(t("Failed to save menu setting"));
+      updateField("menu_tab_enabled", !nextValue);
+    } finally {
+      setSavingMenuTab(false);
     }
   };
 
@@ -3009,6 +3030,32 @@ async function saveAllCustomization() {
 
             <div className="space-y-6">
               <div>
+                <label className="block text-[18px] font-bold text-slate-900 dark:text-slate-100">{t("Menu Tab")}</label>
+                <div className="mt-3 flex flex-wrap items-center gap-4">
+                  <span
+                    className={`rounded-full px-4 py-2 text-sm font-medium ${
+                      settings.menu_tab_enabled
+                        ? "border border-emerald-200 bg-emerald-100 text-emerald-800"
+                        : "border border-rose-200 bg-rose-100 text-rose-700"
+                    }`}
+                  >
+                    {settings.menu_tab_enabled ? t("Menu is open") : t("Menu is closed")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={toggleMenuTab}
+                    disabled={savingMenuTab}
+                    className="rounded-full border border-blue-500 px-6 py-2.5 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    {settings.menu_tab_enabled ? t("Close Menu") : t("Open Menu")}
+                  </button>
+                </div>
+                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                  {t("Toggle whether the Menu tab appears in QR menu order type options.")}
+                </p>
+              </div>
+
+              <div>
                 <label className="block text-[18px] font-bold text-slate-900 dark:text-slate-100">{t("Delivery Ordering")}</label>
                 <div className="mt-3 flex flex-wrap items-center gap-4">
                   <span
@@ -3623,7 +3670,7 @@ async function saveAllCustomization() {
                       }
                       className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
                     >
-                      {[5, 10, 15, 20, 30, 45, 60].map((step) => (
+                      {[5, 10, 15, 20, 30, 45, 60, 90, 120, 150, 180, 210, 240].map((step) => (
                         <option key={`booking-step-${step}`} value={String(step)}>
                           {step}
                         </option>

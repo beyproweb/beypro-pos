@@ -653,6 +653,7 @@ async function load() {
   const phoneNumber = c.phone || "";
   const callUsHref = phoneNumber ? `tel:${String(phoneNumber).replace(/\s+/g, "")}` : "";
   const allowDelivery = boolish(c.delivery_enabled, true);
+  const menuTabEnabled = boolish(c.menu_tab_enabled, true);
   const reservationTabEnabled = boolish(c.reservation_tab_enabled, true);
   const hideAllProducts = boolish(c.disable_all_products, false);
   const accent = c.branding_color || c.primary_color || "#4F46E5";
@@ -2180,6 +2181,7 @@ async function load() {
         isDrawerOpen={isReservationHeaderDrawerOpen}
         onOpenDrawer={openReservationHeaderDrawer}
         onSelect={handleHeaderOrderTypeSelect}
+        menuEnabled={menuTabEnabled}
         reservationEnabled={reservationEnabled && reservationTabEnabled}
         tableEnabled={tableEnabled}
         deliveryEnabled={allowDelivery}
@@ -5537,6 +5539,7 @@ export default function QrMenu() {
     orderSelectCustomization?.reservation_pickup_enabled,
     true
   );
+  const allowMenuTab = boolish(orderSelectCustomization?.menu_tab_enabled, true);
   const allowTableOrder = boolish(orderSelectCustomization?.table_order_enabled, true);
   const tableQrScanEnabled = boolish(orderSelectCustomization?.table_qr_scan_enabled, true);
   const hideAllQrProducts = boolish(orderSelectCustomization?.disable_all_products, false);
@@ -7618,6 +7621,7 @@ export default function QrMenu() {
                   isDrawerOpen={isAppHeaderDrawerOpen}
                   onOpenDrawer={openMenuHeaderDrawer}
                   onSelect={handleSharedHeaderOrderTypeSelect}
+                  menuEnabled={allowMenuTab}
                   reservationEnabled={!hasActiveDeliveryLock}
                   tableEnabled={!hasActiveDeliveryLock && allowTableOrder}
                   deliveryEnabled={boolish(orderSelectCustomization?.delivery_enabled, true)}
