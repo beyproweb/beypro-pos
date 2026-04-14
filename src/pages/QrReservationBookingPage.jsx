@@ -17,6 +17,7 @@ import {
   normalizeReservationTimeSlotOptions,
 } from "../utils/qrBooking";
 import {
+  buildConcertBookingPath,
   buildReservationContactPath,
   buildPublicMenuPath,
   resolvePublicBookingIdentifier,
@@ -575,6 +576,8 @@ export default function QrReservationBookingPage() {
   const [settings, setSettings] = React.useState(null);
   const [tables, setTables] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
+  const [concertEventsLoading, setConcertEventsLoading] = React.useState(false);
+  const [concertEventsForDate, setConcertEventsForDate] = React.useState([]);
   const [slotsLoading, setSlotsLoading] = React.useState(false);
   const [slots, setSlots] = React.useState([]);
   const [floorPlanLoading, setFloorPlanLoading] = React.useState(false);
@@ -839,9 +842,63 @@ export default function QrReservationBookingPage() {
 
   React.useEffect(() => {
     let cancelled = false;
-    async function loadSlots() {
+    async function loadConcertEvents() {
       if (!identifier || !form.reservation_date) {
+        setConcertEventsForDate([]);
+        setConcertEventsLoading(false);
+        return;
+      }
+      setConcertEventsLoading(true);
+      try {
+        const response = await secureFetch(
+          `/public/concerts/${encodeURIComponent(identifier)}/events`
+        );
+        if (cancelled) return;
+        const nextEvents = Array.isArray(response?.events) ? response.events : [];
+        setConcertEventsForDate(
+          nextEvents.filter(
+            (event) => normalizeReservationDateYmd(event?.event_date) === form.reservation_date
+          )
+        );
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to load concert events for reservation date:", error);
+          setConcertEventsForDate([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setConcertEventsLoading(false);
+        }
+      }
+    }
+
+    loadConcertEvents();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [form.reservation_date, identifier]);
+
+  const hasConcertEventOnSelectedDate = concertEventsForDate.length > 0;
+
+  React.useEffect(() => {
+    if (!hasConcertEventOnSelectedDate) return;
+    setForm((prev) => {
+      if (!prev.reservation_time && !prev.table_number) return prev;
+      return {
+        ...prev,
+        reservation_time: "",
+        table_number: "",
+      };
+    });
+  }, [hasConcertEventOnSelectedDate]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    async function loadSlots() {
+      if (!identifier || !form.reservation_date || hasConcertEventOnSelectedDate) {
         setSlots([]);
+        setSlotsLoading(false);
         return;
       }
       setSlotsLoading(true);
@@ -876,7 +933,7 @@ export default function QrReservationBookingPage() {
     return () => {
       cancelled = true;
     };
-  }, [form.reservation_date, identifier, selectedGuestCount, t]);
+  }, [form.reservation_date, hasConcertEventOnSelectedDate, identifier, selectedGuestCount, t]);
 
   React.useEffect(() => {
     if (!form.reservation_time) return;
@@ -890,7 +947,12 @@ export default function QrReservationBookingPage() {
   React.useEffect(() => {
     let cancelled = false;
     async function loadPlan() {
-      if (!identifier) return;
+      if (!identifier || hasConcertEventOnSelectedDate) {
+        setFloorPlan(null);
+        setTableStates([]);
+        setFloorPlanLoading(false);
+        return;
+      }
       setFloorPlanLoading(true);
       try {
         const cacheBust = String(Date.now());
@@ -1055,6 +1117,7 @@ export default function QrReservationBookingPage() {
   }, [
     form.reservation_date,
     form.reservation_time,
+    hasConcertEventOnSelectedDate,
     hasGuestCompositionInput,
     identifier,
     menCount,
@@ -1251,6 +1314,25 @@ export default function QrReservationBookingPage() {
   const handleBack = React.useCallback(() => {
     navigate(menuPath);
   }, [menuPath, navigate]);
+  const handleOpenConcertEvent = React.useCallback(
+    (event) => {
+      if (!event?.id) return;
+      const bookingPath = buildConcertBookingPath({
+        pathname: location.pathname,
+        slug,
+        id,
+        search: location.search,
+        concertId: event.id,
+      });
+      navigate(bookingPath, {
+        state: {
+          prefetchedConcertEvent: event,
+          prefetchedAt: Date.now(),
+        },
+      });
+    },
+    [id, location.pathname, location.search, navigate, slug]
+  );
   const handleEditCustomer = React.useCallback(() => {
     const params = new URLSearchParams(location.search);
     params.set("edit", "1");
@@ -1301,6 +1383,16 @@ export default function QrReservationBookingPage() {
         return { ok: false, phone: normalizedPhone, phoneVerificationToken: "" };
       }
 
+      const sessionPhone = normalizeQrPhone(customer?.phone || "");
+      const sessionAlreadyVerified =
+        isLoggedInEffective &&
+        customer?.phone_verified === true &&
+        QR_PHONE_REGEX.test(sessionPhone) &&
+        sessionPhone === normalizedPhone;
+      if (sessionAlreadyVerified) {
+        return { ok: true, phone: normalizedPhone, phoneVerificationToken: "" };
+      }
+
       try {
         const status = await getCustomerPhoneVerificationStatus({
           phone: normalizedPhone,
@@ -1348,7 +1440,14 @@ export default function QrReservationBookingPage() {
 
     setSubmitting(true);
     try {
+      const bookingToken = String(storage.getItem("qr_customer_token") || "").trim();
+      const bookingAuthorization = bookingToken
+        ? bookingToken.startsWith("Bearer ")
+          ? bookingToken
+          : `Bearer ${bookingToken}`
+        : "";
       const response = await secureFetch(buildReservationApiPath(identifier), {
+        headers: bookingAuthorization ? { Authorization: bookingAuthorization } : undefined,
         method: "POST",
         body: JSON.stringify({
           table_number: Number(form.table_number || 0),
@@ -1438,16 +1537,40 @@ export default function QrReservationBookingPage() {
     return null;
   }
 
-  const primaryActionLabel = hasConfirmedTable ? t("Reserve Now") : t("Choose Table");
-  const primaryActionHelper = hasConfirmedTable
-    ? selectedTableState?.capacity
-      ? t("Selected table for {{count}} guests", { count: selectedTableState.capacity })
-      : t("Secure your reservation in a few taps")
-    : t("Pick your table from the live floor plan.");
-  const primaryActionHandler = hasConfirmedTable ? handleSubmit : () => setPickerOpen(true);
-  const primaryActionDisabled = hasConfirmedTable
-    ? !canSubmit
-    : !form.reservation_date || !form.reservation_time || pickerOpen;
+  const primaryActionLabel = hasConcertEventOnSelectedDate
+    ? concertEventsForDate.length === 1
+      ? t("Open Event")
+      : t("Choose Event")
+    : hasConfirmedTable
+      ? t("Reserve Now")
+      : t("Choose Table");
+  const primaryActionHelper = hasConcertEventOnSelectedDate
+    ? concertEventsForDate.length === 1
+      ? String(
+          concertEventsForDate[0]?.event_title ||
+            concertEventsForDate[0]?.artist_name ||
+            t("Concert event")
+        )
+      : t("This date has events. Choose one below to continue.")
+    : hasConfirmedTable
+      ? selectedTableState?.capacity
+        ? t("Selected table for {{count}} guests", { count: selectedTableState.capacity })
+        : t("Secure your reservation in a few taps")
+      : t("Pick your table from the live floor plan.");
+  const primaryActionHandler = hasConcertEventOnSelectedDate
+    ? () => {
+        if (concertEventsForDate.length === 1) {
+          handleOpenConcertEvent(concertEventsForDate[0]);
+        }
+      }
+    : hasConfirmedTable
+      ? handleSubmit
+      : () => setPickerOpen(true);
+  const primaryActionDisabled = hasConcertEventOnSelectedDate
+    ? concertEventsForDate.length !== 1
+    : hasConfirmedTable
+      ? !canSubmit
+      : !form.reservation_date || !form.reservation_time || pickerOpen;
 
   return (
     <>
@@ -1483,49 +1606,99 @@ export default function QrReservationBookingPage() {
 
       <BookingSection
         step={2}
-        title={t("Select Time")}
-        description={t("Available slots update live based on your guest count.")}
+        title={hasConcertEventOnSelectedDate ? t("Event") : t("Select Time")}
+        description={
+          hasConcertEventOnSelectedDate
+            ? t("This date has an event. Open the event instead of selecting a reservation slot.")
+            : t("Available slots update live based on your guest count.")
+        }
         rightSlot={
-          slotsLoading ? (
+          hasConcertEventOnSelectedDate ? (
+            concertEventsLoading ? (
+              <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                {t("Loading")}
+              </span>
+            ) : null
+          ) : slotsLoading ? (
             <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
               {t("Loading")}
             </span>
           ) : null
         }
       >
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {(Array.isArray(slots) ? slots : []).map((slot) => {
-            const selected = slot.time === form.reservation_time;
-            return (
-              <button
-                key={slot.time}
-                type="button"
-                disabled={!slot.isAvailable}
-                onClick={() => setForm((prev) => ({ ...prev, reservation_time: slot.time }))}
-                className={[
-                  "rounded-[22px] border px-3 py-3 text-left transition",
-                  selected
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : slot.isAvailable
-                      ? "border-neutral-200 bg-white text-neutral-900 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50"
-                      : "border-neutral-200 bg-neutral-100 text-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-500",
-                ].join(" ")}
-              >
-                <div className="text-sm font-semibold">{slot.time}</div>
-                <div className="mt-1 text-xs opacity-75">{slot.availabilityLabel}</div>
-              </button>
-            );
-          })}
-          {!slotsLoading && slots.length === 0 ? (
-            <div className="col-span-full rounded-[22px] border border-dashed border-neutral-300 px-4 py-6 text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
-              {form.reservation_date
-                ? t("No reservation slots available for this day.")
-                : t("Select a date to load reservation slots.")}
-            </div>
-          ) : null}
-        </div>
+        {hasConcertEventOnSelectedDate ? (
+          <div className="space-y-3">
+            {(Array.isArray(concertEventsForDate) ? concertEventsForDate : []).map((event) => {
+              const headline = String(
+                event?.event_title || event?.artist_name || t("Concert event")
+              ).trim();
+              const subline = String(event?.artist_name || "").trim();
+              const eventTime = String(event?.event_time || "").slice(0, 5);
+              return (
+                <button
+                  key={String(event?.id || `${event?.event_date || "concert"}-${eventTime}`)}
+                  type="button"
+                  onClick={() => handleOpenConcertEvent(event)}
+                  className="w-full rounded-[22px] border border-neutral-200 bg-white px-4 py-4 text-left transition hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50 dark:hover:border-neutral-700 dark:hover:bg-neutral-900"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-neutral-950 dark:text-white">
+                        {headline}
+                      </div>
+                      {subline && subline !== headline ? (
+                        <div className="mt-1 truncate text-xs uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                          {subline}
+                        </div>
+                      ) : null}
+                      <div className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+                        {eventTime || t("Event details")}
+                      </div>
+                    </div>
+                    <span className="shrink-0 rounded-full border border-neutral-200 px-3 py-1 text-xs font-semibold text-neutral-700 dark:border-neutral-700 dark:text-neutral-200">
+                      {t("Open Event")}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {(Array.isArray(slots) ? slots : []).map((slot) => {
+              const selected = slot.time === form.reservation_time;
+              return (
+                <button
+                  key={slot.time}
+                  type="button"
+                  disabled={!slot.isAvailable}
+                  onClick={() => setForm((prev) => ({ ...prev, reservation_time: slot.time }))}
+                  className={[
+                    "rounded-[22px] border px-3 py-3 text-left transition",
+                    selected
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : slot.isAvailable
+                        ? "border-neutral-200 bg-white text-neutral-900 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50"
+                        : "border-neutral-200 bg-neutral-100 text-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-500",
+                  ].join(" ")}
+                >
+                  <div className="text-sm font-semibold">{slot.time}</div>
+                  <div className="mt-1 text-xs opacity-75">{slot.availabilityLabel}</div>
+                </button>
+              );
+            })}
+            {!slotsLoading && slots.length === 0 ? (
+              <div className="col-span-full rounded-[22px] border border-dashed border-neutral-300 px-4 py-6 text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
+                {form.reservation_date
+                  ? t("No reservation slots available for this day.")
+                  : t("Select a date to load reservation slots.")}
+              </div>
+            ) : null}
+          </div>
+        )}
       </BookingSection>
 
+      {!hasConcertEventOnSelectedDate ? (
       <BookingSection
         step={3}
         title=""
@@ -1553,8 +1726,9 @@ export default function QrReservationBookingPage() {
           </div>
         </div>
       </BookingSection>
+      ) : null}
 
-      {hasConfirmedTable ? (
+      {!hasConcertEventOnSelectedDate && hasConfirmedTable ? (
         <div ref={confirmationSectionRef}>
           <BookingSection
             step={4}
@@ -1589,7 +1763,7 @@ export default function QrReservationBookingPage() {
       ) : null}
 
       <FloorPlanPickerModal
-        open={pickerOpen}
+        open={!hasConcertEventOnSelectedDate && pickerOpen}
         title={t("Choose your table")}
         subtitle={t("Live availability for {{date}} {{time}}", {
           date: form.reservation_date || t("selected date"),

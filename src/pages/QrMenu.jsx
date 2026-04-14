@@ -1743,9 +1743,16 @@ async function load() {
 
     setConcertSubmitting(true);
     try {
+      const bookingToken = String(storage.getItem("qr_customer_token") || "").trim();
+      const bookingAuthorization = bookingToken
+        ? bookingToken.startsWith("Bearer ")
+          ? bookingToken
+          : `Bearer ${bookingToken}`
+        : "";
       const response = await secureFetch(
         `/public/concerts/${encodeURIComponent(identifier)}/events/${concertModalEvent.id}/bookings`,
         {
+          headers: bookingAuthorization ? { Authorization: bookingAuthorization } : undefined,
           method: "POST",
           body: JSON.stringify(payload),
         }
@@ -1920,7 +1927,7 @@ async function load() {
     onShopOpenChange?.(openStatus.isOpen);
   }, [onShopOpenChange, openStatus.isOpen]);
 
-  const [activeHeaderOrderType, setActiveHeaderOrderType] = React.useState("takeaway");
+  const [activeHeaderOrderType, setActiveHeaderOrderType] = React.useState("menu");
   const handleHeaderOrderTypeSelect = React.useCallback(
     (nextType) => {
       if (!nextType) return;
@@ -2173,9 +2180,9 @@ async function load() {
         isDrawerOpen={isReservationHeaderDrawerOpen}
         onOpenDrawer={openReservationHeaderDrawer}
         onSelect={handleHeaderOrderTypeSelect}
-        reservationEnabled={reservationEnabled && reservationTabEnabled && openStatus.isOpen}
-        tableEnabled={tableEnabled && openStatus.isOpen}
-        deliveryEnabled={allowDelivery && openStatus.isOpen}
+        reservationEnabled={reservationEnabled && reservationTabEnabled}
+        tableEnabled={tableEnabled}
+        deliveryEnabled={allowDelivery}
         activeOrderType={activeHeaderOrderType}
         statusShortcutCount={statusShortcutCount}
         statusShortcutEnabled={statusShortcutEnabled}
@@ -2462,7 +2469,7 @@ async function load() {
 
 		      </div>
 
-      {/* CATEGORIES (scrollable 1 row) */}
+      {/* MENU CATEGORIES */}
       {!hideAllProducts && homeCategories.length > 0 && (
         <div className="mt-3 max-w-3xl">
 		          {/* Search */}
@@ -2499,12 +2506,6 @@ async function load() {
                   <Mic className="w-4 h-4" />
                   <span className="hidden sm:inline">{t("Voice Order")}</span>
                 </button>
-	            </div>
-	          </div>
-
-	          <div className="flex items-end justify-between">
-	            <div className="text-[11px] uppercase tracking-[0.18em] text-gray-500 dark:text-neutral-400">
-	              {t("Categories")}
 	            </div>
 	          </div>
 
@@ -3368,6 +3369,10 @@ const TakeawayOrderForm = React.memo(function TakeawayOrderForm({
   loadReservationTimeSlots = null,
   loadReservationAvailability = null,
   bookingSettings = null,
+  loadConcertEventsForDate = null,
+  onConcertBookingRequest = null,
+  onFreeConcertReservationStart = null,
+  lang = DEFAULT_LANGUAGE,
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const paymentMethods = usePaymentMethods();
@@ -3435,6 +3440,8 @@ const TakeawayOrderForm = React.memo(function TakeawayOrderForm({
   const [touched, setTouched] = useState({});
   const [paymentPrompt, setPaymentPrompt] = useState(false);
   const [shakeModal, setShakeModal] = useState(false);
+  const [reservationConcertEventsLoading, setReservationConcertEventsLoading] = useState(false);
+  const [reservationConcertEvents, setReservationConcertEvents] = useState([]);
   const [reservationTimeSlotsLoading, setReservationTimeSlotsLoading] = useState(false);
   const [reservationTimeSlots, setReservationTimeSlots] = useState([]);
   const [dateScopedAvailability, setDateScopedAvailability] = useState(null);
@@ -3453,6 +3460,61 @@ const TakeawayOrderForm = React.memo(function TakeawayOrderForm({
     if (
       form.mode !== "reservation" ||
       !form.pickup_date ||
+      typeof loadConcertEventsForDate !== "function"
+    ) {
+      setReservationConcertEventsLoading(false);
+      setReservationConcertEvents([]);
+      return undefined;
+    }
+
+    (async () => {
+      try {
+        if (active) setReservationConcertEventsLoading(true);
+        const next = await loadConcertEventsForDate(form.pickup_date);
+        if (!active) return;
+        setReservationConcertEvents(Array.isArray(next?.events) ? next.events : []);
+      } catch {
+        if (!active) return;
+        setReservationConcertEvents([]);
+      } finally {
+        if (active) setReservationConcertEventsLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [form.mode, form.pickup_date, loadConcertEventsForDate]);
+
+  const reservationConcertOptions = useMemo(
+    () =>
+      (Array.isArray(reservationConcertEvents) ? reservationConcertEvents : []).filter((event) => {
+        const computedEventSlot = computeConcertSlot({
+          eventDate: event?.event_date,
+          eventTime: event?.event_time,
+          settings: normalizedBookingSettings,
+        });
+        const eventSlotEndRaw =
+          event?.slot_end_datetime || computedEventSlot?.slot_end_datetime || "";
+        if (!eventSlotEndRaw) return true;
+        const eventSlotEndDate = parseLocalDateTime(eventSlotEndRaw);
+        return !(
+          eventSlotEndDate instanceof Date &&
+          Number.isFinite(eventSlotEndDate.getTime()) &&
+          eventSlotEndDate.getTime() < Date.now()
+        );
+      }),
+    [normalizedBookingSettings, reservationConcertEvents]
+  );
+  const hasConcertOnSelectedDate =
+    form.mode === "reservation" && reservationConcertOptions.length > 0;
+
+  useEffect(() => {
+    let active = true;
+    if (
+      form.mode !== "reservation" ||
+      !form.pickup_date ||
+      hasConcertOnSelectedDate ||
       typeof loadReservationTimeSlots !== "function"
     ) {
       setReservationTimeSlotsLoading(false);
@@ -3483,6 +3545,7 @@ const TakeawayOrderForm = React.memo(function TakeawayOrderForm({
       active = false;
     };
   }, [
+    hasConcertOnSelectedDate,
     form.mode,
     form.pickup_date,
     form.reservation_clients,
@@ -3495,6 +3558,7 @@ const TakeawayOrderForm = React.memo(function TakeawayOrderForm({
     if (
       form.mode !== "reservation" ||
       !form.pickup_date ||
+      hasConcertOnSelectedDate ||
       !form.pickup_time ||
       typeof loadReservationAvailability !== "function"
     ) {
@@ -3544,7 +3608,14 @@ const TakeawayOrderForm = React.memo(function TakeawayOrderForm({
     return () => {
       active = false;
     };
-  }, [form.mode, form.pickup_date, form.pickup_time, form.reservation_clients, loadReservationAvailability]);
+  }, [
+    hasConcertOnSelectedDate,
+    form.mode,
+    form.pickup_date,
+    form.pickup_time,
+    form.reservation_clients,
+    loadReservationAvailability,
+  ]);
 
   const safeTables = useMemo(() => (Array.isArray(tables) ? tables : []), [tables]);
   const availableReservationTables = useMemo(() => {
@@ -3789,6 +3860,18 @@ const TakeawayOrderForm = React.memo(function TakeawayOrderForm({
   }, [dateScopedAvailability?.nextAvailableTime, t]);
 
   useEffect(() => {
+    if (!hasConcertOnSelectedDate) return;
+    setForm((prev) => {
+      if (!prev.pickup_time && !prev.table_number) return prev;
+      return {
+        ...prev,
+        pickup_time: "",
+        table_number: "",
+      };
+    });
+  }, [hasConcertOnSelectedDate]);
+
+  useEffect(() => {
     if (!requiresReservationTable) return;
     if (!Number.isFinite(selectedTableNumber) || selectedTableNumber <= 0) return;
     setForm((prev) => {
@@ -3974,6 +4057,18 @@ const TakeawayOrderForm = React.memo(function TakeawayOrderForm({
     onSubmit({ ...form, phone: normalizedPhone });
   };
 
+  const handleReservationConcertSelect = useCallback(
+    (event) => {
+      if (!event) return;
+      if (boolish(event?.free_concert, false)) {
+        onFreeConcertReservationStart?.(event);
+        return;
+      }
+      onConcertBookingRequest?.(event);
+    },
+    [onConcertBookingRequest, onFreeConcertReservationStart]
+  );
+
   return (
     <div className="fixed inset-0 z-[160] bg-black/55 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
       <div
@@ -4020,29 +4115,114 @@ const TakeawayOrderForm = React.memo(function TakeawayOrderForm({
             </div>
             <div>
               <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-1">
-                {t("Select Time")}
+                {hasConcertOnSelectedDate || reservationConcertEventsLoading
+                  ? t("Event")
+                  : t("Select Time")}
               </label>
-              <ReservationSlotSelect
-                value={form.pickup_time}
-                onChange={(e) => setForm((f) => ({ ...f, pickup_time: e.target.value }))}
-                slots={reservationTimeSlots}
-                disabled={
-                  !form.pickup_date ||
-                  reservationTimeSlotsLoading ||
-                  reservationTimeSlots.length === 0
-                }
-                invalid={touched.pickup_time && !hasValidReservationTimeSlot}
-                t={t}
-              />
-              {reservationTimeSlotsLoading ? (
+              {reservationConcertEventsLoading ? (
                 <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
                   {t("Loading...")}
                 </p>
-              ) : null}
+              ) : hasConcertOnSelectedDate ? (
+                <div className="space-y-2">
+                  {reservationConcertOptions.map((event) => {
+                    const eventImage = resolveUploadedAsset(event?.event_image);
+                    const artistName = String(event?.artist_name || "").trim();
+                    const eventTitle = String(event?.event_title || "").trim();
+                    const headline = artistName || eventTitle || t("Concert");
+                    const showEventTitle =
+                      eventTitle && headline.toLowerCase() !== eventTitle.toLowerCase();
+                    const eventDate = formatConcertDisplayDateWithoutYear(event?.event_date, lang);
+                    const eventWeekday = formatConcertDisplayWeekday(event?.event_date, lang);
+                    const eventTime = String(event?.event_time || "").slice(0, 5);
+                    const forcedSoldOut =
+                      String(event?.status || "").trim().toLowerCase() === "sold_out" ||
+                      event?.auto_sold_out === true;
+
+                    return (
+                      <button
+                        key={event?.id || `${event?.event_date || "concert"}-${event?.event_time || ""}`}
+                        type="button"
+                        onClick={() => handleReservationConcertSelect(event)}
+                        disabled={forcedSoldOut}
+                        className="w-full rounded-2xl border border-neutral-200 bg-white px-3 py-3 text-left shadow-sm transition hover:border-neutral-300 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-55 dark:border-neutral-800 dark:bg-neutral-950 dark:hover:border-neutral-700 dark:hover:bg-neutral-900"
+                      >
+                        <div className="flex items-start gap-3">
+                          {eventImage ? (
+                            <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900">
+                              <img
+                                src={eventImage}
+                                alt={headline}
+                                className="h-full w-full object-cover"
+                                loading="lazy"
+                              />
+                            </div>
+                          ) : null}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                                {headline}
+                              </div>
+                              <span
+                                className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                                  forcedSoldOut
+                                    ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200"
+                                    : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
+                                }`}
+                              >
+                                {forcedSoldOut ? t("Sold Out") : t("Available")}
+                              </span>
+                            </div>
+                            {showEventTitle ? (
+                              <div className="mt-0.5 truncate text-xs uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                                {eventTitle}
+                              </div>
+                            ) : null}
+                            <div className="mt-1 text-xs text-neutral-600 dark:text-neutral-300">
+                              {[eventDate, eventWeekday, eventTime].filter(Boolean).join(" • ")}
+                            </div>
+                            <div className="mt-2 text-xs font-semibold text-neutral-900 dark:text-neutral-100">
+                              {boolish(event?.free_concert, false)
+                                ? t("Reservation")
+                                : t("Buy Ticket")}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <>
+                  <ReservationSlotSelect
+                    value={form.pickup_time}
+                    onChange={(e) => setForm((f) => ({ ...f, pickup_time: e.target.value }))}
+                    slots={reservationTimeSlots}
+                    disabled={
+                      !form.pickup_date ||
+                      reservationTimeSlotsLoading ||
+                      reservationTimeSlots.length === 0
+                    }
+                    invalid={touched.pickup_time && !hasValidReservationTimeSlot}
+                    t={t}
+                  />
+                  {reservationTimeSlotsLoading ? (
+                    <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                      {t("Loading...")}
+                    </p>
+                  ) : null}
+                </>
+              )}
             </div>
           </div>
 
-          {form.mode === "reservation" && (reservationSlotPreview || reservationAvailabilityBadge) ? (
+          {form.mode === "reservation" && hasConcertOnSelectedDate ? (
+            <div className="rounded-2xl border border-sky-200 bg-sky-50/80 p-3 text-sm text-sky-900 dark:border-sky-900/40 dark:bg-sky-950/30 dark:text-sky-100">
+              {t("This date has a concert event. Regular reservation time slots are hidden. Choose the event above to continue.")}
+            </div>
+          ) : null}
+
+          {form.mode === "reservation" && !hasConcertOnSelectedDate && (reservationSlotPreview || reservationAvailabilityBadge) ? (
             <div className="rounded-2xl border border-neutral-200 bg-neutral-50/80 p-3 dark:border-neutral-800 dark:bg-neutral-950/70">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-1">
@@ -4130,7 +4310,7 @@ const TakeawayOrderForm = React.memo(function TakeawayOrderForm({
           ) : null}
 
           {/* Table select (only for reservation) */}
-          {form.mode === "reservation" && (
+          {form.mode === "reservation" && !hasConcertOnSelectedDate && (
             <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-1">
@@ -4241,192 +4421,193 @@ const TakeawayOrderForm = React.memo(function TakeawayOrderForm({
             </div>
           )}
 
-          <input
-            className="w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
-            placeholder={t("Full Name")}
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          />
+          {!(form.mode === "reservation" && hasConcertOnSelectedDate) ? (
+            <>
+              <input
+                className="w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm"
+                placeholder={t("Full Name")}
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              />
 
-          <input
-            className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
-              touched.phone && !phoneValid ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
-            }`}
-            placeholder={t("Phone (905555555555)")}
-            value={form.phone}
-            onChange={(e) => {
-              setForm((f) => ({ ...f, phone: formatQrPhoneForInput(e.target.value) }));
-            }}
-            inputMode="tel"
-            maxLength={12}
-          />
-
-          <input
-            type="email"
-            className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
-              touched.email && !emailValid ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
-            }`}
-            placeholder={t("Email")}
-            value={form.email}
-            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-            autoComplete="email"
-          />
-
-          {form.mode === "reservation" && reservationGuestCompositionVisible && (
-            <div className="rounded-2xl border border-neutral-200 bg-neutral-50/80 p-3 dark:border-neutral-800 dark:bg-neutral-950/70">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-                    {t("Guest composition")}
-                  </p>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                    {hasReservationGuestCompositionInput
-                      ? `${reservationMenCount + reservationWomenCount}/${reservationClientsCount} ${t("Guests")}`
-                      : reservationGuestCompositionEffectiveFieldMode === "required"
-                        ? `${reservationClientsCount || 0} ${t("Guests")}`
-                        : t("Select Guests")}
-                  </p>
-                </div>
-                <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-neutral-700 shadow-sm ring-1 ring-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 dark:ring-neutral-800">
-                  {hasReservationClients ? reservationClientsCount : 0}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                {[
-                  {
-                    key: "reservation_men",
-                    label: t("Men"),
-                    value: reservationMenCount,
-                  },
-                  {
-                    key: "reservation_women",
-                    label: t("Women"),
-                    value: reservationWomenCount,
-                  },
-                ].map(({ key, label, value }) => {
-                  const decreaseDisabled =
-                    reservationGuestCompositionLocked ||
-                    !hasReservationClients ||
-                    value <= 0;
-                  const increaseDisabled =
-                    reservationGuestCompositionLocked ||
-                    !hasReservationClients ||
-                    value >= reservationClientsCount;
-
-                  return (
-                    <div
-                      key={key}
-                      className="flex items-center justify-between rounded-2xl bg-white px-3 py-2.5 ring-1 ring-neutral-200 dark:bg-neutral-900 dark:ring-neutral-800"
-                    >
-                      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-                        {label}
-                      </span>
-
-                      {reservationGuestCompositionLocked ? (
-                        <div className="min-w-[2.5rem] rounded-full bg-neutral-100 px-3 py-1 text-center text-sm font-semibold text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100">
-                          {value}
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleGuestCompositionChange(key, -1)}
-                            disabled={decreaseDisabled}
-                            className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-300 text-base font-semibold text-neutral-700 transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
-                            aria-label={`${label} -`}
-                          >
-                            -
-                          </button>
-                          <div className="min-w-[2.5rem] text-center text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                            {value}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleGuestCompositionChange(key, 1)}
-                            disabled={increaseDisabled}
-                            className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-300 text-base font-semibold text-neutral-700 transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
-                            aria-label={`${label} +`}
-                          >
-                            +
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {reservationGuestCompositionPolicyMessage &&
-              !reservationGuestCompositionError &&
-              !reservationRequiresEvenGuestCount ? (
-                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
-                  {reservationGuestCompositionPolicyMessage}
-                </div>
-              ) : null}
-
-              {reservationGuestCompositionError ? (
-                <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
-                  {reservationGuestCompositionError}
-                </div>
-              ) : null}
-            </div>
-          )}
-
-          {/* Payment Method */}
-          {requiresPayment && (
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{t("Payment Method")}</label>
-              <select
+              <input
                 className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
-                  paymentPrompt && !form.payment_method ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
+                  touched.phone && !phoneValid ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
                 }`}
-                value={form.payment_method}
-                onChange={(e) => handlePaymentChange(e.target.value)}
-              >
-                <option value="">{t("Select Payment Method")}</option>
-                {availablePaymentMethods.map((method) => (
-                  <option key={method.id} value={method.id}>
-                    {method.icon ? `${method.icon} ` : ""}
-                    {method.label}
-                  </option>
-                ))}
-              </select>
-              {paymentPrompt && !form.payment_method && (
-                <p className="text-xs font-semibold text-rose-600">
-                  {t("Please select a payment method before continuing.")}
-                </p>
+                placeholder={t("Phone (905555555555)")}
+                value={form.phone}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, phone: formatQrPhoneForInput(e.target.value) }));
+                }}
+                inputMode="tel"
+                maxLength={12}
+              />
+
+              <input
+                type="email"
+                className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
+                  touched.email && !emailValid ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
+                }`}
+                placeholder={t("Email")}
+                value={form.email}
+                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                autoComplete="email"
+              />
+
+              {form.mode === "reservation" && reservationGuestCompositionVisible && (
+                <div className="rounded-2xl border border-neutral-200 bg-neutral-50/80 p-3 dark:border-neutral-800 dark:bg-neutral-950/70">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+                        {t("Guest composition")}
+                      </p>
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                        {hasReservationGuestCompositionInput
+                          ? `${reservationMenCount + reservationWomenCount}/${reservationClientsCount} ${t("Guests")}`
+                          : reservationGuestCompositionEffectiveFieldMode === "required"
+                            ? `${reservationClientsCount || 0} ${t("Guests")}`
+                            : t("Select Guests")}
+                      </p>
+                    </div>
+                    <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-neutral-700 shadow-sm ring-1 ring-neutral-200 dark:bg-neutral-900 dark:text-neutral-200 dark:ring-neutral-800">
+                      {hasReservationClients ? reservationClientsCount : 0}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {[
+                      {
+                        key: "reservation_men",
+                        label: t("Men"),
+                        value: reservationMenCount,
+                      },
+                      {
+                        key: "reservation_women",
+                        label: t("Women"),
+                        value: reservationWomenCount,
+                      },
+                    ].map(({ key, label, value }) => {
+                      const decreaseDisabled =
+                        reservationGuestCompositionLocked ||
+                        !hasReservationClients ||
+                        value <= 0;
+                      const increaseDisabled =
+                        reservationGuestCompositionLocked ||
+                        !hasReservationClients ||
+                        value >= reservationClientsCount;
+
+                      return (
+                        <div
+                          key={key}
+                          className="flex items-center justify-between rounded-2xl bg-white px-3 py-2.5 ring-1 ring-neutral-200 dark:bg-neutral-900 dark:ring-neutral-800"
+                        >
+                          <span className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+                            {label}
+                          </span>
+
+                          {reservationGuestCompositionLocked ? (
+                            <div className="min-w-[2.5rem] rounded-full bg-neutral-100 px-3 py-1 text-center text-sm font-semibold text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100">
+                              {value}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleGuestCompositionChange(key, -1)}
+                                disabled={decreaseDisabled}
+                                className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-300 text-base font-semibold text-neutral-700 transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                                aria-label={`${label} -`}
+                              >
+                                -
+                              </button>
+                              <div className="min-w-[2.5rem] text-center text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                                {value}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleGuestCompositionChange(key, 1)}
+                                disabled={increaseDisabled}
+                                className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-300 text-base font-semibold text-neutral-700 transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                                aria-label={`${label} +`}
+                              >
+                                +
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {reservationGuestCompositionPolicyMessage &&
+                  !reservationGuestCompositionError &&
+                  !reservationRequiresEvenGuestCount ? (
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+                      {reservationGuestCompositionPolicyMessage}
+                    </div>
+                  ) : null}
+
+                  {reservationGuestCompositionError ? (
+                    <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
+                      {reservationGuestCompositionError}
+                    </div>
+                  ) : null}
+                </div>
               )}
-            </div>
-          )}
 
-          {/* Notes */}
-          <textarea
-            className="w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm resize-none h-24"
-            placeholder={t("Notes (optional)")}
-            value={form.notes}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, notes: e.target.value }))
-            }
-          />
+              {requiresPayment && (
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{t("Payment Method")}</label>
+                  <select
+                    className={`w-full rounded-xl border px-3 py-2.5 text-sm bg-white dark:bg-neutral-950 ${
+                      paymentPrompt && !form.payment_method ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"
+                    }`}
+                    value={form.payment_method}
+                    onChange={(e) => handlePaymentChange(e.target.value)}
+                  >
+                    <option value="">{t("Select Payment Method")}</option>
+                    {availablePaymentMethods.map((method) => (
+                      <option key={method.id} value={method.id}>
+                        {method.icon ? `${method.icon} ` : ""}
+                        {method.label}
+                      </option>
+                    ))}
+                  </select>
+                  {paymentPrompt && !form.payment_method && (
+                    <p className="text-xs font-semibold text-rose-600">
+                      {t("Please select a payment method before continuing.")}
+                    </p>
+                  )}
+                </div>
+              )}
 
-          {/* Submit */}
-          <button
-            type="submit"
-            disabled={reservationSubmitDisabled}
-            className="w-full rounded-xl border px-4 py-3 text-sm font-semibold text-white disabled:opacity-55"
-            style={{
-              backgroundColor: submitButtonColor,
-              borderColor: submitButtonColor,
-              color: submitButtonTextColor,
-            }}
-          >
-            {submitting
-              ? t("Please wait...")
-              : form.mode === "reservation"
-                ? t("Reserve now")
-                : t("Continue")}
-          </button>
+              <textarea
+                className="w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm resize-none h-24"
+                placeholder={t("Notes (optional)")}
+                value={form.notes}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, notes: e.target.value }))
+                }
+              />
+
+              <button
+                type="submit"
+                disabled={reservationSubmitDisabled}
+                className="w-full rounded-xl border px-4 py-3 text-sm font-semibold text-white disabled:opacity-55"
+                style={{
+                  backgroundColor: submitButtonColor,
+                  borderColor: submitButtonColor,
+                  color: submitButtonTextColor,
+                }}
+              >
+                {submitting
+                  ? t("Please wait...")
+                  : form.mode === "reservation"
+                    ? t("Reserve now")
+                    : t("Continue")}
+              </button>
+            </>
+          ) : null}
         </form>
       </div>
       <style>{`
@@ -4776,6 +4957,7 @@ export default function QrMenu() {
   const [callWaiterFeedback, setCallWaiterFeedback] = useState("");
   const [waiterTypeModalOpen, setWaiterTypeModalOpen] = useState(false);
   const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
+  const [isMenuBrowseMode, setIsMenuBrowseMode] = useState(false);
   const [editingCartItemId, setEditingCartItemId] = useState(null);
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
   const [concertBookingConfirmLabel, setConcertBookingConfirmLabel] = useState(false);
@@ -5484,17 +5666,110 @@ export default function QrMenu() {
   );
   const isQrHeaderDark = Boolean(isDarkMain);
   const sharedHeaderOrderType = useMemo(() => {
+    if (isMenuBrowseMode || showHome) return "menu";
     if (isRequestSongViewOpen && requestSongEnabled) return "request_song";
     const normalized = String(orderType || "").toLowerCase();
     if (normalized === "table") return "table";
     if (normalized === "online") return "online";
     return "takeaway";
-  }, [isRequestSongViewOpen, orderType, requestSongEnabled]);
-  const shouldShowTableOrderHeader = !showStatus && sharedHeaderOrderType === "table";
-  const shouldShowInnerOrderHeader = !showStatus && sharedHeaderOrderType !== "table";
+  }, [isMenuBrowseMode, isRequestSongViewOpen, orderType, requestSongEnabled, showHome]);
+  const shouldShowTableOrderHeader = false;
+  const shouldShowInnerOrderHeader = !showStatus;
+  const openLandingHome = useCallback(() => {
+    setShowStatus(false);
+    storage.setItem("qr_show_status", "0");
+    setIsMenuBrowseMode(false);
+    setMenuSearch("");
+    try {
+      storage.removeItem("qr_orderType");
+      storage.removeItem("qr_table");
+      storage.removeItem("qr_selected_table");
+    } catch {
+      // Ignore storage cleanup errors and still return to the home view.
+    }
+    setOrderType(null);
+    setTable(null);
+    setShowDeliveryForm(false);
+    setShowTakeawayForm(false);
+    setShowOrderTypePrompt(false);
+    setPendingPopularProduct(null);
+    setEditingCartItemId(null);
+    setSelectedProduct(null);
+    setQrVoiceModalOpen(false);
+    setIsRequestSongViewOpen(false);
+    setForceHome(true);
+    handleCloseAppHeaderDrawer();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("qr:cart-close"));
+      window.dispatchEvent(new Event("qr:voice-order-close"));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [
+    handleCloseAppHeaderDrawer,
+    setEditingCartItemId,
+    setForceHome,
+    setMenuSearch,
+    setOrderType,
+    setPendingPopularProduct,
+    setQrVoiceModalOpen,
+    setSelectedProduct,
+    setShowDeliveryForm,
+    setShowOrderTypePrompt,
+    setShowStatus,
+    setShowTakeawayForm,
+    setTable,
+    storage,
+  ]);
+  const openMenuBrowse = useCallback(() => {
+    setShowStatus(false);
+    storage.setItem("qr_show_status", "0");
+    setMenuSearch("");
+    try {
+      storage.removeItem("qr_orderType");
+      storage.removeItem("qr_table");
+      storage.removeItem("qr_selected_table");
+    } catch {
+      // Ignore storage cleanup errors and still return to the menu browse view.
+    }
+    setIsMenuBrowseMode(true);
+    setOrderType(null);
+    setTable(null);
+    setShowDeliveryForm(false);
+    setShowTakeawayForm(false);
+    setEditingCartItemId(null);
+    setSelectedProduct(null);
+    setQrVoiceModalOpen(false);
+    setIsRequestSongViewOpen(false);
+    setForceHome(false);
+    handleCloseAppHeaderDrawer();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("qr:cart-close"));
+      window.dispatchEvent(new Event("qr:voice-order-close"));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [
+    handleCloseAppHeaderDrawer,
+    setEditingCartItemId,
+    setForceHome,
+    setIsMenuBrowseMode,
+    setMenuSearch,
+    setOrderType,
+    setQrVoiceModalOpen,
+    setSelectedProduct,
+    setShowDeliveryForm,
+    setShowStatus,
+    setShowTakeawayForm,
+    setTable,
+    storage,
+  ]);
   const handleBookingOrderTypeSelect = useCallback(
     (nextType) => {
       if (!nextType) return;
+      if (nextType === "menu") {
+        openMenuBrowse();
+        return;
+      }
+      setIsMenuBrowseMode(false);
       if (isCustomerAuthRestoring && !isCustomerLoggedInEffective) return;
       if (!isCustomerLoggedInEffective) {
         openFullScreenAuth("login");
@@ -5519,23 +5794,43 @@ export default function QrMenu() {
       location.pathname,
       location.search,
       navigate,
+      openMenuBrowse,
       openFullScreenAuth,
+      setIsMenuBrowseMode,
       slug,
       triggerOrderType,
     ]
   );
-  const handleSharedHeaderOrderTypeSelect = useCallback(
-    (nextType) => {
-      if (!nextType) return;
-      if (nextType === "request_song") {
-        if (!requestSongEnabled) return;
-        setIsRequestSongViewOpen(true);
+  const handleBrowseMenuProductOpen = useCallback(
+    (product, options = {}) => {
+      if (!product) return;
+      if (reservationPendingCheckIn) {
+        showReservationPendingCheckInMessage();
         return;
       }
-      setIsRequestSongViewOpen(false);
-      handleBookingOrderTypeSelect(nextType);
+      const orderTypeReady =
+        !!orderType &&
+        !(orderType === "online" && showDeliveryForm) &&
+        !(orderType === "takeaway" && showTakeawayForm);
+      if (!orderTypeReady) {
+        setPendingPopularProduct(product);
+        setReturnHomeAfterAdd(!!options?.returnToHomeAfterAdd);
+        setShowOrderTypePrompt(true);
+        return;
+      }
+      handleMenuProductOpen(product);
     },
-    [handleBookingOrderTypeSelect, requestSongEnabled]
+    [
+      handleMenuProductOpen,
+      orderType,
+      reservationPendingCheckIn,
+      setPendingPopularProduct,
+      setReturnHomeAfterAdd,
+      setShowOrderTypePrompt,
+      showDeliveryForm,
+      showReservationPendingCheckInMessage,
+      showTakeawayForm,
+    ]
   );
   const handleEditCartItem = useCallback(
     (item) => {
@@ -5628,36 +5923,8 @@ export default function QrMenu() {
   }, []);
 
   const onGoHomeFromNav = useCallback(() => {
-    setShowStatus(false);
-    storage.setItem("qr_show_status", "0");
-    setShowDeliveryForm(false);
-    setShowTakeawayForm(false);
-    setShowOrderTypePrompt(false);
-    setPendingPopularProduct(null);
-    setEditingCartItemId(null);
-    setSelectedProduct(null);
-    setQrVoiceModalOpen(false);
-    setIsRequestSongViewOpen(false);
-    setForceHome(true);
-    handleCloseAppHeaderDrawer();
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new Event("qr:cart-close"));
-      window.dispatchEvent(new Event("qr:voice-order-close"));
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
-  }, [
-    setEditingCartItemId,
-    setForceHome,
-    handleCloseAppHeaderDrawer,
-    setPendingPopularProduct,
-    setQrVoiceModalOpen,
-    setSelectedProduct,
-    setShowDeliveryForm,
-    setShowOrderTypePrompt,
-    setShowStatus,
-    setShowTakeawayForm,
-    storage,
-  ]);
+    openLandingHome();
+  }, [openLandingHome]);
 
   const onOpenCartFromNav = useCallback(async () => {
     // Ensure status overlay is dismissed before opening cart to avoid open/close flicker.
@@ -5880,6 +6147,19 @@ export default function QrMenu() {
     ["online", "packet", "delivery", "phone"].includes(activeDeliveryLockType) &&
     !["closed", "completed"].includes(activeDeliveryLockStatus) &&
     !isCancelledLikeStatus(activeDeliveryLockStatus);
+  const handleSharedHeaderOrderTypeSelect = useCallback(
+    (nextType) => {
+      if (!nextType) return;
+      if (nextType === "request_song") {
+        if (!requestSongEnabled) return;
+        setIsRequestSongViewOpen(true);
+        return;
+      }
+      setIsRequestSongViewOpen(false);
+      handleBookingOrderTypeSelect(nextType);
+    },
+    [handleBookingOrderTypeSelect, requestSongEnabled]
+  );
   const activeOrderItemCount = (() => {
     if (Array.isArray(activeOrder?.items)) return activeOrder.items.length;
     const countFromPayload = Number(activeOrder?.items_count ?? activeOrder?.item_count);
@@ -6011,6 +6291,20 @@ export default function QrMenu() {
 
   async function ensureVerifiedPhoneForFlow({ phone, flowLabel = "" }) {
     const normalizedPhone = normalizeQrPhone(phone);
+
+    const sessionPhone = normalizeQrPhone(qrCustomerSession?.phone || "");
+    const sessionAlreadyVerified =
+      isCustomerLoggedInEffective &&
+      qrCustomerSession?.phone_verified === true &&
+      QR_PHONE_REGEX.test(sessionPhone) &&
+      sessionPhone === normalizedPhone;
+    if (sessionAlreadyVerified) {
+      return {
+        ok: true,
+        phone: normalizedPhone,
+        phoneVerificationToken: "",
+      };
+    }
 
     if (QR_PHONE_REGEX.test(normalizedPhone)) {
       try {
@@ -6227,16 +6521,10 @@ export default function QrMenu() {
   }, [setShowStatus, storage]);
   const handleMenuProductOpenFromSection = useCallback(
     (product) => {
-      if (reservationPendingCheckIn) {
-        showReservationPendingCheckInMessage();
-        return;
-      }
-      handleMenuProductOpen(product);
+      handleBrowseMenuProductOpen(product);
     },
     [
-      handleMenuProductOpen,
-      reservationPendingCheckIn,
-      showReservationPendingCheckInMessage,
+      handleBrowseMenuProductOpen,
     ]
   );
 
@@ -6809,6 +7097,27 @@ export default function QrMenu() {
     },
     [appendIdentifier, restaurantIdentifier]
   );
+
+  const loadConcertEventsForDate = useCallback(
+    async (reservationDate) => {
+      const normalizedDate = String(reservationDate || "").trim();
+      if (!restaurantIdentifier || !/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+        return { events: [] };
+      }
+
+      const payload = await secureFetch(
+        appendIdentifier(`/public/concerts/${encodeURIComponent(restaurantIdentifier)}/events`)
+      );
+      const events = Array.isArray(payload?.events) ? payload.events : [];
+
+      return {
+        events: events.filter(
+          (event) => String(event?.event_date || "").slice(0, 10) === normalizedDate
+        ),
+      };
+    },
+    [appendIdentifier, restaurantIdentifier]
+  );
   const handleProductModalClose = useCallback(() => {
     const hasCartItems = cartItems.length > 0;
     setShowAddModal(false);
@@ -7260,7 +7569,7 @@ export default function QrMenu() {
           pointerEvents: shouldHideMenuContent ? "none" : "auto",
         }}
       >
-        {showHome ? (
+        {showHome && !isMenuBrowseMode ? (
           <>
           <OrderTypeSelect
             identifier={restaurantIdentifier}
@@ -7290,27 +7599,6 @@ export default function QrMenu() {
             onRequestAuthView={openFullScreenAuth}
             onRequirePhoneVerification={ensureVerifiedPhoneForFlow}
           />
-
-          {!orderType && showOrderTypePrompt && (
-            <OrderTypePromptModal
-              product={pendingPopularProduct}
-              t={t}
-              shopIsOpen={shopIsOpen}
-              accentColor={takeawaySubmitButtonColor}
-              onClose={() => {
-                setShowOrderTypePrompt(false);
-                setPendingPopularProduct(null);
-                setReturnHomeAfterAdd(false);
-              }}
-              onSelect={(type) => {
-                handleBookingOrderTypeSelect(type);
-                setShowOrderTypePrompt(false);
-              }}
-              deliveryEnabled={boolish(orderSelectCustomization.delivery_enabled, true)}
-              reservationEnabled={!hasActiveDeliveryLock}
-              tableEnabled={!hasActiveDeliveryLock && allowTableOrder}
-            />
-          )}
           </>
         ) : (
           <div className={`${isQrHeaderDark ? "dark " : ""}flex-1`}>
@@ -7330,9 +7618,9 @@ export default function QrMenu() {
                   isDrawerOpen={isAppHeaderDrawerOpen}
                   onOpenDrawer={openMenuHeaderDrawer}
                   onSelect={handleSharedHeaderOrderTypeSelect}
-                  reservationEnabled={shopIsOpen && !hasActiveDeliveryLock}
-                  tableEnabled={shopIsOpen && !hasActiveDeliveryLock && allowTableOrder}
-                  deliveryEnabled={boolish(orderSelectCustomization?.delivery_enabled, true) && shopIsOpen}
+                  reservationEnabled={!hasActiveDeliveryLock}
+                  tableEnabled={!hasActiveDeliveryLock && allowTableOrder}
+                  deliveryEnabled={boolish(orderSelectCustomization?.delivery_enabled, true)}
                   requestSongEnabled={requestSongEnabled}
                   activeOrderType={sharedHeaderOrderType}
                   statusShortcutCount={statusShortcutCount}
@@ -7358,6 +7646,7 @@ export default function QrMenu() {
                   isOpen={isAppHeaderDrawerOpen}
                   onClose={handleCloseAppHeaderDrawer}
                   onOpenMarketplace={openMarketplaceFromQrMenu}
+                  storage={storage}
                   t={t}
                   appendIdentifier={appendIdentifier}
                   isDark={isQrHeaderDark}
@@ -7368,6 +7657,45 @@ export default function QrMenu() {
                   onRequestAuthView={openFullScreenAuth}
                 />
               </>
+            ) : null}
+
+            {isMenuBrowseMode ? (
+              <div className="border-b border-black/5 bg-white/92 backdrop-blur dark:border-white/10 dark:bg-neutral-950/92">
+                <div className="w-full max-w-[1400px] mx-auto px-3 sm:px-4 md:px-6 lg:px-6 xl:px-8 py-3">
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={openLandingHome}
+                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-neutral-200 bg-white text-neutral-900 shadow-sm transition hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
+                      aria-label={t("Back")}
+                    >
+                      <ChevronLeft className="h-5 w-5" />
+                    </button>
+                    <div className="relative flex-1">
+                      <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400 dark:text-neutral-500" />
+                      <input
+                        type="search"
+                        value={menuSearch}
+                        onChange={(event) => setMenuSearch(event.target.value)}
+                        placeholder={t("Search menu")}
+                        className="w-full rounded-2xl border border-neutral-200 bg-white py-3 pl-11 pr-11 text-sm text-neutral-900 shadow-sm outline-none transition focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-50"
+                        autoComplete="off"
+                        inputMode="search"
+                      />
+                      {menuSearch ? (
+                        <button
+                          type="button"
+                          onClick={() => setMenuSearch("")}
+                          className="absolute right-3 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-neutral-100 text-neutral-600 transition hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+                          aria-label={t("Clear")}
+                        >
+                          ×
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
             ) : null}
 
             <div className="w-full max-w-[1400px] mx-auto px-3 sm:px-4 md:px-6 lg:px-6 xl:px-8 pb-32">
@@ -7419,6 +7747,27 @@ export default function QrMenu() {
           </div>
         )}
       </div>
+
+      {!orderType && showOrderTypePrompt && (
+        <OrderTypePromptModal
+          product={pendingPopularProduct}
+          t={t}
+          shopIsOpen={shopIsOpen}
+          accentColor={takeawaySubmitButtonColor}
+          onClose={() => {
+            setShowOrderTypePrompt(false);
+            setPendingPopularProduct(null);
+            setReturnHomeAfterAdd(false);
+          }}
+          onSelect={(type) => {
+            handleBookingOrderTypeSelect(type);
+            setShowOrderTypePrompt(false);
+          }}
+          deliveryEnabled={boolish(orderSelectCustomization.delivery_enabled, true)}
+          reservationEnabled={!hasActiveDeliveryLock}
+          tableEnabled={!hasActiveDeliveryLock && allowTableOrder}
+        />
+      )}
 
       {!isDesktopLayout && (
         <CartModal
@@ -7776,7 +8125,11 @@ export default function QrMenu() {
           formatTableName={formatTableName}
           loadReservationTimeSlots={loadReservationTimeSlots}
           loadReservationAvailability={loadReservationAvailability}
+          loadConcertEventsForDate={loadConcertEventsForDate}
+          onConcertBookingRequest={handleConcertBookingRequest}
+          onFreeConcertReservationStart={handleFreeConcertReservationStart}
           bookingSettings={qrBookingSettings}
+          lang={lang}
           onClose={handleTakeawayFormClose}
           onAddItem={handleTakeawayAddItem}
           onSubmit={handleTakeawayFormSubmit}

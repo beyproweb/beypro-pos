@@ -913,7 +913,7 @@ function TablesView({
   const getAreaTabClassName = React.useCallback(
     (isActive, activeClassName, inactiveClassName) =>
       [
-        "group shrink-0 whitespace-nowrap inline-flex min-h-[48px] items-center justify-center gap-2 rounded-[20px] px-4 py-3 text-[13px] font-semibold tracking-[-0.01em] shadow-[0_10px_30px_rgba(15,23,42,0.08)] ring-1 transition duration-200 active:scale-[0.985] sm:min-h-[52px] sm:px-5 sm:text-sm",
+        "group shrink-0 whitespace-nowrap inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-[16px] px-3 py-2 text-[12px] font-semibold tracking-[-0.01em] shadow-[0_8px_18px_rgba(15,23,42,0.06)] ring-1 transition duration-200 active:scale-[0.985] sm:min-h-[42px] sm:px-3.5 sm:py-2 sm:text-[13px]",
         isActive ? activeClassName : inactiveClassName,
       ].join(" "),
     []
@@ -927,7 +927,7 @@ function TablesView({
         {hasCount ? (
           <span
             className={[
-              "inline-flex min-w-[1.8rem] items-center justify-center rounded-full px-2.5 py-1 text-[11px] font-bold leading-none ring-1 transition",
+              "inline-flex min-w-[1.55rem] items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-bold leading-none ring-1 transition",
               isActive
                 ? "bg-white/18 text-white ring-white/20"
                 : "bg-slate-900/6 text-slate-600 ring-slate-900/6 dark:bg-white/10 dark:text-slate-100 dark:ring-white/10",
@@ -1644,14 +1644,14 @@ function TablesView({
       ) : null}
       {showAreaTabs ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 p-0">
-          <div className="pointer-events-auto w-full px-2 pb-[calc(8px+env(safe-area-inset-bottom))] pt-3 sm:px-4">
-            <div className="mx-auto w-full max-w-[1480px] overflow-hidden rounded-[30px] border border-slate-200/80 bg-white/95 shadow-[0_-18px_45px_rgba(15,23,42,0.14)] ring-1 ring-slate-200/70 sm:border-white/70 sm:bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,252,0.82))] sm:backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/95 dark:ring-slate-800/80 dark:sm:bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(2,6,23,0.82))]">
+          <div className="pointer-events-auto w-full px-2 pb-[calc(6px+env(safe-area-inset-bottom))] pt-2 sm:px-3">
+            <div className="mx-auto w-full max-w-[1480px] overflow-hidden rounded-[22px] border border-slate-200/70 bg-white/94 shadow-[0_-12px_28px_rgba(15,23,42,0.1)] ring-1 ring-slate-200/50 sm:border-white/60 sm:bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(248,250,252,0.8))] sm:backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/94 dark:ring-slate-800/70 dark:sm:bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(2,6,23,0.8))]">
               <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 z-10 hidden w-8 bg-gradient-to-r from-white via-white/80 to-transparent sm:block dark:from-slate-950 dark:via-slate-950/80" />
-                <div className="pointer-events-none absolute inset-y-0 right-0 z-10 hidden w-8 bg-gradient-to-l from-white via-white/80 to-transparent sm:block dark:from-slate-950 dark:via-slate-950/80" />
+                <div className="pointer-events-none absolute inset-y-0 left-0 z-10 hidden w-6 bg-gradient-to-r from-white via-white/75 to-transparent sm:block dark:from-slate-950 dark:via-slate-950/75" />
+                <div className="pointer-events-none absolute inset-y-0 right-0 z-10 hidden w-6 bg-gradient-to-l from-white via-white/75 to-transparent sm:block dark:from-slate-950 dark:via-slate-950/75" />
                 <div
                   ref={areaTabsRailRef}
-                  className="flex flex-nowrap items-center justify-start gap-2 overflow-x-auto scroll-smooth scrollbar-hide px-3 py-3 sm:justify-center sm:px-4"
+                  className="flex flex-nowrap items-center justify-start gap-1.5 overflow-x-auto scroll-smooth scrollbar-hide px-2 py-2 sm:justify-center sm:px-3"
                 >
                   {renderAreaFooterTabs()}
                 </div>

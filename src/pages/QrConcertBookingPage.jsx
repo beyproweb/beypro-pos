@@ -686,7 +686,6 @@ export default function QrConcertBookingPage() {
   const [floorPlanRefreshTick, setFloorPlanRefreshTick] = React.useState(0);
   const liveRefreshTimerRef = React.useRef(null);
   const tableSnapshotRef = React.useRef([]);
-  const [guestAmountConfirmed, setGuestAmountConfirmed] = React.useState(false);
   const [form, setForm] = React.useState({
     ticket_type_id: prefetchedDefaultTicketType ? String(prefetchedDefaultTicketType.id) : "",
     quantity: "1",
@@ -979,10 +978,6 @@ export default function QrConcertBookingPage() {
       return { ...prev, ...nextComposition };
     });
   }, [form.guests_count, guestCompositionEffectiveFieldMode, guestCompositionVisible]);
-
-  React.useEffect(() => {
-    setGuestAmountConfirmed((prev) => (prev ? false : prev));
-  }, [isTableBooking, form.ticket_type_id, form.guests_count, form.male_guests_count, form.female_guests_count]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -1373,7 +1368,7 @@ export default function QrConcertBookingPage() {
     []
   );
 
-  const handleConfirmGuests = React.useCallback(() => {
+  const handleChooseTable = React.useCallback(() => {
     if (!isTableBooking) return;
     if (guestCompositionError) {
       focusInvalidField("guest_split");
@@ -1386,7 +1381,7 @@ export default function QrConcertBookingPage() {
       return;
     }
     setInvalidField("");
-    setGuestAmountConfirmed(true);
+    setPickerOpen(true);
   }, [focusInvalidField, guestCompositionError, isTableBooking, selectedGuests, t]);
 
   const handleSubmit = React.useCallback(async () => {
@@ -1417,6 +1412,16 @@ export default function QrConcertBookingPage() {
       if (!QR_PHONE_REGEX.test(normalizedPhone)) {
         window.alert(t("Please enter a valid phone number."));
         return { ok: false, phone: normalizedPhone, phoneVerificationToken: "" };
+      }
+
+      const sessionPhone = normalizeQrPhone(customer?.phone || "");
+      const sessionAlreadyVerified =
+        isLoggedInEffective &&
+        customer?.phone_verified === true &&
+        QR_PHONE_REGEX.test(sessionPhone) &&
+        sessionPhone === normalizedPhone;
+      if (sessionAlreadyVerified) {
+        return { ok: true, phone: normalizedPhone, phoneVerificationToken: "" };
       }
 
       try {
@@ -1468,9 +1473,16 @@ export default function QrConcertBookingPage() {
     setInvalidField("");
     setSubmitting(true);
     try {
+      const bookingToken = String(storage.getItem("qr_customer_token") || "").trim();
+      const bookingAuthorization = bookingToken
+        ? bookingToken.startsWith("Bearer ")
+          ? bookingToken
+          : `Bearer ${bookingToken}`
+        : "";
       const response = await secureFetch(
         `/public/concerts/${encodeURIComponent(identifier)}/events/${encodeURIComponent(concertId)}/bookings`,
         {
+          headers: bookingAuthorization ? { Authorization: bookingAuthorization } : undefined,
           method: "POST",
           body: JSON.stringify({
             booking_type: isTableBooking ? "table" : "ticket",
@@ -1684,33 +1696,23 @@ export default function QrConcertBookingPage() {
     return null;
   }
 
-  const needsGuestAmountConfirmation =
-    isTableBooking && !hasConfirmedTable && !guestAmountConfirmed;
-  const primaryActionLabel = needsGuestAmountConfirmation
-    ? t("Confirm Guests")
-    : isTableBooking && !hasConfirmedTable
+  const primaryActionLabel = isTableBooking && !hasConfirmedTable
       ? t("Choose Table")
       : submitting
         ? t("Saving...")
         : isTableBooking
           ? t("Reserve Now")
           : t("Buy Ticket");
-  const primaryActionHelper = needsGuestAmountConfirmation
-    ? t("Confirm guest amount before choosing table.")
-    : isTableBooking && !hasConfirmedTable
+  const primaryActionHelper = isTableBooking && !hasConfirmedTable
       ? t("Pick your table from the live floor plan.")
       : quantity > 0
         ? `${t("Total")}: ${formatCurrency(total)}`
         : "";
-  const primaryActionHandler = needsGuestAmountConfirmation
-    ? handleConfirmGuests
-    : isTableBooking && !hasConfirmedTable
-      ? () => setPickerOpen(true)
+  const primaryActionHandler = isTableBooking && !hasConfirmedTable
+      ? handleChooseTable
       : handleSubmit;
-  const primaryActionDisabled = needsGuestAmountConfirmation
-    ? !selectedTicketType || pickerOpen || selectedGuests <= 0 || Boolean(guestCompositionError)
-    : isTableBooking && !hasConfirmedTable
-      ? !selectedTicketType || pickerOpen
+  const primaryActionDisabled = isTableBooking && !hasConfirmedTable
+      ? !selectedTicketType || pickerOpen || selectedGuests <= 0 || Boolean(guestCompositionError)
       : !canSubmit;
   const concertInfoDate = formatConcertDisplayDate(event?.event_date || event?.eventDate);
   const concertInfoTime = String(event?.event_time || event?.eventTime || "").trim();

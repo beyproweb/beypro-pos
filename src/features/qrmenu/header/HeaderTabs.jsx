@@ -112,6 +112,11 @@ function HeaderTabs({
       enabled: deliveryEnabled,
     },
     {
+      key: "menu",
+      label: t("Menu"),
+      enabled: true,
+    },
+    {
       key: "request_song",
       label: t("Request Song"),
       enabled: requestSongEnabled,

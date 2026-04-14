@@ -19,15 +19,10 @@ export default function RegisteredCustomerBadge({
     <div className="rounded-[24px] border border-neutral-200 bg-white px-4 py-3 shadow-[0_14px_32px_rgba(15,23,42,0.06)] dark:border-neutral-800 dark:bg-neutral-950">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300">
-            <span
-              className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: accentColor }}
-            />
-            {t("Saved checkout details")}
-          </div>
-          <div className="mt-2 truncate text-sm font-semibold text-neutral-950 dark:text-white">
+          <div className="inline-flex max-w-full items-center rounded-xl bg-neutral-100 px-3 py-1.5 text-sm font-semibold text-neutral-950 dark:bg-neutral-900 dark:text-white">
+            <span className="truncate">
             {displayName || t("Saved checkout details")}
+            </span>
           </div>
         </div>
         {typeof onEdit === "function" ? (
@@ -41,7 +36,7 @@ export default function RegisteredCustomerBadge({
         ) : null}
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-2 flex flex-wrap gap-2">
         {infoItems.map((item) => (
           <div
             key={`${item.label}-${item.value}`}

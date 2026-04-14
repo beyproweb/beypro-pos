@@ -36,11 +36,13 @@ const AUTH_ERROR_MESSAGES = {
   tooManyOtpAttempts: "Too many invalid attempts. Request a new code.",
 };
 
-const OAUTH_PROVIDER_SET = new Set(["google", "apple"]);
+const OAUTH_PROVIDER_SET = new Set(["google", "apple", "email", "phone"]);
 const OAUTH_QUERY_KEYS = [
   "qr_oauth_token",
   "qr_oauth_error",
   "qr_oauth_provider",
+  "qr_phone_verification_token",
+  "qr_phone_verified_phone",
   "google_oauth",
   "google_oauth_error",
   "transfer_token",
@@ -233,6 +235,16 @@ function mapOAuthErrorMessage(code) {
       return "Social login session expired. Please try again.";
     case "missing_oauth_code":
       return "Social login response was incomplete. Please try again.";
+    case "invalid_magic_link":
+      return "This sign-in link is invalid. Request a new one.";
+    case "magic_link_expired":
+      return "This sign-in link has expired. Request a new one.";
+    case "magic_link_already_used":
+      return "This sign-in link has already been used. Request a new one.";
+    case "magic_link_failed":
+      return "Magic link sign-in failed. Please try again.";
+    case "phone_already_in_use":
+      return "This phone number is already linked to another account.";
     default:
       return "Social login failed. Please try again.";
   }
@@ -653,6 +665,10 @@ export async function completeCustomerOAuthFromUrl(context = {}) {
 
   const url = new URL(window.location.href);
   const token = normalizeText(url.searchParams.get("qr_oauth_token"));
+  const phoneVerificationToken = normalizeText(
+    url.searchParams.get("qr_phone_verification_token")
+  );
+  const verifiedPhone = normalizePhone(url.searchParams.get("qr_phone_verified_phone"));
   const provider =
     normalizeOAuthProvider(url.searchParams.get("qr_oauth_provider")) ||
     (normalizeText(url.searchParams.get("google_oauth_error")) ? "google" : "");
@@ -660,11 +676,22 @@ export async function completeCustomerOAuthFromUrl(context = {}) {
     url.searchParams.get("qr_oauth_error") || url.searchParams.get("google_oauth_error")
   );
 
-  if (!token && !errorCode) {
+  if (!token && !errorCode && !phoneVerificationToken) {
     return { handled: false, customer: getSession(context?.storage), error: "" };
   }
 
   removeOAuthQueryParamsFromLocation();
+
+  if (phoneVerificationToken && verifiedPhone) {
+    savePhoneVerificationTrust(
+      {
+        phone: verifiedPhone,
+        token: phoneVerificationToken,
+        source: "magic_link",
+      },
+      context?.storage
+    );
+  }
 
   if (errorCode) {
     return {
@@ -766,11 +793,15 @@ export async function requestCustomerEmailOtp(payload, context = {}) {
     throw createAuthError("Please enter your email address.");
   }
 
+  const returnTo =
+    normalizeText(payload?.return_to || payload?.returnTo) ||
+    (typeof window !== "undefined" ? window.location.href : "");
+
   const response = await requestCustomerAuth(
     "/public/customer-auth/email-otp/request",
     {
       method: "POST",
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, return_to: returnTo }),
     },
     context
   );
@@ -811,13 +842,16 @@ export async function requestCustomerPhoneOtp(payload, context = {}) {
     throw createAuthError("Please enter a valid phone number.");
   }
   const language = resolveAuthRequestLanguage(payload, context?.storage);
+  const returnTo =
+    normalizeText(payload?.return_to || payload?.returnTo) ||
+    (typeof window !== "undefined" ? window.location.href : "");
 
   const response = await requestCustomerAuth(
     "/public/customer-auth/phone-otp/send",
     {
       method: "POST",
       headers: buildAuthHeaders(context),
-      body: JSON.stringify({ phone, language }),
+      body: JSON.stringify({ phone, language, return_to: returnTo || undefined }),
     },
     context
   );

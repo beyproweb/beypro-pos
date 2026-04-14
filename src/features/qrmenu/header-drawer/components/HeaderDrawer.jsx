@@ -31,6 +31,7 @@ function HeaderDrawer({
   onClose,
   t,
   appendIdentifier,
+  storage: storageProp = null,
   isDark = false,
   accentColor = "#111827",
   initialView = VIEW_MENU,
@@ -45,7 +46,12 @@ function HeaderDrawer({
   onRequestAuthView = null,
   onOpenMarketplace = null,
 }) {
-  const storage = typeof window !== "undefined" ? window.localStorage : null;
+  const storage = React.useMemo(() => {
+    if (storageProp && typeof storageProp.getItem === "function") {
+      return storageProp;
+    }
+    return typeof window !== "undefined" ? window.localStorage : null;
+  }, [storageProp]);
   const fetcher = React.useCallback(
     async (path, options = undefined) => {
       const withIdentifier = typeof appendIdentifier === "function" ? appendIdentifier(path) : path;
@@ -454,8 +460,6 @@ function HeaderDrawer({
             <LoginPage
               t={t}
               onLogin={onLogin}
-              onRequestEmailOtp={onRequestEmailOtp}
-              onVerifyEmailOtp={onVerifyEmailOtp}
               onGoogleLogin={onGoogleAuth}
               onAppleLogin={onAppleAuth}
               onGoRegister={() => setView(VIEW_REGISTER)}

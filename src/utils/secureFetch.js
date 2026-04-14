@@ -134,6 +134,7 @@ export function getAuthToken() {
 }
 
 export default async function secureFetch(endpoint, options = {}) {
+  const { includePublicAuth = false, ...requestOptions } = options;
   const rawToken = getAuthToken();
   const tokenHeader =
     rawToken && !rawToken.startsWith("Bearer ") ? `Bearer ${rawToken}` : rawToken;
@@ -159,12 +160,13 @@ const isPublic =
   lower.includes("/restaurant-info") ||
   lower.includes("/uploads/");
 
-
-  const isFormData = options.body instanceof FormData;
+  const isFormData = requestOptions.body instanceof FormData;
 
   const headers = {
-    ...(!isPublic && tokenHeader ? { Authorization: tokenHeader } : {}),
-    ...options.headers,
+    ...((!isPublic || includePublicAuth) && tokenHeader
+      ? { Authorization: tokenHeader }
+      : {}),
+    ...requestOptions.headers,
   };
 
   if (!isFormData) {
@@ -175,14 +177,14 @@ const isPublic =
     ? normalizedEndpoint
     : `/${normalizedEndpoint}`;
   const fullUrl = `${BASE_URL}${path}`;
-  const method = String(options.method || "GET").toUpperCase();
+  const method = String(requestOptions.method || "GET").toUpperCase();
   const requestMeta = {
     endpoint: normalizedEndpoint,
     method,
     url: fullUrl,
   };
 
-  const fetchOptions = { ...options, headers };
+  const fetchOptions = { ...requestOptions, headers };
   if (isShopHoursEndpoint || isPublicShopHoursEndpoint) {
     fetchOptions.cache = "no-store";
   }
