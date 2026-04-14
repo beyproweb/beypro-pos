@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import ProductForm from "../components/ProductForm"; // Import ProductForm
+import BulkProductImportModal from "../components/BulkProductImportModal";
 import Modal from "react-modal";
 import { useTranslation } from "react-i18next";
-import { Plus, Trash2, Filter, Edit3, Layers } from "lucide-react";
+import { Plus, Trash2, Filter, Edit3, Layers, Upload } from "lucide-react";
 import secureFetch from "../utils/secureFetch";
 import { useCurrency } from "../context/CurrencyContext";
 import ModernHeader from "../components/ModernHeader";
@@ -104,6 +105,7 @@ export default function Products() {
 
   const [showModal, setShowModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [categoryEdits, setCategoryEdits] = useState([]);
@@ -757,6 +759,11 @@ useEffect(() => {
     setSelectedProduct(null);
   };
 
+  const handleBulkImportComplete = () => {
+    fetchProducts();
+    fetchCategories();
+  };
+
   const handleAddCategory = async (event) => {
     event.preventDefault();
     const trimmed = newCategoryName.trim();
@@ -904,6 +911,13 @@ const handleRenameCategory = async (original, value) => {
           className="flex items-center gap-1 px-4 py-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold shadow hover:scale-[1.05] transition-all"
         >
           <Plus size={18} /> {t("Add Category")}
+        </button>
+
+        <button
+          onClick={() => setShowImportModal(true)}
+          className="flex items-center gap-1 px-4 py-2 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-500 text-white font-bold shadow hover:scale-[1.05] transition-all"
+        >
+          <Upload size={18} /> {t("Import Products")}
         </button>
 
         {/* Add Product */}
@@ -1540,6 +1554,14 @@ const handleRenameCategory = async (original, value) => {
           </button>
         </div>
       </Modal>
+
+      <BulkProductImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImported={handleBulkImportComplete}
+        categories={categories}
+        existingProducts={products}
+      />
       </div>
     </>
   );
