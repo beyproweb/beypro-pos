@@ -256,6 +256,12 @@ export default function Layout({
     // Add more as needed...
   };
   const normalizedPath = location.pathname.replace(/\/+$/, "") || "/";
+  const isQrShelllessRoute =
+    normalizedPath === "/qr" ||
+    normalizedPath === "/menu" ||
+    normalizedPath.startsWith("/qr/") ||
+    normalizedPath.startsWith("/menu/") ||
+    normalizedPath.startsWith("/qr-menu/");
   const searchParams = new URLSearchParams(location.search);
 
   let computedTitle;
@@ -461,7 +467,11 @@ export default function Layout({
         {/* Page content */}
         <main
           ref={contentRef}
-          className={`ios-safe-main flex-1 min-h-0 w-full px-0 sm:px-0 py-4 bg-slate-50 dark:bg-zinc-950 transition-colors ${
+          className={`ios-safe-main flex-1 min-h-0 w-full px-0 sm:px-0 ${
+            isQrShelllessRoute
+              ? "py-0 bg-transparent dark:bg-transparent"
+              : "py-4 bg-slate-50 dark:bg-zinc-950"
+          } transition-colors ${
             location.pathname.includes("/transaction") ? "overflow-hidden" : "overflow-y-auto"
           }`}
         >

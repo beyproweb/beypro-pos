@@ -24,6 +24,7 @@ const DEFAULT_QR_MENU_BRANDING = {
   reservation_guest_composition_enabled: false,
   reservation_guest_composition_field_mode: "optional",
   reservation_guest_composition_restriction_rule: "no_restriction",
+  reservation_guest_composition_min_guests_per_table: 1,
   reservation_guest_composition_validation_message: "",
   table_order_enabled: true,
   disable_all_products: false,

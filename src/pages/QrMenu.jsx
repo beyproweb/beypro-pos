@@ -110,6 +110,7 @@ import {
   hasGuestCompositionValue,
   normalizeGuestCompositionFieldMode,
   normalizeGuestCompositionRestrictionRule,
+  normalizeMinimumGuestsPerTable,
   normalizeGuestCountSelection,
   parseGuestCompositionCount,
   resolveGuestCompositionPolicyMessage,
@@ -2224,10 +2225,8 @@ async function load() {
       {/* === HERO SECTION === */}
         <section id="order-section" className="max-w-6xl mx-auto px-4 pt-[24px] pb-4 space-y-10">
 
-	      <div className="max-w-4xl mx-auto">
               {/* CONCERT TICKETS */}
-                <div className="mt-3 max-w-3xl mx-auto">
-	                {concertEvents.length > 0 ? (
+                {concertEvents.length > 0 ? (
 	                  <div className="space-y-3">
                     {concertEvents.map((event) => {
                       const isFreeConcert = boolish(event?.free_concert, false);
@@ -2344,7 +2343,7 @@ async function load() {
                               </div>
                             </div>
                             <span
-                              className={`text-xs px-2.5 py-1 rounded-full border ${
+                              className={`text-xs px-2 py-1 rounded-full border ${
                                 concertBookingDeactivated
                                   ? "border-neutral-300 bg-neutral-100 text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
                                   : badgeSoldOut
@@ -2420,9 +2419,9 @@ async function load() {
                       );
                     })}
 	                  </div>
-	                ) : null}
-	              </div>
+                  ) : null}
 
+              <div className="max-w-4xl mx-auto">
               {showStoryVideoSection ? (
                 <div id="story-video-section" className="mt-6">
                   {storyVideoTitle ? (
@@ -2951,10 +2950,52 @@ async function load() {
               </div>
             ) : null}
 
+            {(() => {
+              const concertModalForcedSoldOut =
+                String(concertModalEvent?.status || "").toLowerCase() === "sold_out" ||
+                concertModalEvent?.auto_sold_out === true;
+              const concertModalStatusClass = concertEventHasStarted
+                ? "border-neutral-300 bg-neutral-100 text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                : concertModalForcedSoldOut
+                ? "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200"
+                : "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200";
+              const concertModalStatusLabel = concertEventHasStarted
+                ? t("Deactivated")
+                : concertModalForcedSoldOut
+                ? t("Sold Out")
+                : t("Available");
+
+              return (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/25 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <span
+                      className={`inline-flex shrink-0 items-center rounded-full border px-2 py-1 text-[11px] font-semibold ${concertModalStatusClass}`}
+                    >
+                      {concertModalStatusLabel}
+                    </span>
+                    <div className="min-w-0 flex-1 sm:pl-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="whitespace-pre-line text-xs leading-relaxed">
+                          {concertBankInstructions}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={copyConcertInstructions}
+                          className="shrink-0 rounded-lg border border-amber-300/80 dark:border-amber-800 px-2 py-1 text-[11px] font-semibold hover:bg-amber-100/80 dark:hover:bg-amber-900/40 transition"
+                        >
+                          {concertInstructionCopied ? t("Copied") : t("Copy")}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {(concertModalEvent.ticket_types || []).length > 0 && !boolish(concertModalEvent?.free_concert, false) ? (
               <div>
                 <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-                  {t("Ticket Types / Packages")}
+                  {t("Reservation/Ticket Types / Packages")}
                 </label>
                 <select
                   value={concertForm.ticket_type_id}
@@ -3268,21 +3309,6 @@ async function load() {
                 onChange={(e) => setConcertForm((prev) => ({ ...prev, customer_note: e.target.value }))}
                 className="w-full rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 px-3 py-2.5 text-sm resize-none"
               />
-            </div>
-
-            <div className="rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/25 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
-              <div className="flex items-start justify-between gap-3">
-                <p className="whitespace-pre-line">
-                  {concertBankInstructions}
-                </p>
-                <button
-                  type="button"
-                  onClick={copyConcertInstructions}
-                  className="shrink-0 rounded-lg border border-amber-300/80 dark:border-amber-800 px-2 py-1 text-[11px] font-semibold hover:bg-amber-100/80 dark:hover:bg-amber-900/40 transition"
-                >
-                  {concertInstructionCopied ? t("Copied") : t("Copy")}
-                </button>
-              </div>
             </div>
 
             <button
@@ -3749,6 +3775,13 @@ const TakeawayOrderForm = React.memo(function TakeawayOrderForm({
     reservationGuestCompositionVisible &&
     reservationGuestCompositionRestrictionRule === "couple_only";
   const reservationGuestCompositionLocked = reservationRequiresEvenGuestCount;
+  const reservationMinimumGuestsPerTable = normalizeMinimumGuestsPerTable(
+    guestCompositionSettings?.minGuestsPerTable,
+    1
+  );
+  const reservationMinimumGuestsRuleActive =
+    reservationGuestCompositionEnabled &&
+    reservationGuestCompositionRestrictionRule === "minimum_guests_per_table";
   const reservationGuestCap = useMemo(() => {
     const selectedSeats = Number(
       selectedTable?.seats ?? selectedTable?.guest_limit ?? selectedTable?.guests ?? 0
@@ -3764,8 +3797,15 @@ const TakeawayOrderForm = React.memo(function TakeawayOrderForm({
     return maxAvailableSeats > 0 ? maxAvailableSeats : 20;
   }, [availableReservationTables, selectedTable]);
   const guestOptions = useMemo(
-    () => buildGuestCountOptions(reservationGuestCap, reservationRequiresEvenGuestCount),
-    [reservationGuestCap, reservationRequiresEvenGuestCount]
+    () =>
+      buildGuestCountOptions(reservationGuestCap, reservationRequiresEvenGuestCount).filter(
+        (count) => count >= reservationMinimumGuestsPerTable
+      ),
+    [
+      reservationGuestCap,
+      reservationRequiresEvenGuestCount,
+      reservationMinimumGuestsPerTable,
+    ]
   );
   const reservationMenCount = parseGuestCompositionCount(form.reservation_men);
   const reservationWomenCount = parseGuestCompositionCount(form.reservation_women);
@@ -3781,7 +3821,10 @@ const TakeawayOrderForm = React.memo(function TakeawayOrderForm({
       ? resolveGuestCompositionPolicyMessage(
           guestCompositionSettings?.validationMessage,
           reservationGuestCompositionRestrictionRule,
-          t
+          t,
+          {
+            minimumGuestsPerTable: reservationMinimumGuestsPerTable,
+          }
         )
       : "";
   const reservationGuestCompositionError = getGuestCompositionValidationError({
@@ -3789,6 +3832,7 @@ const TakeawayOrderForm = React.memo(function TakeawayOrderForm({
     fieldMode: reservationGuestCompositionEffectiveFieldMode,
     restrictionRule: reservationGuestCompositionRestrictionRule,
     validationMessage: reservationGuestCompositionPolicyMessage,
+    minimumGuestsPerTable: reservationMinimumGuestsPerTable,
     totalGuests: reservationClientsCount,
     menGuests: form.reservation_men,
     womenGuests: form.reservation_women,
@@ -4341,6 +4385,13 @@ const TakeawayOrderForm = React.memo(function TakeawayOrderForm({
                 {reservationRequiresEvenGuestCount ? (
                   <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
                     {reservationGuestCompositionPolicyMessage}
+                  </p>
+                ) : null}
+                {reservationMinimumGuestsRuleActive ? (
+                  <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                    {t("Minimum {{count}} guests are required per table reservation.", {
+                      count: reservationMinimumGuestsPerTable,
+                    })}
                   </p>
                 ) : null}
               </div>
@@ -6451,6 +6502,8 @@ export default function QrMenu() {
       fieldMode: orderSelectCustomization?.reservation_guest_composition_field_mode,
       restrictionRule:
         orderSelectCustomization?.reservation_guest_composition_restriction_rule,
+      minGuestsPerTable:
+        orderSelectCustomization?.reservation_guest_composition_min_guests_per_table,
       validationMessage:
         orderSelectCustomization?.reservation_guest_composition_validation_message,
       disabledTables: normalizeQrTableNumberList(
@@ -6461,6 +6514,7 @@ export default function QrMenu() {
       orderSelectCustomization?.reservation_guest_composition_enabled,
       orderSelectCustomization?.reservation_guest_composition_field_mode,
       orderSelectCustomization?.reservation_guest_composition_restriction_rule,
+      orderSelectCustomization?.reservation_guest_composition_min_guests_per_table,
       orderSelectCustomization?.reservation_guest_composition_validation_message,
       orderSelectCustomization?.reservation_guest_composition_disabled_tables,
     ]

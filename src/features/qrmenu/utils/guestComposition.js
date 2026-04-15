@@ -68,6 +68,7 @@ function normalizeGuestCompositionRestrictionRule(value, fallback = "no_restrict
   const normalized = String(value || fallback).trim().toLowerCase();
   return [
     "no_restriction",
+    "minimum_guests_per_table",
     "male_only_groups_not_allowed",
     "female_only_groups_not_allowed",
     "at_least_1_female_required",
@@ -78,8 +79,18 @@ function normalizeGuestCompositionRestrictionRule(value, fallback = "no_restrict
     : fallback;
 }
 
+function normalizeMinimumGuestsPerTable(value, fallback = 1) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return Math.max(1, Number.parseInt(String(fallback ?? "1"), 10) || 1);
+  }
+  return Math.max(1, Math.min(20, parsed));
+}
+
 function getDefaultGuestCompositionRestrictionMessage(rule) {
   switch (normalizeGuestCompositionRestrictionRule(rule)) {
+    case "minimum_guests_per_table":
+      return "Minimum {{count}} guests are required per table reservation.";
     case "male_only_groups_not_allowed":
       return "Male-only groups are not allowed for this reservation.";
     case "female_only_groups_not_allowed":
@@ -93,11 +104,13 @@ function getDefaultGuestCompositionRestrictionMessage(rule) {
   }
 }
 
-function resolveGuestCompositionPolicyMessage(message, fallbackRule, translate) {
+function resolveGuestCompositionPolicyMessage(message, fallbackRule, translate, options = {}) {
   const t = typeof translate === "function" ? translate : (value) => value;
   const trimmedMessage = String(message || "").trim();
   if (trimmedMessage) return t(trimmedMessage);
-  return t(getDefaultGuestCompositionRestrictionMessage(fallbackRule));
+  return t(getDefaultGuestCompositionRestrictionMessage(fallbackRule, options), {
+    count: normalizeMinimumGuestsPerTable(options?.minimumGuestsPerTable, 1),
+  });
 }
 
 function buildGuestCountOptions(maxGuests, evenOnly = false) {
@@ -140,6 +153,7 @@ function getGuestCompositionValidationError({
   fieldMode,
   restrictionRule,
   validationMessage,
+  minimumGuestsPerTable,
   totalGuests,
   menGuests,
   womenGuests,
@@ -156,14 +170,24 @@ function getGuestCompositionValidationError({
   const effectiveMode = guestCompositionRuleRequiresInput(normalizedRule)
     ? "required"
     : normalizedMode;
-  if (effectiveMode === "hidden") return "";
 
   const total = parseGuestCompositionCount(totalGuests);
   if (total <= 0) return "";
+  const minimumRequiredGuests = normalizeMinimumGuestsPerTable(minimumGuestsPerTable, 1);
+  const usesMinimumGuestsRule = normalizedRule === "minimum_guests_per_table";
 
   const policyMessage =
     String(validationMessage || "").trim() ||
-    t(getDefaultGuestCompositionRestrictionMessage(normalizedRule));
+    t(getDefaultGuestCompositionRestrictionMessage(normalizedRule), {
+      count: minimumRequiredGuests,
+    });
+
+  if (usesMinimumGuestsRule && total < minimumRequiredGuests) {
+    return policyMessage;
+  }
+
+  if (effectiveMode === "hidden") return "";
+
   if (normalizedRule === "couple_only" && total % 2 !== 0) {
     return policyMessage;
   }
@@ -184,6 +208,9 @@ function getGuestCompositionValidationError({
 
   let blocked = false;
   switch (normalizedRule) {
+    case "minimum_guests_per_table":
+      blocked = total < minimumRequiredGuests;
+      break;
     case "male_only_groups_not_allowed":
       blocked = men > 0 && women === 0;
       break;
@@ -220,4 +247,5 @@ export {
   normalizeGuestCountSelection,
   parseGuestCompositionCount,
   resolveGuestCompositionPolicyMessage,
+  normalizeMinimumGuestsPerTable,
 };

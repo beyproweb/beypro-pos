@@ -50,6 +50,7 @@ import {
   hasGuestCompositionValue,
   normalizeGuestCompositionFieldMode,
   normalizeGuestCompositionRestrictionRule,
+  normalizeMinimumGuestsPerTable,
   normalizeGuestCountSelection,
   normalizeQrPhone,
   parseGuestCompositionCount,
@@ -761,6 +762,12 @@ export default function QrReservationBookingPage() {
     : guestCompositionFieldMode;
   const guestCompositionVisible =
     guestCompositionEnabled && guestCompositionEffectiveFieldMode !== "hidden";
+  const minimumGuestsPerTable = normalizeMinimumGuestsPerTable(
+    settings?.reservation_guest_composition_min_guests_per_table,
+    1
+  );
+  const minimumGuestsRuleActive =
+    guestCompositionEnabled && guestCompositionRule === "minimum_guests_per_table";
   const guestCountLimit = React.useMemo(() => {
     const fromTables = (Array.isArray(tables) ? tables : []).reduce((max, table) => {
       const seats = Number(table?.seats || 0);
@@ -769,8 +776,11 @@ export default function QrReservationBookingPage() {
     return fromTables > 0 ? fromTables : 20;
   }, [tables]);
   const guestOptions = React.useMemo(
-    () => buildGuestCountOptions(guestCountLimit, guestCompositionRule === "couple_only"),
-    [guestCompositionRule, guestCountLimit]
+    () =>
+      buildGuestCountOptions(guestCountLimit, guestCompositionRule === "couple_only").filter(
+        (count) => count >= minimumGuestsPerTable
+      ),
+    [guestCompositionRule, guestCountLimit, minimumGuestsPerTable]
   );
   const selectedGuestCount = Number(
     normalizeGuestCountSelection(form.reservation_clients, guestOptions) || 0
@@ -780,11 +790,15 @@ export default function QrReservationBookingPage() {
   const hasGuestCompositionInput =
     hasGuestCompositionValue(form.reservation_men) || hasGuestCompositionValue(form.reservation_women);
   const guestCompositionMessage =
-    guestCompositionVisible && guestCompositionRule !== "no_restriction"
+    (guestCompositionVisible || minimumGuestsRuleActive) &&
+    guestCompositionRule !== "no_restriction"
       ? resolveGuestCompositionPolicyMessage(
           settings?.reservation_guest_composition_validation_message,
           guestCompositionRule,
-          t
+          t,
+          {
+            minimumGuestsPerTable,
+          }
         )
       : "";
   const guestCompositionError = getGuestCompositionValidationError({
@@ -792,6 +806,7 @@ export default function QrReservationBookingPage() {
     fieldMode: guestCompositionEffectiveFieldMode,
     restrictionRule: guestCompositionRule,
     validationMessage: guestCompositionMessage,
+    minimumGuestsPerTable,
     totalGuests: selectedGuestCount,
     menGuests: form.reservation_men,
     womenGuests: form.reservation_women,

@@ -241,6 +241,11 @@ const CONCERT_GUEST_COMPOSITION_RESTRICTION_RULES = [
   { value: "custom_rule_later", label: "Custom rule later" },
 ];
 
+const RESERVATION_GUEST_COMPOSITION_RESTRICTION_RULES = [
+  ...CONCERT_GUEST_COMPOSITION_RESTRICTION_RULES,
+  { value: "minimum_guests_per_table", label: "Minimum guests per table" },
+];
+
 const makeEmptyConcertForm = () => ({
   artist_name: "",
   event_title: "",
@@ -272,6 +277,14 @@ function normalizeTableNumberList(values) {
         .filter((value) => Number.isFinite(value) && value > 0)
     )
   ).sort((a, b) => a - b);
+}
+
+function normalizeReservationMinimumGuestsPerTable(value, fallback = 1) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return Math.max(1, Number.parseInt(String(fallback ?? "1"), 10) || 1);
+  }
+  return Math.max(1, Math.min(20, parsed));
 }
 
 function normalizeLocationText(value) {
@@ -335,7 +348,6 @@ export default function QrMenuSettings() {
     useState(false);
   const [savingDisableAllProducts, setSavingDisableAllProducts] = useState(false);
   const [savingDeliveryCoverage, setSavingDeliveryCoverage] = useState(false);
-  const [savingConcertReservationButtonColor, setSavingConcertReservationButtonColor] = useState(false);
   const [savingBookingSettings, setSavingBookingSettings] = useState(false);
   const [savingFloorPlanLayout, setSavingFloorPlanLayout] = useState(false);
   const [activeSettingsTab, setActiveSettingsTab] = useState("qr");
@@ -442,6 +454,7 @@ export default function QrMenuSettings() {
   reservation_guest_composition_enabled: false,
   reservation_guest_composition_field_mode: "optional",
   reservation_guest_composition_restriction_rule: "no_restriction",
+  reservation_guest_composition_min_guests_per_table: 1,
   reservation_guest_composition_validation_message: "",
   reservation_guest_composition_disabled_tables: [],
   qr_floor_plan_layout: null,
@@ -1510,6 +1523,11 @@ async function saveAllCustomization() {
             settings.reservation_guest_composition_field_mode || "optional",
           reservation_guest_composition_restriction_rule:
             settings.reservation_guest_composition_restriction_rule || "no_restriction",
+          reservation_guest_composition_min_guests_per_table:
+            normalizeReservationMinimumGuestsPerTable(
+              settings.reservation_guest_composition_min_guests_per_table,
+              1
+            ),
           reservation_guest_composition_validation_message: String(
             settings.reservation_guest_composition_validation_message || ""
           ).trim(),
@@ -1545,30 +1563,6 @@ async function saveAllCustomization() {
       updateField("disable_all_products", !nextValue);
     } finally {
       setSavingDisableAllProducts(false);
-    }
-  };
-
-  const saveConcertReservationButtonColor = async () => {
-    setSavingConcertReservationButtonColor(true);
-    try {
-      const payload = {
-        concert_reservation_button_color:
-          String(settings.concert_reservation_button_color || "").trim() || "#111827",
-      };
-      await secureFetch("/settings/qr-menu-customization", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-      writeQrMenuBrandingCache(extractIdentifierFromQrUrl(qrUrl), {
-        ...settings,
-        ...payload,
-      });
-      toast.success(t("Saved successfully!"));
-    } catch (err) {
-      console.error("❌ Failed to save concert reservation button color:", err);
-      toast.error(t("Save failed"));
-    } finally {
-      setSavingConcertReservationButtonColor(false);
     }
   };
 
@@ -1661,6 +1655,42 @@ async function saveAllCustomization() {
   const updateConcertFormField = (key, value) => {
     setConcertForm((prev) => ({ ...prev, [key]: value }));
   };
+
+  const sortedConcertEvents = React.useMemo(() => {
+    const statusRank = (event) => {
+      const concertEndDate = resolveConcertEndDate(event);
+      const isPastConcert =
+        concertEndDate instanceof Date &&
+        Number.isFinite(concertEndDate.getTime()) &&
+        concertEndDate.getTime() < Date.now();
+
+      if (isPastConcert) return 3;
+
+      const status = String(event?.status || "active").trim().toLowerCase();
+      if (status === "active") return 0;
+      if (status === "sold_out") return 1;
+      if (status === "hidden") return 2;
+      return 3;
+    };
+
+    return [...concertEvents].sort((left, right) => {
+      const rankDiff = statusRank(left) - statusRank(right);
+      if (rankDiff !== 0) return rankDiff;
+
+      const leftDate = new Date(
+        `${String(left?.event_date || "").slice(0, 10)}T${String(left?.event_time || "00:00").slice(0, 5) || "00:00"}`
+      ).getTime();
+      const rightDate = new Date(
+        `${String(right?.event_date || "").slice(0, 10)}T${String(right?.event_time || "00:00").slice(0, 5) || "00:00"}`
+      ).getTime();
+
+      if (Number.isFinite(leftDate) && Number.isFinite(rightDate) && leftDate !== rightDate) {
+        return rightDate - leftDate;
+      }
+
+      return Number(right?.id || 0) - Number(left?.id || 0);
+    });
+  }, [concertEvents]);
 
   const updateConcertGuestCompositionEnabled = (value) => {
     setConcertForm((prev) => ({
@@ -1807,11 +1837,21 @@ async function saveAllCustomization() {
         ? `/concerts/events/${editingConcertId}`
         : "/concerts/events";
       const method = editingConcertId ? "PUT" : "POST";
+      const currentReservationRule = String(
+        settings.reservation_guest_composition_restriction_rule || "no_restriction"
+      ).toLowerCase();
       const mirroredReservationRules = {
         reservation_guest_composition_enabled: payload.guest_composition_enabled,
         reservation_guest_composition_field_mode: payload.guest_composition_field_mode,
         reservation_guest_composition_restriction_rule:
-          payload.guest_composition_restriction_rule,
+          currentReservationRule === "minimum_guests_per_table"
+            ? currentReservationRule
+            : payload.guest_composition_restriction_rule,
+        reservation_guest_composition_min_guests_per_table:
+          normalizeReservationMinimumGuestsPerTable(
+            settings.reservation_guest_composition_min_guests_per_table,
+            1
+          ),
         reservation_guest_composition_validation_message:
           payload.guest_composition_validation_message,
         reservation_guest_composition_disabled_tables:
@@ -1905,7 +1945,7 @@ async function saveAllCustomization() {
     return [dateValue, timeValue].filter(Boolean).join(" ");
   };
 
-  const resolveConcertEndDate = (event) => {
+  function resolveConcertEndDate(event) {
     const directEnd = parseLocalDateTime(event?.slot_end_datetime);
     if (directEnd) return directEnd;
 
@@ -1918,7 +1958,7 @@ async function saveAllCustomization() {
     if (computedEnd) return computedEnd;
 
     return null;
-  };
+  }
 
   const copyLink = () => {
     if (!qrUrl) return;
@@ -2396,31 +2436,33 @@ async function saveAllCustomization() {
 
   return (
   <div className="mx-auto max-w-[1400px] px-4 py-8 sm:px-6 lg:px-8">
-    <div className="mb-6 flex items-center justify-center gap-2 max-w-full overflow-x-auto scrollbar-hide whitespace-nowrap rounded-2xl border border-slate-200/60 bg-slate-50/70 p-1 backdrop-blur dark:border-slate-700/60 dark:bg-zinc-800/30">
-      {settingsTabs.map((tab) => {
-        const isActive = activeSettingsTab === tab.id;
-        return (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => {
-              setActiveSettingsTab(tab.id);
-            }}
-            className={[
-              "shrink-0 w-24 sm:w-28 truncate",
-              "inline-flex items-center justify-center gap-2",
-              "rounded-xl border border-slate-300/60 dark:border-slate-700/60 px-3 py-2 text-[12px] md:text-[13px] lg:text-sm font-semibold",
-              "shadow-md transition-all duration-150 hover:shadow-lg active:scale-[0.98]",
-              "focus:outline-none focus:ring-2 focus:ring-indigo-400/70 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-zinc-900",
-              isActive
-                ? "bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 text-white"
-                : "bg-white/80 text-slate-800 hover:bg-white dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70",
-            ].join(" ")}
-          >
-            {tab.label}
-          </button>
-        );
-      })}
+    <div className="mb-6 -mx-4 overflow-x-auto px-4 scrollbar-hide sm:mx-0 sm:px-0 [touch-action:pan-x]">
+      <div className="inline-flex min-w-max items-center justify-start gap-2 whitespace-nowrap rounded-2xl border border-slate-200/60 bg-slate-50/70 p-1 backdrop-blur dark:border-slate-700/60 dark:bg-zinc-800/30 sm:flex sm:min-w-0 sm:justify-center">
+        {settingsTabs.map((tab) => {
+          const isActive = activeSettingsTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => {
+                setActiveSettingsTab(tab.id);
+              }}
+              className={[
+                "shrink-0 w-24 sm:w-28 truncate",
+                "inline-flex items-center justify-center gap-2",
+                "rounded-xl border border-slate-300/60 dark:border-slate-700/60 px-3 py-2 text-[12px] md:text-[13px] lg:text-sm font-semibold",
+                "shadow-md transition-all duration-150 hover:shadow-lg active:scale-[0.98]",
+                "focus:outline-none focus:ring-2 focus:ring-indigo-400/70 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-zinc-900",
+                isActive
+                  ? "bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 text-white"
+                  : "bg-white/80 text-slate-800 hover:bg-white dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-900/70",
+              ].join(" ")}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
     {activeSettingsTab === "qr" && (
       <>
@@ -2988,7 +3030,7 @@ async function saveAllCustomization() {
         )}
 
         {activeSettingsTab === "floor-plan" && (
-          <div className="rounded-[32px] border border-slate-200 bg-slate-50/90 p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70">
+          <div>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
@@ -3328,13 +3370,37 @@ async function saveAllCustomization() {
                       disabled={!settings.reservation_guest_composition_enabled}
                       className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900 disabled:opacity-60"
                     >
-                      {CONCERT_GUEST_COMPOSITION_RESTRICTION_RULES.map((option) => (
+                      {RESERVATION_GUEST_COMPOSITION_RESTRICTION_RULES.map((option) => (
                         <option key={`reservation-rule-${option.value}`} value={option.value}>
                           {t(option.label)}
                         </option>
                       ))}
                     </select>
                   </div>
+
+                  {settings.reservation_guest_composition_restriction_rule ===
+                  "minimum_guests_per_table" ? (
+                    <div className="md:col-span-2">
+                      <label className="font-semibold">{t("Minimum guests per table")}</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={normalizeReservationMinimumGuestsPerTable(
+                          settings.reservation_guest_composition_min_guests_per_table,
+                          1
+                        )}
+                        onChange={(e) =>
+                          updateReservationGuestCompositionField(
+                            "reservation_guest_composition_min_guests_per_table",
+                            normalizeReservationMinimumGuestsPerTable(e.target.value, 1)
+                          )
+                        }
+                        disabled={!settings.reservation_guest_composition_enabled}
+                        className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900 disabled:opacity-60"
+                      />
+                    </div>
+                  ) : null}
 
                   <div className="md:col-span-2">
                     <label className="font-semibold">{t("Validation message")}</label>
@@ -3883,7 +3949,7 @@ async function saveAllCustomization() {
         {activeSettingsTab === "app" && (
           <>
         {/* Main Info */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
             <label className="font-semibold">{t("Main Title")}</label>
             <input
@@ -3924,14 +3990,14 @@ async function saveAllCustomization() {
             />
           </div>
 
-          <div className="md:col-span-2 rounded-2xl border border-indigo-100 dark:border-zinc-700 bg-indigo-50/50 dark:bg-zinc-800/40 p-4">
-            <h4 className="text-lg font-bold text-indigo-700 dark:text-indigo-300 mb-3">
+          <div className="md:col-span-2 rounded-2xl border border-indigo-100 bg-indigo-50/50 p-3 dark:border-zinc-700 dark:bg-zinc-800/40">
+            <h4 className="mb-2 text-lg font-bold text-indigo-700 dark:text-indigo-300">
               {t("QR Menu App Branding")}
             </h4>
-            <p className="mb-4 text-xs text-gray-500">
+            <p className="mb-3 text-xs text-gray-500">
               {t("Branding upload guide: App Icon/Favicon 1024 x 1024 px (square), Splash Logo 1600 x 900 px, Main Title Logo 1200 x 320 px.")}
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
                 <label className="font-semibold block mb-2">
                   {t("Restaurant App Icon (Favicon)")}
@@ -4146,7 +4212,7 @@ async function saveAllCustomization() {
                 />
               </div>
 
-              <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-white/80 p-4 dark:border-zinc-700 dark:bg-zinc-900/70">
+              <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-white/80 p-3 dark:border-zinc-700 dark:bg-zinc-900/70">
                 <label className="font-semibold block">{t("Custom Domain")}</label>
                 <input
                   type="text"
@@ -4171,7 +4237,7 @@ async function saveAllCustomization() {
                   </p>
                 ) : null}
 
-                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/80">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                       {t("Domain preview")}
@@ -4255,20 +4321,55 @@ async function saveAllCustomization() {
             </div>
           </div>
 
-          <div>
-            <label className="font-semibold">{t("Primary Accent Color")}</label>
-            <input
-              type="color"
-              value={settings.primary_color || "#4F46E5"}
-              onChange={(e) => updateField("primary_color", e.target.value)}
-              className="w-20 h-12 p-1 rounded-xl border"
-            />
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-start">
+            <div className="h-full space-y-2">
+              <label className="font-semibold">{t("Primary Accent Color")}</label>
+              <div className="grid grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-white p-2.5 dark:border-zinc-700 dark:bg-zinc-900 sm:grid-cols-[52px_130px] sm:items-center">
+                <input
+                  type="color"
+                  value={settings.primary_color || "#4F46E5"}
+                  onChange={(e) => updateField("primary_color", e.target.value)}
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-transparent dark:border-zinc-700"
+                />
+                <input
+                  type="text"
+                  value={settings.primary_color || "#4F46E5"}
+                  onChange={(e) => updateField("primary_color", e.target.value)}
+                  className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div className="h-full space-y-2">
+              <label className="font-semibold">{t("Reservation button")}</label>
+              <div className="grid grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-white p-2.5 dark:border-zinc-700 dark:bg-zinc-900 sm:grid-cols-[52px_130px_minmax(220px,1fr)] sm:items-start">
+                  <input
+                    type="color"
+                    value={settings.concert_reservation_button_color || "#111827"}
+                    onChange={(e) =>
+                      updateField("concert_reservation_button_color", e.target.value)
+                    }
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-transparent dark:border-zinc-700"
+                  />
+                  <input
+                    type="text"
+                    value={settings.concert_reservation_button_color || "#111827"}
+                    onChange={(e) =>
+                      updateField("concert_reservation_button_color", e.target.value)
+                    }
+                    className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
+                  />
+                <p className="pt-1 text-xs leading-5 text-slate-500 dark:text-zinc-400">
+                  {t("Used for the concert booking and reservation buttons on the QR page.")}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* HERO SLIDER */}
-        <div className="mt-10">
-          <h3 className="text-xl font-bold mb-3 text-indigo-600">{t("Hero Slider")}</h3>
+        <div className="mt-6">
+          <h3 className="mb-2 text-xl font-bold text-indigo-600">{t("Hero Slider")}</h3>
           <p className="mb-3 text-xs text-gray-500">
             {t("Recommended slide image size: 1600 x 900 px (16:9), minimum 1200 x 675 px.")}
           </p>
@@ -4374,52 +4475,18 @@ async function saveAllCustomization() {
         )}
 
         {activeSettingsTab === "concert" && (
-        <div ref={concertSectionRef} className="mt-2 bg-gray-50 dark:bg-zinc-800 p-6 rounded-2xl border">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-xl font-bold text-indigo-600">{t("Concert Tickets")}</h3>
-            <span className="text-xs px-3 py-1 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700">
+        <div ref={concertSectionRef}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <h3 className="max-w-full text-lg font-bold leading-tight text-slate-900 dark:text-white sm:text-xl">
+              {t("Concert Tickets")}
+            </h3>
+            <span className="max-w-full rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium leading-relaxed text-slate-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
               {t("Payment Method")}: {t("Bank Transfer")}
             </span>
           </div>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-zinc-300">
             {t("Create events, ticket packages, and table reservations synced with QR table reservations.")}
           </p>
-
-          <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="font-semibold">{t("Concert Reservation Button Color")}</label>
-              <div className="mt-1 flex items-center gap-3 rounded-2xl border bg-white p-3 dark:bg-zinc-900">
-                <input
-                  type="color"
-                  value={settings.concert_reservation_button_color || "#111827"}
-                  onChange={(e) =>
-                    updateField("concert_reservation_button_color", e.target.value)
-                  }
-                  className="h-11 w-16 rounded-xl border bg-transparent"
-                />
-                <input
-                  type="text"
-                  value={settings.concert_reservation_button_color || "#111827"}
-                  onChange={(e) =>
-                    updateField("concert_reservation_button_color", e.target.value)
-                  }
-                  className="flex-1 rounded-xl border bg-white px-3 py-2.5 text-sm dark:bg-zinc-900"
-                />
-              </div>
-              <p className="mt-2 text-xs text-gray-500 dark:text-zinc-400">
-                {t("Used for the concert booking and reservation buttons on the QR page.")}
-              </p>
-              <button
-                type="button"
-                onClick={saveConcertReservationButtonColor}
-                disabled={savingConcertReservationButtonColor}
-                className="mt-3 inline-flex min-h-[42px] items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
-              >
-                {savingConcertReservationButtonColor ? t("Please wait...") : t("Save")}
-              </button>
-            </div>
-          </div>
-
           <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="font-semibold">{t("Artist name")}</label>
@@ -4494,79 +4561,131 @@ async function saveAllCustomization() {
                 />
               ) : null}
             </div>
-            <div>
-              <label className="font-semibold">{t("Ticket price")}</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={concertForm.ticket_price}
-                onChange={(e) => updateConcertFormField("ticket_price", e.target.value)}
-                className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
-              />
-            </div>
-            <div>
-              <label className="font-semibold">{t("Status")}</label>
-              <select
-                value={concertForm.status}
-                onChange={(e) => updateConcertFormField("status", e.target.value)}
-                className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
-              >
-                <option value="active">{t("active")}</option>
-                <option value="sold_out">{t("sold out")}</option>
-                <option value="hidden">{t("hidden")}</option>
-              </select>
-            </div>
-            <div className="flex items-end">
-              <label className="inline-flex items-center gap-2 rounded-xl border bg-white dark:bg-zinc-900 px-3 py-3">
-                <input
-                  type="checkbox"
-                  checked={Boolean(concertForm.free_concert)}
-                  onChange={(e) => updateConcertFormField("free_concert", e.target.checked)}
-                />
-                <span className="text-sm font-semibold">{t("Free concert")}</span>
-              </label>
-            </div>
-            <div>
-              <label className="font-semibold">{t("Total ticket quantity available")}</label>
-              <input
-                type="number"
-                min="0"
-                value={concertForm.total_ticket_quantity}
-                onChange={(e) => updateConcertFormField("total_ticket_quantity", e.target.value)}
-                className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
-              />
-            </div>
-            <div>
-              <label className="font-semibold">{t("Total table quantity available")}</label>
-              <input
-                type="number"
-                min="0"
-                value={concertForm.total_table_quantity}
-                onChange={(e) => updateConcertFormField("total_table_quantity", e.target.value)}
-                className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
-              />
+            <div className="md:col-span-2">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                <div className="md:col-span-3">
+                  <label className="font-semibold">{t("Status")}</label>
+                  <select
+                    value={concertForm.status}
+                    onChange={(e) => updateConcertFormField("status", e.target.value)}
+                    className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900"
+                  >
+                    <option value="active">{t("active")}</option>
+                    <option value="sold_out">{t("sold out")}</option>
+                    <option value="hidden">{t("hidden")}</option>
+                  </select>
+                </div>
+                <div className="md:col-span-9">
+                  <label className="font-semibold">{t("Bank Transfer Instructions")}</label>
+                  <textarea
+                    rows={1}
+                    value={concertForm.bank_transfer_instructions}
+                    onChange={(e) => updateConcertFormField("bank_transfer_instructions", e.target.value)}
+                    placeholder={t("Share account details and transfer note here")}
+                    className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900 resize-none"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="mt-4">
-            <label className="font-semibold">{t("Description")}</label>
-            <textarea
-              rows={3}
-              value={concertForm.description}
-              onChange={(e) => updateConcertFormField("description", e.target.value)}
-              className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900 resize-none"
-            />
-          </div>
-          <div className="mt-4">
-            <label className="font-semibold">{t("Bank Transfer Instructions")}</label>
-            <textarea
-              rows={2}
-              value={concertForm.bank_transfer_instructions}
-              onChange={(e) => updateConcertFormField("bank_transfer_instructions", e.target.value)}
-              placeholder={t("Share account details and transfer note here")}
-              className="w-full mt-1 p-3 rounded-xl border bg-white dark:bg-zinc-900 resize-none"
-            />
+          <div className="mt-6">
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-lg font-semibold">{t("Reservation/Ticket Types / Packages")}</h4>
+              <button
+                type="button"
+                onClick={addConcertTicketType}
+                className="px-3 py-1.5 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700"
+              >
+                {t("Add")}
+              </button>
+            </div>
+            <div className="mt-3 space-y-3">
+              {(concertForm.ticket_types || []).map((row, index) => (
+                <div key={`ticket-type-${index}`} className="grid grid-cols-1 md:grid-cols-6 gap-3 p-3 rounded-xl border bg-white dark:bg-zinc-900">
+                  <div>
+                    <label className="text-xs font-semibold">{t("Name")}</label>
+                    <input
+                      value={row.name}
+                      onChange={(e) => updateConcertTicketTypeField(index, "name", e.target.value)}
+                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold">{t("Area")}</label>
+                    <input
+                      list="concert-area-options"
+                      value={row.area_name}
+                      onChange={(e) => updateConcertTicketTypeField(index, "area_name", e.target.value)}
+                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold">{t("Price")}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={row.price}
+                      onChange={(e) => updateConcertTicketTypeField(index, "price", e.target.value)}
+                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold">{t("Quantity")}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={row.quantity_total}
+                      onChange={(e) => updateConcertTicketTypeField(index, "quantity_total", e.target.value)}
+                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
+                    />
+                  </div>
+                  <div className="md:col-span-6">
+                    <label className="text-xs font-semibold">{t("Description")}</label>
+                    <textarea
+                      rows={2}
+                      value={row.description}
+                      onChange={(e) => updateConcertTicketTypeField(index, "description", e.target.value)}
+                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900 resize-none"
+                    />
+                  </div>
+                  <div className="md:col-span-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <label
+                        htmlFor={`ticket-type-table-${index}`}
+                        className="w-full h-11 inline-flex items-center gap-2 rounded-lg border bg-white dark:bg-zinc-900 px-3"
+                      >
+                        <input
+                          id={`ticket-type-table-${index}`}
+                          type="checkbox"
+                          checked={Boolean(row.is_table_package)}
+                          onChange={(e) => updateConcertTicketTypeField(index, "is_table_package", e.target.checked)}
+                        />
+                        <span className="text-sm font-semibold">{t("Table Package")}</span>
+                      </label>
+
+                      <label className="w-full h-11 inline-flex items-center gap-2 rounded-lg border bg-white dark:bg-zinc-900 px-3">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(concertForm.free_concert)}
+                          onChange={(e) => updateConcertFormField("free_concert", e.target.checked)}
+                        />
+                        <span className="text-sm font-semibold">{t("Free concert")}</span>
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => removeConcertTicketType(index)}
+                        className="w-full h-11 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-50 px-3 text-sm font-semibold"
+                      >
+                        {t("Delete")}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="mt-6 rounded-2xl border bg-white dark:bg-zinc-900 p-4">
@@ -4745,161 +4864,6 @@ async function saveAllCustomization() {
               </div>
             </div>
           </div>
-
-          <div className="mt-6">
-            <div className="flex items-center justify-between gap-3">
-              <h4 className="text-lg font-semibold">{t("Area-based allocation")}</h4>
-              <button
-                type="button"
-                onClick={addConcertAreaAllocation}
-                className="px-3 py-1.5 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700"
-              >
-                {t("Add")}
-              </button>
-            </div>
-            <div className="mt-3 space-y-3">
-              {(concertForm.area_allocations || []).map((row, index) => (
-                <div key={`alloc-${index}`} className="grid grid-cols-1 md:grid-cols-5 gap-3 p-3 rounded-xl border bg-white dark:bg-zinc-900">
-                  <div>
-                    <label className="text-xs font-semibold">{t("Area")}</label>
-                    <input
-                      list="concert-area-options"
-                      value={row.area_name}
-                      onChange={(e) => updateConcertAreaAllocationField(index, "area_name", e.target.value)}
-                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold">{t("Type")}</label>
-                    <select
-                      value={row.allocation_type}
-                      onChange={(e) => updateConcertAreaAllocationField(index, "allocation_type", e.target.value)}
-                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
-                    >
-                      <option value="ticket">{t("Ticket")}</option>
-                      <option value="table">{t("Table")}</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold">{t("Price")}</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={row.price}
-                      onChange={(e) => updateConcertAreaAllocationField(index, "price", e.target.value)}
-                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold">{t("Quantity")}</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={row.quantity_total}
-                      onChange={(e) => updateConcertAreaAllocationField(index, "quantity_total", e.target.value)}
-                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
-                    />
-                  </div>
-                  <div className="flex items-end">
-                    <button
-                      type="button"
-                      onClick={() => removeConcertAreaAllocation(index)}
-                      className="w-full mt-1 p-2.5 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-50"
-                    >
-                      {t("Delete")}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-6">
-            <div className="flex items-center justify-between gap-3">
-              <h4 className="text-lg font-semibold">{t("Ticket Types / Packages")}</h4>
-              <button
-                type="button"
-                onClick={addConcertTicketType}
-                className="px-3 py-1.5 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700"
-              >
-                {t("Add")}
-              </button>
-            </div>
-            <div className="mt-3 space-y-3">
-              {(concertForm.ticket_types || []).map((row, index) => (
-                <div key={`ticket-type-${index}`} className="grid grid-cols-1 md:grid-cols-6 gap-3 p-3 rounded-xl border bg-white dark:bg-zinc-900">
-                  <div>
-                    <label className="text-xs font-semibold">{t("Name")}</label>
-                    <input
-                      value={row.name}
-                      onChange={(e) => updateConcertTicketTypeField(index, "name", e.target.value)}
-                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold">{t("Area")}</label>
-                    <input
-                      list="concert-area-options"
-                      value={row.area_name}
-                      onChange={(e) => updateConcertTicketTypeField(index, "area_name", e.target.value)}
-                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold">{t("Price")}</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={row.price}
-                      onChange={(e) => updateConcertTicketTypeField(index, "price", e.target.value)}
-                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold">{t("Quantity")}</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={row.quantity_total}
-                      onChange={(e) => updateConcertTicketTypeField(index, "quantity_total", e.target.value)}
-                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2 mt-6">
-                    <input
-                      id={`ticket-type-table-${index}`}
-                      type="checkbox"
-                      checked={Boolean(row.is_table_package)}
-                      onChange={(e) => updateConcertTicketTypeField(index, "is_table_package", e.target.checked)}
-                    />
-                    <label htmlFor={`ticket-type-table-${index}`} className="text-xs font-semibold">
-                      {t("Table Package")}
-                    </label>
-                  </div>
-                  <div className="flex items-end">
-                    <button
-                      type="button"
-                      onClick={() => removeConcertTicketType(index)}
-                      className="w-full mt-1 p-2.5 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-50"
-                    >
-                      {t("Delete")}
-                    </button>
-                  </div>
-                  <div className="md:col-span-6">
-                    <label className="text-xs font-semibold">{t("Description")}</label>
-                    <textarea
-                      rows={2}
-                      value={row.description}
-                      onChange={(e) => updateConcertTicketTypeField(index, "description", e.target.value)}
-                      className="w-full mt-1 p-2.5 rounded-lg border bg-white dark:bg-zinc-900 resize-none"
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
           <datalist id="concert-area-options">
             {concertAreaOptions.map((area) => (
               <option key={area} value={area} />
@@ -4933,11 +4897,11 @@ async function saveAllCustomization() {
                 <span className="text-xs text-gray-500">{t("Loading...")}</span>
               ) : null}
             </div>
-            {concertEvents.length === 0 ? (
+            {sortedConcertEvents.length === 0 ? (
               <div className="mt-3 text-sm text-gray-500">{t("No concerts yet.")}</div>
             ) : (
               <div className="mt-3 space-y-4">
-                {concertEvents.map((event) => {
+                {sortedConcertEvents.map((event) => {
                   const bookings = concertBookingsByEvent[event.id];
                   const isBookingOpen = Array.isArray(bookings);
                   const eventImage = resolveUploadSrc(event.event_image);
