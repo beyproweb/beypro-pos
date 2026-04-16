@@ -554,6 +554,9 @@ function OrderTypeSelect({
   tableEnabled = true,
   onRequestAuthView = null,
   onRequirePhoneVerification = null,
+  showFloatingCallWaiterButton = false,
+  floatingCallWaiterDisabled = false,
+  onFloatingCallWaiterClick = null,
 }) {
 
   /* ============================================================
@@ -2769,7 +2772,24 @@ async function load() {
         </div>
       </section>
 
-      {phoneNumber ? (
+      {showFloatingCallWaiterButton ? (
+        <button
+          type="button"
+          onClick={onFloatingCallWaiterClick}
+          disabled={floatingCallWaiterDisabled || !onFloatingCallWaiterClick}
+          className="sm:hidden fixed right-4 z-[95] inline-flex h-14 w-14 items-center justify-center rounded-full border-2 border-white/90 p-[3px] shadow-[0_14px_36px_rgba(0,0,0,0.38)] transition-transform disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.98]"
+          style={{
+            background: "linear-gradient(145deg, #DC2626, #7F1D1D)",
+            bottom: "calc(1rem + env(safe-area-inset-bottom))",
+          }}
+          aria-label={t("Call Waiter")}
+          title={t("Call Waiter")}
+        >
+          <span className="inline-flex h-full w-full items-center justify-center rounded-full bg-white shadow-inner">
+            <Bell className="h-5 w-5 text-red-600" />
+          </span>
+        </button>
+      ) : phoneNumber ? (
         <a
           href={callUsHref}
           className="sm:hidden fixed right-4 z-[95] inline-flex h-14 w-14 items-center justify-center rounded-full border-2 border-white/90 p-[3px] shadow-[0_14px_36px_rgba(0,0,0,0.38)] active:scale-[0.98] transition-transform"
@@ -5651,12 +5671,20 @@ export default function QrMenu() {
   const canOpenCartFromNav = cartItems.length > 0 || hasActiveOrder || forceBottomNavProductPage;
   const hasBottomNavContext =
     showStatus || hasActiveOrder || cartItems.length > 0 || forceBottomNavProductPage;
+  const hideBottomActionsForTableProductPage = isTableOrderProductPage && !showStatus;
+  const showHomeFloatingCallWaiterButton =
+    showHome &&
+    !isMenuBrowseMode &&
+    resolvedOrderTypeForActions === "table" &&
+    Number.isFinite(resolvedTableForActions) &&
+    resolvedTableForActions > 0 &&
+    Boolean(hasActiveOrder || activeOrder?.id || statusPortalOrderId);
   const showBottomActions =
     !isDesktopLayout &&
     !showTableSelector &&
     hasBottomNavContext &&
     (!showHome || showStatus) &&
-    !isTableOrderProductPage &&
+    !hideBottomActionsForTableProductPage &&
     !isCartDrawerOpen;
   const showCustomerAuthWelcomeModal = isManualAuthModalOpen;
   const visibleMenuCategories = useMemo(
@@ -7684,6 +7712,9 @@ export default function QrMenu() {
             tableEnabled={allowTableOrder}
             onRequestAuthView={openFullScreenAuth}
             onRequirePhoneVerification={ensureVerifiedPhoneForFlow}
+            showFloatingCallWaiterButton={showHomeFloatingCallWaiterButton}
+            floatingCallWaiterDisabled={callWaiterButtonDisabledBase}
+            onFloatingCallWaiterClick={onCallWaiterClick}
           />
           </>
         ) : (
@@ -7842,99 +7873,101 @@ export default function QrMenu() {
         />
       )}
 
-      {showBottomActions && (
-        <div className="fixed inset-x-0 bottom-0 z-[130] px-3 pb-[calc(8px+env(safe-area-inset-bottom))]">
-          {callWaiterFeedback ? (
-            <div className="mx-auto mb-2 w-fit rounded-xl bg-white/95 border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 shadow-sm whitespace-nowrap">
-              {callWaiterFeedback}
-            </div>
-          ) : null}
-          <div className="mx-auto grid w-full max-w-xl grid-cols-4 gap-1.5 rounded-2xl border border-neutral-200 bg-white/95 p-1.5 shadow-[0_10px_35px_rgba(0,0,0,0.2)] backdrop-blur sm:gap-2 sm:p-2">
-            <button
-              type="button"
-              onClick={onGoHomeFromNav}
-              className="inline-flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border border-slate-300 bg-gradient-to-b from-slate-100 to-white px-0.5 text-[10px] font-semibold leading-none text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900 active:scale-[0.98] sm:min-h-[60px] sm:px-1 sm:text-[11px]"
-              aria-label={homeLabel}
-            >
-              <House className="h-[18px] w-[18px]" aria-hidden="true" />
-              <span className="block whitespace-nowrap">{homeLabel}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onCallWaiterClick}
-              disabled={disableCallWaiterAction}
-              className={`relative inline-flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border px-0.5 text-[10px] font-semibold leading-none transition sm:min-h-[60px] sm:px-1 sm:text-[11px] ${
-                disableCallWaiterAction
-                  ? "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
-                  : "border-red-500 bg-red-600 text-white hover:bg-red-700 active:scale-[0.98]"
-              }`}
-              aria-label={callWaiterLabel}
-            >
-              {callingWaiter ? (
-                <Loader2 className="h-[18px] w-[18px] animate-spin" />
-              ) : (
-                <Bell className="h-[18px] w-[18px]" aria-hidden="true" />
-              )}
-              <span className="block whitespace-nowrap">{callWaiterLabel}</span>
-              {!callingWaiter && callWaiterCooldownSeconds > 0 ? (
-                <span className="absolute right-1 top-1 inline-flex h-[16px] min-w-[16px] items-center justify-center rounded-full border border-red-200 bg-white px-1 text-[9px] font-bold leading-none text-red-600">
-                  {callWaiterCooldownSeconds}
-                </span>
+      {showBottomActions && typeof document !== "undefined"
+        ? createPortal(
+            <div className="fixed inset-x-0 bottom-0 z-[130] px-3 pb-[calc(8px+env(safe-area-inset-bottom))]">
+              {callWaiterFeedback ? (
+                <div className="mx-auto mb-2 w-fit rounded-xl bg-white/95 border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 shadow-sm whitespace-nowrap">
+                  {callWaiterFeedback}
+                </div>
               ) : null}
-            </button>
+              <div className="mx-auto grid w-full max-w-xl grid-cols-4 gap-1.5 rounded-2xl border border-neutral-200 bg-white/95 p-1.5 shadow-[0_10px_35px_rgba(0,0,0,0.2)] backdrop-blur sm:gap-2 sm:p-2">
+                <button
+                  type="button"
+                  onClick={onGoHomeFromNav}
+                  className="inline-flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border border-slate-300 bg-gradient-to-b from-slate-100 to-white px-0.5 text-[10px] font-semibold leading-none text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900 active:scale-[0.98] sm:min-h-[60px] sm:px-1 sm:text-[11px]"
+                  aria-label={homeLabel}
+                >
+                  <House className="h-[18px] w-[18px]" aria-hidden="true" />
+                  <span className="block whitespace-nowrap">{homeLabel}</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={onReorderSlotClick}
-              disabled={disableReorderAction}
-              className={`inline-flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border px-0.5 text-[10px] font-semibold leading-none transition sm:min-h-[60px] sm:px-1 sm:text-[11px] ${
-                !disableReorderAction
-                  ? "border-amber-500 bg-amber-500 text-white hover:bg-amber-600 active:scale-[0.98]"
-                  : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
-              }`}
-              aria-label={reorderActionLabel}
-            >
-              <RotateCcw className="h-[18px] w-[18px]" aria-hidden="true" />
-              <span className="block whitespace-nowrap">{reorderActionLabel}</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={onCallWaiterClick}
+                  disabled={disableCallWaiterAction}
+                  className={`relative inline-flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border px-0.5 text-[10px] font-semibold leading-none transition sm:min-h-[60px] sm:px-1 sm:text-[11px] ${
+                    disableCallWaiterAction
+                      ? "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
+                      : "border-red-500 bg-red-600 text-white hover:bg-red-700 active:scale-[0.98]"
+                  }`}
+                  aria-label={callWaiterLabel}
+                >
+                  {callingWaiter ? (
+                    <Loader2 className="h-[18px] w-[18px] animate-spin" />
+                  ) : (
+                    <Bell className="h-[18px] w-[18px]" aria-hidden="true" />
+                  )}
+                  <span className="block whitespace-nowrap">{callWaiterLabel}</span>
+                  {!callingWaiter && callWaiterCooldownSeconds > 0 ? (
+                    <span className="absolute right-1 top-1 inline-flex h-[16px] min-w-[16px] items-center justify-center rounded-full border border-red-200 bg-white px-1 text-[9px] font-bold leading-none text-red-600">
+                      {callWaiterCooldownSeconds}
+                    </span>
+                  ) : null}
+                </button>
 
-            <button
-              type="button"
-              onClick={onOpenCartFromNav}
-              disabled={disableCartAction}
-              className={`relative inline-flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border px-0.5 text-[10px] font-semibold leading-none transition sm:min-h-[60px] sm:px-1 sm:text-[11px] ${
-                !disableCartAction
-                  ? "border-emerald-500 bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.98]"
-                  : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
-              } ${shouldAnimateCartNavButton ? "will-change-transform" : ""}`}
-              style={
-                shouldAnimateCartNavButton
-                  ? { animation: "qr-cart-nav-pulse 1.8s ease-in-out infinite" }
-                  : undefined
-              }
-              aria-label={cartLabel}
-            >
-              <ShoppingCart
-                className="h-[18px] w-[18px]"
-                aria-hidden="true"
-                style={
-                  shouldAnimateCartNavButton
-                    ? { animation: "qr-cart-icon-bob 1.15s ease-in-out infinite" }
-                    : undefined
-                }
-              />
-              <span className="block whitespace-nowrap">{cartLabel}</span>
-              {cartNewItemsCount > 0 ? (
-                <span className="absolute right-1 top-1 inline-flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-sky-700 px-1 text-[9px] font-bold leading-none text-white animate-pulse">
-                  {cartNewItemsCount}
-                </span>
-              ) : null}
-            </button>
+                <button
+                  type="button"
+                  onClick={onReorderSlotClick}
+                  disabled={disableReorderAction}
+                  className={`inline-flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border px-0.5 text-[10px] font-semibold leading-none transition sm:min-h-[60px] sm:px-1 sm:text-[11px] ${
+                    !disableReorderAction
+                      ? "border-amber-500 bg-amber-500 text-white hover:bg-amber-600 active:scale-[0.98]"
+                      : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
+                  }`}
+                  aria-label={reorderActionLabel}
+                >
+                  <RotateCcw className="h-[18px] w-[18px]" aria-hidden="true" />
+                  <span className="block whitespace-nowrap">{reorderActionLabel}</span>
+                </button>
 
-          </div>
-        </div>
-      )}
+                <button
+                  type="button"
+                  onClick={onOpenCartFromNav}
+                  disabled={disableCartAction}
+                  className={`relative inline-flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border px-0.5 text-[10px] font-semibold leading-none transition sm:min-h-[60px] sm:px-1 sm:text-[11px] ${
+                    !disableCartAction
+                      ? "border-emerald-500 bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.98]"
+                      : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
+                  } ${shouldAnimateCartNavButton ? "will-change-transform" : ""}`}
+                  style={
+                    shouldAnimateCartNavButton
+                      ? { animation: "qr-cart-nav-pulse 1.8s ease-in-out infinite" }
+                      : undefined
+                  }
+                  aria-label={cartLabel}
+                >
+                  <ShoppingCart
+                    className="h-[18px] w-[18px]"
+                    aria-hidden="true"
+                    style={
+                      shouldAnimateCartNavButton
+                        ? { animation: "qr-cart-icon-bob 1.15s ease-in-out infinite" }
+                        : undefined
+                    }
+                  />
+                  <span className="block whitespace-nowrap">{cartLabel}</span>
+                  {cartNewItemsCount > 0 ? (
+                    <span className="absolute right-1 top-1 inline-flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-sky-700 px-1 text-[9px] font-bold leading-none text-white animate-pulse">
+                      {cartNewItemsCount}
+                    </span>
+                  ) : null}
+                </button>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
 
       {waiterTypeModalOpen ? (
         <div
