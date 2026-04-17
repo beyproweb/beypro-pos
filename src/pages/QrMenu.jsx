@@ -5584,7 +5584,14 @@ export default function QrMenu() {
     setIsRequestSongViewOpen(false);
   }, [requestSongEnabled]);
 
+  const allowCallWaiterButton = boolish(
+    orderSelectCustomization?.call_waiter_button_enabled ??
+      orderSelectCustomization?.call_button_enabled,
+    true
+  );
+
   const showCallWaiterButton =
+    allowCallWaiterButton &&
     (!showHome || showStatus) &&
     resolvedOrderTypeForActions === "table" &&
     Number.isFinite(resolvedTableForActions) &&
@@ -5593,7 +5600,7 @@ export default function QrMenu() {
     !canCallWaiter || callingWaiter || callWaiterCooldownSeconds > 0;
   const homeLabel = t("Home");
   const callWaiterLabel = t("Call Waiter");
-  const reOrderLabel = "Re-Order";
+  const reOrderLabel = t("Reorder");
   const cartLabel = t("Your Order");
   const scanTargetTable = useMemo(
     () => toArray(tables).find((tbl) => Number(tbl?.tableNumber) === Number(tableScanTarget)) || null,
@@ -5673,6 +5680,7 @@ export default function QrMenu() {
     showStatus || hasActiveOrder || cartItems.length > 0 || forceBottomNavProductPage;
   const hideBottomActionsForTableProductPage = isTableOrderProductPage && !showStatus;
   const showHomeFloatingCallWaiterButton =
+    allowCallWaiterButton &&
     showHome &&
     !isMenuBrowseMode &&
     resolvedOrderTypeForActions === "table" &&
@@ -6012,6 +6020,11 @@ export default function QrMenu() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (allowCallWaiterButton) return;
+    setWaiterTypeModalOpen(false);
+  }, [allowCallWaiterButton]);
 
   const onCallWaiterOptionSelect = useCallback(async (callType) => {
     setWaiterTypeModalOpen(false);
@@ -7881,7 +7894,7 @@ export default function QrMenu() {
                   {callWaiterFeedback}
                 </div>
               ) : null}
-              <div className="mx-auto grid w-full max-w-xl grid-cols-4 gap-1.5 rounded-2xl border border-neutral-200 bg-white/95 p-1.5 shadow-[0_10px_35px_rgba(0,0,0,0.2)] backdrop-blur sm:gap-2 sm:p-2">
+              <div className={`mx-auto grid w-full max-w-xl ${showCallWaiterButton ? "grid-cols-4" : "grid-cols-3"} gap-1.5 rounded-2xl border border-neutral-200 bg-white/95 p-1.5 shadow-[0_10px_35px_rgba(0,0,0,0.2)] backdrop-blur sm:gap-2 sm:p-2`}>
                 <button
                   type="button"
                   onClick={onGoHomeFromNav}
@@ -7892,29 +7905,31 @@ export default function QrMenu() {
                   <span className="block whitespace-nowrap">{homeLabel}</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={onCallWaiterClick}
-                  disabled={disableCallWaiterAction}
-                  className={`relative inline-flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border px-0.5 text-[10px] font-semibold leading-none transition sm:min-h-[60px] sm:px-1 sm:text-[11px] ${
-                    disableCallWaiterAction
-                      ? "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
-                      : "border-red-500 bg-red-600 text-white hover:bg-red-700 active:scale-[0.98]"
-                  }`}
-                  aria-label={callWaiterLabel}
-                >
-                  {callingWaiter ? (
-                    <Loader2 className="h-[18px] w-[18px] animate-spin" />
-                  ) : (
-                    <Bell className="h-[18px] w-[18px]" aria-hidden="true" />
-                  )}
-                  <span className="block whitespace-nowrap">{callWaiterLabel}</span>
-                  {!callingWaiter && callWaiterCooldownSeconds > 0 ? (
-                    <span className="absolute right-1 top-1 inline-flex h-[16px] min-w-[16px] items-center justify-center rounded-full border border-red-200 bg-white px-1 text-[9px] font-bold leading-none text-red-600">
-                      {callWaiterCooldownSeconds}
-                    </span>
-                  ) : null}
-                </button>
+                {showCallWaiterButton ? (
+                  <button
+                    type="button"
+                    onClick={onCallWaiterClick}
+                    disabled={disableCallWaiterAction}
+                    className={`relative inline-flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border px-0.5 text-[10px] font-semibold leading-none transition sm:min-h-[60px] sm:px-1 sm:text-[11px] ${
+                      disableCallWaiterAction
+                        ? "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
+                        : "border-red-500 bg-red-600 text-white hover:bg-red-700 active:scale-[0.98]"
+                    }`}
+                    aria-label={callWaiterLabel}
+                  >
+                    {callingWaiter ? (
+                      <Loader2 className="h-[18px] w-[18px] animate-spin" />
+                    ) : (
+                      <Bell className="h-[18px] w-[18px]" aria-hidden="true" />
+                    )}
+                    <span className="block whitespace-nowrap">{callWaiterLabel}</span>
+                    {!callingWaiter && callWaiterCooldownSeconds > 0 ? (
+                      <span className="absolute right-1 top-1 inline-flex h-[16px] min-w-[16px] items-center justify-center rounded-full border border-red-200 bg-white px-1 text-[9px] font-bold leading-none text-red-600">
+                        {callWaiterCooldownSeconds}
+                      </span>
+                    ) : null}
+                  </button>
+                ) : null}
 
                 <button
                   type="button"

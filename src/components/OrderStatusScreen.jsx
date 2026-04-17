@@ -1738,7 +1738,7 @@ const OrderStatusScreen = ({
         case "multinet":
           return "Multinet";
         default:
-          return tok;
+          return t(tok);
       }
     });
     return mapped.join("+");

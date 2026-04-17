@@ -20,6 +20,7 @@ const QR_MENU_BRANDING_CACHE_PREFIX = "qr-menu-branding-cache:";
 const QR_MENU_BRANDING_UPDATED_EVENT = "qr:branding-cache-updated";
 const DEFAULT_QR_MENU_BRANDING = {
   delivery_enabled: true,
+  call_waiter_button_enabled: true,
   reservation_pickup_enabled: true,
   reservation_guest_composition_enabled: false,
   reservation_guest_composition_field_mode: "optional",

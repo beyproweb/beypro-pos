@@ -340,6 +340,7 @@ export default function QrMenuSettings() {
   const qrRef = useRef();
   const [savingDelivery, setSavingDelivery] = useState(false);
   const [savingMenuTab, setSavingMenuTab] = useState(false);
+  const [savingCallWaiterButton, setSavingCallWaiterButton] = useState(false);
   const [savingReservationPickup, setSavingReservationPickup] = useState(false);
   const [savingTableOrder, setSavingTableOrder] = useState(false);
   const [savingTableQrScan, setSavingTableQrScan] = useState(false);
@@ -450,6 +451,7 @@ export default function QrMenuSettings() {
   delivery_origin_location: "",
   delivery_origin_lat: null,
   delivery_origin_lng: null,
+  call_waiter_button_enabled: true,
   reservation_pickup_enabled: true,
   reservation_guest_composition_enabled: false,
   reservation_guest_composition_field_mode: "optional",
@@ -599,6 +601,8 @@ export default function QrMenuSettings() {
     };
     const normalizedCustomization = {
       ...customization,
+      call_waiter_button_enabled:
+        customization.call_waiter_button_enabled ?? customization.call_button_enabled ?? true,
       app_icon: normalizeAssetValue(customization.app_icon),
       app_icon_192: normalizeAssetValue(customization.app_icon_192),
       app_icon_512: normalizeAssetValue(customization.app_icon_512),
@@ -1410,6 +1414,29 @@ async function saveAllCustomization() {
       updateField("menu_tab_enabled", !nextValue);
     } finally {
       setSavingMenuTab(false);
+    }
+  };
+
+  const toggleCallWaiterButton = async () => {
+    const nextValue = !settings.call_waiter_button_enabled;
+    updateField("call_waiter_button_enabled", nextValue);
+    setSavingCallWaiterButton(true);
+    try {
+      await secureFetch("/settings/qr-menu-customization", {
+        method: "POST",
+        body: JSON.stringify({ call_waiter_button_enabled: nextValue }),
+      });
+      toast.success(
+        nextValue
+          ? t("Call waiter button is enabled")
+          : t("Call waiter button is disabled")
+      );
+    } catch (err) {
+      console.error("❌ Failed to toggle call waiter button:", err);
+      toast.error(t("Failed to save call waiter button setting"));
+      updateField("call_waiter_button_enabled", !nextValue);
+    } finally {
+      setSavingCallWaiterButton(false);
     }
   };
 
@@ -3120,6 +3147,36 @@ async function saveAllCustomization() {
                 </div>
                 <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
                   {t("Toggle whether delivery/online ordering appears in the QR menu order picker.")}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[18px] font-bold text-slate-900 dark:text-slate-100">{t("Call Waiter Button")}</label>
+                <div className="mt-3 flex flex-wrap items-center gap-4">
+                  <span
+                    className={`rounded-full px-4 py-2 text-sm font-medium ${
+                      settings.call_waiter_button_enabled
+                        ? "border border-emerald-200 bg-emerald-100 text-emerald-800"
+                        : "border border-rose-200 bg-rose-100 text-rose-700"
+                    }`}
+                  >
+                    {settings.call_waiter_button_enabled
+                      ? t("Call waiter button is enabled")
+                      : t("Call waiter button is disabled")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={toggleCallWaiterButton}
+                    disabled={savingCallWaiterButton}
+                    className="rounded-full border border-blue-500 px-6 py-2.5 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    {settings.call_waiter_button_enabled
+                      ? t("Disable Call Waiter Button")
+                      : t("Enable Call Waiter Button")}
+                  </button>
+                </div>
+                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                  {t("Toggle whether guests can see the Call Waiter button in the QR menu.")}
                 </p>
               </div>
 
