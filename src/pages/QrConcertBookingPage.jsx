@@ -193,6 +193,20 @@ function normalizeConcertDateYmd(value) {
   return datePrefix ? datePrefix[1] : "";
 }
 
+function getConcertLocalTodayYmd() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isConcertSelectedDateToday(concertDateYmd = "") {
+  const targetYmd = normalizeConcertDateYmd(concertDateYmd);
+  if (!targetYmd) return true;
+  return targetYmd === getConcertLocalTodayYmd();
+}
+
 function formatConcertDisplayDate(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -286,12 +300,15 @@ function isOrderOccupyingForConcertDate(order, concertDateYmd = "") {
   const normalizedStatus = getConcertOrderStatus(order);
   if (!normalizedStatus) return false;
   if (TERMINAL_FLOOR_MAP_ORDER_STATUSES.has(normalizedStatus)) return false;
-  if (isActiveTableOrderStatus(normalizedStatus)) return true;
+  if (isActiveTableOrderStatus(normalizedStatus)) {
+    return isConcertSelectedDateToday(concertDateYmd);
+  }
   if (!isReservationLikeConcertOrder(order, normalizedStatus)) return false;
   if (normalizedStatus === "checked_in") return true;
 
   const orderDateYmd = getConcertOrderDateYmd(order);
-  if (!concertDateYmd || !orderDateYmd) return true;
+  if (!concertDateYmd) return true;
+  if (!orderDateYmd) return isConcertSelectedDateToday(concertDateYmd);
   return orderDateYmd === concertDateYmd;
 }
 
@@ -316,6 +333,50 @@ function resolveConcertTableNumberFromTables(tables = [], rawValue) {
 
 function normalizeConcertFloorPlanStatus(value) {
   return normalizeFloorPlanTableStatus(value);
+}
+
+function getUnavailableConcertStateDateYmd(state = {}) {
+  return normalizeConcertDateYmd(
+    state?.reservation_date ??
+      state?.reservationDate ??
+      state?.event_date ??
+      state?.eventDate ??
+      state?.booking_date ??
+      state?.bookingDate ??
+      state?.date
+  );
+}
+
+function suppressFutureCurrentConcertOccupancyState(
+  state = {},
+  concertDateYmd = "",
+  includeCurrentOccupancy = true
+) {
+  if (!state || typeof state !== "object" || includeCurrentOccupancy) return state;
+  const normalizedStatus = normalizeConcertFloorPlanStatus(
+    state?.status ??
+      state?.table_status ??
+      state?.tableStatus ??
+      state?.availability_status ??
+      state?.availabilityStatus ??
+      state?.state
+  );
+  if (normalizedStatus !== "occupied") return state;
+
+  const stateDateYmd = getUnavailableConcertStateDateYmd(state);
+  if (stateDateYmd && concertDateYmd && stateDateYmd === concertDateYmd) {
+    return state;
+  }
+
+  return {
+    ...state,
+    status: "available",
+    table_status: "available",
+    tableStatus: "available",
+    availability_status: "available",
+    availabilityStatus: "available",
+    state: "available",
+  };
 }
 
 function mergeStateEntryByPriority(
@@ -402,6 +463,7 @@ function buildMergedConcertTableStates({
   concertDateYmd = "",
 }) {
   const merged = new Map();
+  const includeCurrentOccupancy = isConcertSelectedDateToday(concertDateYmd);
 
   (Array.isArray(floorPlanStates) ? floorPlanStates : []).forEach((state) =>
     mergeStateEntryByPriority(
@@ -420,14 +482,19 @@ function buildMergedConcertTableStates({
 
   if (unavailablePayload && typeof unavailablePayload === "object") {
     (Array.isArray(unavailablePayload?.table_states) ? unavailablePayload.table_states : []).forEach(
-      (state) =>
+      (state) => {
+        const sanitizedState = suppressFutureCurrentConcertOccupancyState(
+          state,
+          concertDateYmd,
+          includeCurrentOccupancy
+        );
         mergeStateEntryByPriority(
           merged,
           {
-            ...(state && typeof state === "object" ? state : {}),
+            ...(sanitizedState && typeof sanitizedState === "object" ? sanitizedState : {}),
             table_number: resolveConcertTableNumberFromTables(
               tables,
-              getFloorPlanStateTableNumber(state)
+              getFloorPlanStateTableNumber(sanitizedState)
             ),
           },
           "available",
@@ -435,23 +502,29 @@ function buildMergedConcertTableStates({
             source: "unavailable_state",
           }
         )
+      }
     );
-    (Array.isArray(unavailablePayload?.tables) ? unavailablePayload.tables : []).forEach((state) =>
+    (Array.isArray(unavailablePayload?.tables) ? unavailablePayload.tables : []).forEach((state) => {
+      const sanitizedState = suppressFutureCurrentConcertOccupancyState(
+        state,
+        concertDateYmd,
+        includeCurrentOccupancy
+      );
       mergeStateEntryByPriority(
         merged,
         {
-          ...(state && typeof state === "object" ? state : {}),
+          ...(sanitizedState && typeof sanitizedState === "object" ? sanitizedState : {}),
           table_number: resolveConcertTableNumberFromTables(
             tables,
-            getFloorPlanStateTableNumber(state)
+            getFloorPlanStateTableNumber(sanitizedState)
           ),
         },
         "available",
         {
           source: "unavailable_state",
         }
-      )
-    );
+      );
+    });
     mergeNumberListAsStatus(
       merged,
       (Array.isArray(unavailablePayload?.table_numbers) ? unavailablePayload.table_numbers : []).map(

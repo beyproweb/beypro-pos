@@ -18,6 +18,11 @@ import {
 } from "../../utils/reservationStatus";
 import { normalizeOrderStatus } from "./tableVisuals";
 import {
+  getBookingScheduledDateYmd,
+  isConcertBookingRelevantForTodayTableState,
+  isReservationRelevantForTodayTableState,
+} from "../../utils/tableBookingState";
+import {
   getTableDensityLayout,
   normalizeTableDensity,
 } from "./tableDensity";
@@ -56,33 +61,6 @@ const formatDateInputValue = (value = new Date()) => {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
-};
-
-const normalizeBookingDate = (booking) => {
-  const source = String(booking?.booking_source || "").toLowerCase();
-  const isConcertLikeBooking = source === "concert" || hasConcertBookingContext(booking);
-  const raw = String(
-    (isConcertLikeBooking
-      ? booking?.booking_date ??
-        booking?.bookingDate ??
-        booking?.created_at ??
-        booking?.createdAt
-      : booking?.reservation_date ??
-        booking?.reservationDate ??
-        booking?.booking_date ??
-        booking?.bookingDate ??
-        booking?.created_at ??
-        booking?.createdAt ??
-        booking?.event_date ??
-        booking?.eventDate) ??
-      ""
-  ).trim();
-  if (!raw) return "";
-  const ymdMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (ymdMatch?.[1]) return ymdMatch[1];
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  const parsed = new Date(raw);
-  return Number.isFinite(parsed.getTime()) ? formatDateInputValue(parsed) : "";
 };
 
 const getBookingStatusToneClass = (status) => {
@@ -468,21 +446,13 @@ function TablesView({
   const isActiveReservationFallback = React.useCallback((table) => {
     const fallback = table?.reservationFallback;
     if (!fallback || typeof fallback !== "object") return false;
-    const status = String(fallback?.status || "").toLowerCase();
-    const isTerminal =
-      status === "closed" ||
-      status === "completed" ||
-      status === "checked_out" ||
-      status === "cancelled" ||
-      status === "canceled" ||
-      status === "deleted" ||
-      status === "void";
-    return !isTerminal;
+    return isReservationRelevantForTodayTableState(fallback);
   }, []);
   const concertBookedTableNumbers = React.useMemo(() => {
     const booked = new Set();
     if (!Array.isArray(concertBookings)) return booked;
     concertBookings.forEach((booking) => {
+      if (!isConcertBookingRelevantForTodayTableState(booking)) return;
       const paymentStatus = String(
         booking?.payment_status ?? booking?.paymentStatus ?? ""
       ).toLowerCase();
@@ -567,7 +537,7 @@ function TablesView({
   const rangeBookingCount = React.useMemo(() => {
     return combinedBookings.filter((booking) => {
       if (isTerminalViewBookingRow(booking)) return false;
-      const bookingDate = normalizeBookingDate(booking);
+      const bookingDate = getBookingScheduledDateYmd(booking);
       if (!bookingDate) return false;
       if (bookingDateFrom && bookingDate < bookingDateFrom) return false;
       if (bookingDateTo && bookingDate > bookingDateTo) return false;
@@ -578,7 +548,7 @@ function TablesView({
   const filteredBookings = React.useMemo(() => {
     return combinedBookings.filter((booking) => {
       if (isTerminalViewBookingRow(booking)) return false;
-      const bookingDate = normalizeBookingDate(booking);
+      const bookingDate = getBookingScheduledDateYmd(booking);
       if (bookingDateFrom && bookingDate && bookingDate < bookingDateFrom) return false;
       if (bookingDateTo && bookingDate && bookingDate > bookingDateTo) return false;
       if (!normalizedBookingSearch) return true;

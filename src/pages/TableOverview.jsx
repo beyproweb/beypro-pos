@@ -54,6 +54,11 @@ import {
   hasReservationServiceActivity,
 } from "../utils/reservationStatus";
 import {
+  getBookingScheduledDateYmd,
+  isConcertBookingRelevantForTodayTableState,
+  isReservationRelevantForTodayTableState,
+} from "../utils/tableBookingState";
+import {
   getOrderTableNumberKey,
   isActiveTableOrderStatus,
 } from "../utils/activeTableState";
@@ -242,64 +247,6 @@ const getConcertEventStartMs = (event) => {
   if (!datePart) return NaN;
   const combined = `${datePart}T${timePart || "00:00:00"}`;
   return parseLooseDateToMs(combined);
-};
-
-const normalizeBookingDateYmd = (booking) => {
-  const raw = String(
-    booking?.booking_date ??
-      booking?.bookingDate ??
-      booking?.reservation_date ??
-      booking?.reservationDate ??
-      booking?.event_date ??
-      booking?.eventDate ??
-      booking?.created_at ??
-      booking?.createdAt ??
-      ""
-  ).trim();
-  if (!raw) return "";
-  const ymdMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (ymdMatch?.[1]) return ymdMatch[1];
-  const parsedMs = parseLooseDateToMs(raw);
-  return Number.isFinite(parsedMs) ? formatLocalYmd(new Date(parsedMs)) : "";
-};
-
-const isReservationRelevantForTableState = (reservation) => {
-  const reservationStatus = normalizeOrderStatus(
-    reservation?.status ??
-      reservation?.reservation_status ??
-      reservation?.reservationStatus ??
-      reservation?.order_status ??
-      reservation?.orderStatus ??
-      ""
-  );
-  if (["cancelled", "canceled", "checked_out", "closed", "completed", "deleted", "void"].includes(reservationStatus)) {
-    return false;
-  }
-  if (reservationStatus === "checked_in") return true;
-
-  const bookingDateYmd = normalizeBookingDateYmd(reservation);
-  if (!bookingDateYmd) return true;
-
-  return bookingDateYmd === formatLocalYmd(new Date());
-};
-
-const isConcertBookingRelevantForTableState = (booking) => {
-  const reservationOrderStatus = normalizeOrderStatus(
-    booking?.reservation_order_status ?? booking?.reservationOrderStatus ?? ""
-  );
-  if (
-    ["cancelled", "canceled", "checked_out", "closed", "completed", "deleted", "void"].includes(
-      reservationOrderStatus
-    )
-  ) {
-    return false;
-  }
-  if (reservationOrderStatus === "checked_in") return true;
-
-  const bookingDateYmd = normalizeBookingDateYmd(booking);
-  if (!bookingDateYmd) return false;
-
-  return bookingDateYmd === formatLocalYmd(new Date());
 };
 
 const sanitizePdfText = (value) =>
@@ -1871,7 +1818,7 @@ const handleCheckinReservation = useCallback(
     const hasConcertBookingOnTable =
       Number.isFinite(tableNumber) &&
       concertBookingsForFlow.some((booking) => {
-        if (!isConcertBookingRelevantForTableState(booking)) return false;
+        if (!isConcertBookingRelevantForTodayTableState(booking)) return false;
         const reservedTableNumber = Number(
           booking?.reserved_table_number ?? booking?.reservedTableNumber
         );
@@ -1886,7 +1833,7 @@ const handleCheckinReservation = useCallback(
     const hasConfirmedConcertBookingOnTable =
       Number.isFinite(tableNumber) &&
       concertBookingsForFlow.some((booking) => {
-        if (!isConcertBookingRelevantForTableState(booking)) return false;
+        if (!isConcertBookingRelevantForTodayTableState(booking)) return false;
         const reservedTableNumber = Number(
           booking?.reserved_table_number ?? booking?.reservedTableNumber
         );
@@ -3762,7 +3709,7 @@ useEffect(() => {
           const source = String(booking?.booking_source || "").toLowerCase();
           const name = booking?.customer_name || booking?.customerName || "Guest";
           const phone = booking?.customer_phone || booking?.customerPhone || "";
-          const date = normalizeBookingDateYmd(booking) || "-";
+          const date = getBookingScheduledDateYmd(booking) || "-";
           const status =
             source === "concert"
               ? String(booking?.payment_status ?? booking?.paymentStatus ?? booking?.status ?? "")
@@ -4957,7 +4904,7 @@ const reservationsForModel = React.useMemo(() => {
   ]);
 
   (Array.isArray(effectiveReservationsToday) ? effectiveReservationsToday : []).forEach((reservation) => {
-    if (!isReservationRelevantForTableState(reservation)) return;
+    if (!isReservationRelevantForTodayTableState(reservation)) return;
 
     const tableNumber = Number(
       reservation?.table_number ?? reservation?.tableNumber ?? reservation?.table
@@ -4967,7 +4914,7 @@ const reservationsForModel = React.useMemo(() => {
   });
 
   (Array.isArray(concertBookings) ? concertBookings : []).forEach((booking) => {
-    if (!isConcertBookingRelevantForTableState(booking)) return;
+    if (!isConcertBookingRelevantForTodayTableState(booking)) return;
 
     const tableNumber = Number(
       booking?.reserved_table_number ?? booking?.reservedTableNumber ?? booking?.table_number ?? booking?.tableNumber
@@ -5191,7 +5138,7 @@ const blockedConcertTableNumbers = React.useMemo(() => {
   const blocked = new Set();
   const bookings = Array.isArray(concertBookings) ? concertBookings : [];
   bookings.forEach((booking) => {
-    if (!isConcertBookingRelevantForTableState(booking)) return;
+    if (!isConcertBookingRelevantForTodayTableState(booking)) return;
 
     const paymentStatus = String(
       booking?.payment_status ?? booking?.paymentStatus ?? ""

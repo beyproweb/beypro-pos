@@ -4717,6 +4717,11 @@ function OrderTypePromptModal({
     color: accentTextColor,
     boxShadow: `0 14px 28px ${toRgba(resolvedAccentColor, 0.18) || "rgba(15,23,42,0.18)"}`,
   };
+  const showReservationOption = Boolean(reservationEnabled);
+  const showTableOption = Boolean(tableEnabled);
+  const showDeliveryOption = Boolean(deliveryEnabled);
+  const hasAnyOrderTypeOption =
+    showReservationOption || showTableOption || showDeliveryOption;
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 px-4 py-6">
       <div className="w-full max-w-md rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-2xl space-y-5">
@@ -4742,33 +4747,39 @@ function OrderTypePromptModal({
         </div>
 
         <div className="space-y-3">
-          <button
-            onClick={() => shopIsOpen && reservationEnabled && onSelect?.("takeaway")}
-            disabled={!shopIsOpen || !reservationEnabled}
-            className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold shadow-sm transition ${
-              shopIsOpen && reservationEnabled
-                ? "hover:opacity-95"
-                : "border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-950 text-neutral-400 cursor-not-allowed"
-            }`}
-            style={shopIsOpen && reservationEnabled ? enabledActionStyle : undefined}
-          >
-            <UtensilsCrossed className="w-5 h-5" />
-            {shopIsOpen ? t("Reservation") : t("Shop Closed")}
-          </button>
-          <button
-            onClick={() => shopIsOpen && tableEnabled && onSelect?.("table")}
-            disabled={!shopIsOpen || !tableEnabled}
-            className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold shadow-lg transition ${
-              shopIsOpen && tableEnabled
-                ? "hover:opacity-95"
-                : "border-neutral-200 dark:border-neutral-800 bg-neutral-200 dark:bg-neutral-950 text-neutral-400 cursor-not-allowed shadow-sm"
-            }`}
-            style={shopIsOpen && tableEnabled ? enabledActionStyle : undefined}
-          >
-            <Soup className="w-5 h-5" />
-            {shopIsOpen ? t("Table Order") : t("Shop Closed")}
-          </button>
-          {deliveryEnabled ? (
+          {showReservationOption ? (
+            <button
+              onClick={() => shopIsOpen && onSelect?.("takeaway")}
+              disabled={!shopIsOpen}
+              className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold shadow-lg transition ${
+                shopIsOpen
+                  ? "hover:opacity-95"
+                  : "border-neutral-200 dark:border-neutral-800 bg-neutral-200 dark:bg-neutral-950 text-neutral-400 cursor-not-allowed shadow-sm"
+              }`}
+              style={shopIsOpen ? enabledActionStyle : undefined}
+            >
+              <UtensilsCrossed className="w-5 h-5" />
+              {shopIsOpen ? t("Reservation") : t("Shop Closed")}
+            </button>
+          ) : (
+            null
+          )}
+          {showTableOption ? (
+            <button
+              onClick={() => shopIsOpen && onSelect?.("table")}
+              disabled={!shopIsOpen}
+              className={`flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold shadow-lg transition ${
+                shopIsOpen
+                  ? "hover:opacity-95"
+                  : "border-neutral-200 dark:border-neutral-800 bg-neutral-200 dark:bg-neutral-950 text-neutral-400 cursor-not-allowed shadow-sm"
+              }`}
+              style={shopIsOpen ? enabledActionStyle : undefined}
+            >
+              <Soup className="w-5 h-5" />
+              {shopIsOpen ? t("Table Order") : t("Shop Closed")}
+            </button>
+          ) : null}
+          {showDeliveryOption ? (
             <button
               onClick={() => shopIsOpen && onSelect?.("online")}
               disabled={!shopIsOpen}
@@ -4780,13 +4791,14 @@ function OrderTypePromptModal({
               style={shopIsOpen ? enabledActionStyle : undefined}
             >
               <Bike className="w-5 h-5" />
-              {shopIsOpen ? t("Delivery") : t("Delivery is closed")}
+              {shopIsOpen ? t("Delivery") : t("Shop Closed")}
             </button>
-          ) : (
-            <div className="rounded-2xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-sm font-semibold text-rose-600 dark:text-rose-300">
-              {t("Delivery is closed")}
+          ) : null}
+          {!hasAnyOrderTypeOption ? (
+            <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-950 px-4 py-3 text-sm font-semibold text-neutral-500 dark:text-neutral-300">
+              {t("No order types available")}
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>
@@ -7857,7 +7869,7 @@ export default function QrMenu() {
             setShowOrderTypePrompt(false);
           }}
           deliveryEnabled={boolish(orderSelectCustomization.delivery_enabled, true)}
-          reservationEnabled={!hasActiveDeliveryLock}
+          reservationEnabled={!hasActiveDeliveryLock && allowReservationPickup}
           tableEnabled={!hasActiveDeliveryLock && allowTableOrder}
         />
       )}

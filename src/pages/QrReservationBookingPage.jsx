@@ -159,6 +159,20 @@ function normalizeReservationDateYmd(value) {
   return datePrefix ? datePrefix[1] : "";
 }
 
+function getReservationLocalTodayYmd() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isReservationSelectedDateToday(reservationDateYmd = "") {
+  const targetYmd = normalizeReservationDateYmd(reservationDateYmd);
+  if (!targetYmd) return true;
+  return targetYmd === getReservationLocalTodayYmd();
+}
+
 function getReservationOrderStatus(order) {
   return String(
     order?.status ??
@@ -225,12 +239,15 @@ function isOrderOccupyingForReservationDate(order, reservationDateYmd = "") {
   const normalizedStatus = getReservationOrderStatus(order);
   if (!normalizedStatus) return false;
   if (TERMINAL_FLOOR_MAP_ORDER_STATUSES.has(normalizedStatus)) return false;
-  if (isActiveTableOrderStatus(normalizedStatus)) return true;
+  if (isActiveTableOrderStatus(normalizedStatus)) {
+    return isReservationSelectedDateToday(reservationDateYmd);
+  }
   if (!isReservationLikeOrder(order, normalizedStatus)) return false;
   if (normalizedStatus === "checked_in") return true;
 
   const orderDateYmd = getReservationOrderDateYmd(order);
-  if (!reservationDateYmd || !orderDateYmd) return true;
+  if (!reservationDateYmd) return true;
+  if (!orderDateYmd) return isReservationSelectedDateToday(reservationDateYmd);
   return orderDateYmd === reservationDateYmd;
 }
 
@@ -255,6 +272,50 @@ function resolveReservationTableNumberFromTables(tables = [], rawValue) {
 
 function normalizeReservationFloorPlanStatus(value) {
   return normalizeFloorPlanTableStatus(value);
+}
+
+function getUnavailableReservationStateDateYmd(state = {}) {
+  return normalizeReservationDateYmd(
+    state?.reservation_date ??
+      state?.reservationDate ??
+      state?.event_date ??
+      state?.eventDate ??
+      state?.booking_date ??
+      state?.bookingDate ??
+      state?.date
+  );
+}
+
+function suppressFutureCurrentOccupancyState(
+  state = {},
+  reservationDateYmd = "",
+  includeCurrentOccupancy = true
+) {
+  if (!state || typeof state !== "object" || includeCurrentOccupancy) return state;
+  const normalizedStatus = normalizeReservationFloorPlanStatus(
+    state?.status ??
+      state?.table_status ??
+      state?.tableStatus ??
+      state?.availability_status ??
+      state?.availabilityStatus ??
+      state?.state
+  );
+  if (normalizedStatus !== "occupied") return state;
+
+  const stateDateYmd = getUnavailableReservationStateDateYmd(state);
+  if (stateDateYmd && reservationDateYmd && stateDateYmd === reservationDateYmd) {
+    return state;
+  }
+
+  return {
+    ...state,
+    status: "available",
+    table_status: "available",
+    tableStatus: "available",
+    availability_status: "available",
+    availabilityStatus: "available",
+    state: "available",
+  };
 }
 
 function mergeStateEntryByPriority(
@@ -339,6 +400,7 @@ function buildMergedReservationTableStates({
   reservationDateYmd = "",
 }) {
   const merged = new Map();
+  const includeCurrentOccupancy = isReservationSelectedDateToday(reservationDateYmd);
 
   (Array.isArray(tables) ? tables : []).forEach((table) => {
     const tableNumber = resolveReservationTableNumberFromTables(
@@ -360,14 +422,19 @@ function buildMergedReservationTableStates({
 
   if (unavailablePayload && typeof unavailablePayload === "object") {
     (Array.isArray(unavailablePayload?.table_states) ? unavailablePayload.table_states : []).forEach(
-      (state) =>
+      (state) => {
+        const sanitizedState = suppressFutureCurrentOccupancyState(
+          state,
+          reservationDateYmd,
+          includeCurrentOccupancy
+        );
         mergeStateEntryByPriority(
           merged,
           {
-            ...(state && typeof state === "object" ? state : {}),
+            ...(sanitizedState && typeof sanitizedState === "object" ? sanitizedState : {}),
             table_number: resolveReservationTableNumberFromTables(
               tables,
-              getFloorPlanStateTableNumber(state)
+              getFloorPlanStateTableNumber(sanitizedState)
             ),
           },
           "available",
@@ -375,23 +442,29 @@ function buildMergedReservationTableStates({
             source: "unavailable_state",
           }
         )
+      }
     );
-    (Array.isArray(unavailablePayload?.tables) ? unavailablePayload.tables : []).forEach((state) =>
+    (Array.isArray(unavailablePayload?.tables) ? unavailablePayload.tables : []).forEach((state) => {
+      const sanitizedState = suppressFutureCurrentOccupancyState(
+        state,
+        reservationDateYmd,
+        includeCurrentOccupancy
+      );
       mergeStateEntryByPriority(
         merged,
         {
-          ...(state && typeof state === "object" ? state : {}),
+          ...(sanitizedState && typeof sanitizedState === "object" ? sanitizedState : {}),
           table_number: resolveReservationTableNumberFromTables(
             tables,
-            getFloorPlanStateTableNumber(state)
+            getFloorPlanStateTableNumber(sanitizedState)
           ),
         },
         "available",
         {
           source: "unavailable_state",
         }
-      )
-    );
+      );
+    });
     mergeNumberListAsStatus(
       merged,
       (Array.isArray(unavailablePayload?.table_numbers) ? unavailablePayload.table_numbers : []).map(
@@ -403,17 +476,19 @@ function buildMergedReservationTableStates({
         forceStatus: true,
       }
     );
-    mergeNumberListAsStatus(
-      merged,
-      (Array.isArray(unavailablePayload?.occupied_table_numbers)
-        ? unavailablePayload.occupied_table_numbers
-        : []
-      ).map((value) => resolveReservationTableNumberFromTables(tables, value)),
-      "pending_hold",
-      {
-        source: "unavailable_state",
-      }
-    );
+    if (includeCurrentOccupancy) {
+      mergeNumberListAsStatus(
+        merged,
+        (Array.isArray(unavailablePayload?.occupied_table_numbers)
+          ? unavailablePayload.occupied_table_numbers
+          : []
+        ).map((value) => resolveReservationTableNumberFromTables(tables, value)),
+        "pending_hold",
+        {
+          source: "unavailable_state",
+        }
+      );
+    }
     mergeNumberListAsStatus(
       merged,
       (Array.isArray(unavailablePayload?.reserved_table_numbers)
