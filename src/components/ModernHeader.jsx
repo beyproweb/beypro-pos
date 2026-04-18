@@ -185,6 +185,7 @@ export default function ModernHeader({
   subtitle,
   notificationBell,
   onSidebarToggle,
+  onHeaderButtonClick,
   userName = "Manager",
   onThemeToggle,
   centerNav,
@@ -274,6 +275,16 @@ export default function ModernHeader({
     }
     navigate("/dashboard");
   }, [navigate, previousRoute]);
+
+  const handleHeaderClickCapture = React.useCallback(
+    (event) => {
+      if (typeof onHeaderButtonClick !== "function") return;
+      const button = event.target instanceof Element ? event.target.closest("button") : null;
+      if (!button) return;
+      onHeaderButtonClick();
+    },
+    [onHeaderButtonClick]
+  );
 
   const canSeeDashboardTab = useHasPermission("dashboard");
   const canSeeTablesTab = useHasPermission("tables");
@@ -1367,7 +1378,10 @@ export default function ModernHeader({
           40% { transform: rotate(0deg) scale(1); }
         }`}
       </style>
-      <header className="sticky top-0 z-[70] shrink-0 flex w-full items-center bg-white/80 px-3 py-2 shadow-2xl backdrop-blur-xl border-b border-blue-100 dark:border-zinc-800 dark:bg-zinc-900/70 md:h-16 md:flex-nowrap md:px-6 md:py-0">
+      <header
+        className="sticky top-0 z-[70] shrink-0 flex w-full items-center bg-white/80 px-3 py-2 shadow-2xl backdrop-blur-xl border-b border-blue-100 dark:border-zinc-800 dark:bg-zinc-900/70 md:h-16 md:flex-nowrap md:px-6 md:py-0"
+        onClickCapture={handleHeaderClickCapture}
+      >
       {/* Left: Drawer toggle */}
       <div className="flex min-w-0 flex-shrink-0 items-center gap-3">
         {onSidebarToggle && (

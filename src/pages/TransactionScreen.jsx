@@ -655,6 +655,7 @@ const [drinksList, setDrinksList] = useState([]);
   const [isFloatingCartOpen, setIsFloatingCartOpen] = useState(false);
 const latestOrderRef = useRef(null);
 const latestCartItemsRef = useRef([]);
+const seenCartItemKeysRef = useRef(new Set());
 const transactionSettingsRef = useRef(transactionSettings);
 const phoneOrderCreatePromiseRef = useRef(null);
 useEffect(() => {
@@ -672,6 +673,7 @@ const clearCartState = useCallback(() => {
   setSelectedCartItemIds(new Set());
   setShowPaymentModal(false);
   setExpandedCartItems(new Set());
+  seenCartItemKeysRef.current = new Set();
   setSubOrders([]);
   setActiveSplitMethod(null);
   setEditingCartItemIndex(null);
@@ -842,13 +844,15 @@ useLayoutEffect(() => {
 }, [cartItems, scrollCartToBottom, selectedCartItemIds]);
 
 useEffect(() => {
-  setExpandedCartItems((prev) => {
-    const validKeys = new Set(
-      cartItems.map((item, idx) => item.unique_id || `${item.id}-index-${idx}`)
-    );
+  const validKeys = new Set(
+    cartItems.map((item, idx) => item.unique_id || `${item.id}-index-${idx}`)
+  );
+  const seenKeys = seenCartItemKeysRef.current;
 
+  setExpandedCartItems((prev) => {
     let changed = false;
     const next = new Set();
+
     prev.forEach((key) => {
       if (validKeys.has(key)) {
         next.add(key);
@@ -857,9 +861,25 @@ useEffect(() => {
       }
     });
 
+    if (prev.size === 0) {
+      validKeys.forEach((key) => {
+        next.add(key);
+      });
+      changed = changed || next.size !== prev.size;
+    } else {
+      validKeys.forEach((key) => {
+        if (!seenKeys.has(key) && !next.has(key)) {
+          next.add(key);
+          changed = true;
+        }
+      });
+    }
+
     if (!changed && next.size === prev.size) return prev;
     return next;
   });
+
+  seenCartItemKeysRef.current = validKeys;
 }, [cartItems]);
 
 useEffect(() => {

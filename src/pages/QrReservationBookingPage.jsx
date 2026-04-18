@@ -12,9 +12,11 @@ import {
 } from "../features/qrmenu/header-drawer";
 import PhoneVerificationModal from "../features/qrmenu/components/modals/PhoneVerificationModal";
 import {
+  computeReservationSlot,
   getEffectiveBookingMaxDaysInAdvance,
   normalizeQrBookingSettings,
   normalizeReservationTimeSlotOptions,
+  parseLocalDateTime,
 } from "../utils/qrBooking";
 import {
   buildConcertBookingPath,
@@ -171,6 +173,21 @@ function isReservationSelectedDateToday(reservationDateYmd = "") {
   const targetYmd = normalizeReservationDateYmd(reservationDateYmd);
   if (!targetYmd) return true;
   return targetYmd === getReservationLocalTodayYmd();
+}
+
+function shouldIncludeReservationCurrentOccupancy({
+  reservationDateYmd = "",
+  requestedSlot = null,
+} = {}) {
+  if (!isReservationSelectedDateToday(reservationDateYmd)) return false;
+  if (!requestedSlot || typeof requestedSlot !== "object") return true;
+
+  const slotStart = parseLocalDateTime(requestedSlot?.slot_start_datetime);
+  const slotEnd = parseLocalDateTime(requestedSlot?.slot_end_datetime);
+  if (!slotStart || !slotEnd) return false;
+
+  const now = new Date();
+  return now >= slotStart && now < slotEnd;
 }
 
 function getReservationOrderStatus(order) {
@@ -398,9 +415,13 @@ function buildMergedReservationTableStates({
   unavailablePayload = null,
   tables = [],
   reservationDateYmd = "",
+  reservationTimeValue = "",
+  includeCurrentOccupancy = isReservationSelectedDateToday(reservationDateYmd),
 }) {
   const merged = new Map();
-  const includeCurrentOccupancy = isReservationSelectedDateToday(reservationDateYmd);
+  const hasSelectedReservationTime = Boolean(String(reservationTimeValue || "").trim());
+  const shouldMergeCurrentOccupancy = Boolean(includeCurrentOccupancy);
+  const shouldMergeCurrentLocks = isReservationSelectedDateToday(reservationDateYmd);
 
   (Array.isArray(tables) ? tables : []).forEach((table) => {
     const tableNumber = resolveReservationTableNumberFromTables(
@@ -426,7 +447,7 @@ function buildMergedReservationTableStates({
         const sanitizedState = suppressFutureCurrentOccupancyState(
           state,
           reservationDateYmd,
-          includeCurrentOccupancy
+          shouldMergeCurrentOccupancy
         );
         mergeStateEntryByPriority(
           merged,
@@ -448,7 +469,7 @@ function buildMergedReservationTableStates({
       const sanitizedState = suppressFutureCurrentOccupancyState(
         state,
         reservationDateYmd,
-        includeCurrentOccupancy
+        shouldMergeCurrentOccupancy
       );
       mergeStateEntryByPriority(
         merged,
@@ -476,7 +497,7 @@ function buildMergedReservationTableStates({
         forceStatus: true,
       }
     );
-    if (includeCurrentOccupancy) {
+    if (shouldMergeCurrentOccupancy) {
       mergeNumberListAsStatus(
         merged,
         (Array.isArray(unavailablePayload?.occupied_table_numbers)
@@ -503,56 +524,60 @@ function buildMergedReservationTableStates({
     );
   }
 
-  (Array.isArray(activeOrders) ? activeOrders : []).forEach((order) => {
-    if (!isOrderOccupyingForReservationDate(order, reservationDateYmd)) return;
-    const tableNumber = resolveReservationTableNumberFromTables(
-      tables,
-      getOrderTableNumberKey(order)
-    );
-    if (!tableNumber) return;
-    mergeStateEntryByPriority(
-      merged,
-      {
-        table_number: tableNumber,
-      },
-      "occupied",
-      {
-        source: "active_order",
-        forceStatus: true,
-      }
-    );
-  });
+  if (!hasSelectedReservationTime || isReservationSelectedDateToday(reservationDateYmd)) {
+    (Array.isArray(activeOrders) ? activeOrders : []).forEach((order) => {
+      if (!isOrderOccupyingForReservationDate(order, reservationDateYmd)) return;
+      const tableNumber = resolveReservationTableNumberFromTables(
+        tables,
+        getOrderTableNumberKey(order)
+      );
+      if (!tableNumber) return;
+      mergeStateEntryByPriority(
+        merged,
+        {
+          table_number: tableNumber,
+        },
+        "occupied",
+        {
+          source: "active_order",
+          forceStatus: true,
+        }
+      );
+    });
+  }
 
-  (Array.isArray(tables) ? tables : []).forEach((table) => {
-    const tableNumber = resolveReservationTableNumberFromTables(
-      tables,
-      table?.number ?? table?.tableNumber ?? table?.table_number
-    );
-    if (!tableNumber) return;
-    const locked = Boolean(
-      table?.locked ??
-        table?.is_locked ??
-        table?.isLocked ??
-        table?.unavailable ??
-        table?.disabled
-    );
-    if (!locked) return;
+  if (shouldMergeCurrentLocks) {
+    (Array.isArray(tables) ? tables : []).forEach((table) => {
+      const tableNumber = resolveReservationTableNumberFromTables(
+        tables,
+        table?.number ?? table?.tableNumber ?? table?.table_number
+      );
+      if (!tableNumber) return;
+      const locked = Boolean(
+        table?.locked ??
+          table?.is_locked ??
+          table?.isLocked ??
+          table?.unavailable ??
+          table?.disabled
+      );
+      if (!locked) return;
 
-    mergeStateEntryByPriority(
-      merged,
-      {
-        table_number: tableNumber,
-        reason:
-          table?.lock_reason ??
-          table?.lockReason ??
-          table?.unavailable_reason ??
-          table?.unavailableReason ??
-          "Blocked",
-      },
-      "blocked",
-      { source: "table_lock", forceStatus: true }
-    );
-  });
+      mergeStateEntryByPriority(
+        merged,
+        {
+          table_number: tableNumber,
+          reason:
+            table?.lock_reason ??
+            table?.lockReason ??
+            table?.unavailable_reason ??
+            table?.unavailableReason ??
+            "Blocked",
+        },
+        "blocked",
+        { source: "table_lock", forceStatus: true }
+      );
+    });
+  }
 
   return [...merged.values()]
     .map((row) => {
@@ -1093,6 +1118,17 @@ export default function QrReservationBookingPage() {
         if (hasTablesPayload) setTables(normalizedTables);
         const normalizedOrders = parseReservationOrdersPayload(ordersPayload);
         const selectedReservationDateYmd = normalizeReservationDateYmd(form.reservation_date);
+        const selectedReservationSlot = form.reservation_time
+          ? computeReservationSlot({
+              reservationDate: form.reservation_date,
+              reservationTime: form.reservation_time,
+              settings,
+            })
+          : null;
+        const includeCurrentOccupancy = shouldIncludeReservationCurrentOccupancy({
+          reservationDateYmd: selectedReservationDateYmd,
+          requestedSlot: selectedReservationSlot,
+        });
         const activeOrderTableKeys = new Set();
         const table10RawOrders = [];
         (Array.isArray(normalizedOrders) ? normalizedOrders : []).forEach((order) => {
@@ -1159,6 +1195,8 @@ export default function QrReservationBookingPage() {
           unavailablePayload,
           tables: hasTablesPayload ? normalizedTables : tableSnapshotRef.current,
           reservationDateYmd: selectedReservationDateYmd,
+          reservationTimeValue: form.reservation_time,
+          includeCurrentOccupancy,
         });
 
         if (import.meta.env.DEV) {

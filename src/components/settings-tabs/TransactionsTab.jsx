@@ -326,6 +326,27 @@ export default function TransactionsTab() {
         <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
           <input
             type="checkbox"
+            checked={!!settings.disableTableOverviewSongRequestFooterButton}
+            onChange={() => toggle("disableTableOverviewSongRequestFooterButton")}
+            className="mt-1 h-5 w-5 accent-indigo-500"
+          />
+          <div>
+            <div className="font-semibold text-sm">
+              {t("Disable Song Request footer tab in Table Overview", {
+                defaultValue: "Disable Song Request footer tab in Table Overview",
+              })}
+            </div>
+            <div className="text-xs text-slate-500">
+              {t("Hides the Song Request footer tab in the Table Overview screen.", {
+                defaultValue: "Hides the Song Request footer tab in the Table Overview screen.",
+              })}
+            </div>
+          </div>
+        </label>
+
+        <label className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+          <input
+            type="checkbox"
             checked={!!settings.requireGuestsBeforeOpen}
             onChange={() => toggle("requireGuestsBeforeOpen")}
             className="mt-1 h-5 w-5 accent-indigo-500"

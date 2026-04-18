@@ -569,36 +569,38 @@ function buildMergedConcertTableStates({
     );
   });
 
-  (Array.isArray(tables) ? tables : []).forEach((table) => {
-    const tableNumber = resolveConcertTableNumberFromTables(
-      tables,
-      table?.number ?? table?.tableNumber ?? table?.table_number
-    );
-    if (!tableNumber) return;
-    const locked = Boolean(
-      table?.locked ??
-        table?.is_locked ??
-        table?.isLocked ??
-        table?.unavailable ??
-        table?.disabled
-    );
-    if (locked) {
-      mergeStateEntryByPriority(
-        merged,
-        {
-          table_number: tableNumber,
-          reason:
-            table?.lock_reason ??
-            table?.lockReason ??
-            table?.unavailable_reason ??
-            table?.unavailableReason ??
-            "Blocked",
-        },
-        "blocked",
-        { source: "table_lock", forceStatus: true }
+  if (includeCurrentOccupancy) {
+    (Array.isArray(tables) ? tables : []).forEach((table) => {
+      const tableNumber = resolveConcertTableNumberFromTables(
+        tables,
+        table?.number ?? table?.tableNumber ?? table?.table_number
       );
-    }
-  });
+      if (!tableNumber) return;
+      const locked = Boolean(
+        table?.locked ??
+          table?.is_locked ??
+          table?.isLocked ??
+          table?.unavailable ??
+          table?.disabled
+      );
+      if (locked) {
+        mergeStateEntryByPriority(
+          merged,
+          {
+            table_number: tableNumber,
+            reason:
+              table?.lock_reason ??
+              table?.lockReason ??
+              table?.unavailable_reason ??
+              table?.unavailableReason ??
+              "Blocked",
+          },
+          "blocked",
+          { source: "table_lock", forceStatus: true }
+        );
+      }
+    });
+  }
 
   return [...merged.values()]
     .map((row) => {

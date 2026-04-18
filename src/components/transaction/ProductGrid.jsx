@@ -43,6 +43,14 @@ const getProductTheme = (product) => {
   return PRODUCT_CARD_THEMES[index];
 };
 
+const PRODUCT_NAME_CLAMP_STYLE = {
+  display: "-webkit-box",
+  WebkitLineClamp: 3,
+  WebkitBoxOrient: "vertical",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
 const ProductGrid = ({
   products,
   onAddProduct,
@@ -66,7 +74,7 @@ const ProductGrid = ({
   const isCompact = normalizedDensity === TABLE_DENSITY.COMPACT;
   const isDense = normalizedDensity === TABLE_DENSITY.DENSE;
   const compactLike = isCompact || isDense;
-  const minColumnWidth = compactLike ? (isDense ? 85 : 102) : 180;
+  const minColumnWidth = isDense ? 85 : 102;
   const shouldWindowProducts =
     enableVirtualization &&
     !windowingFallback &&
@@ -130,10 +138,12 @@ const ProductGrid = ({
   }, [safeProducts, renderCount, shouldWindowProducts]);
   const gridStyle = useMemo(
     () =>
-      compactLike
-        ? { gridTemplateColumns: `repeat(auto-fill, minmax(${minColumnWidth}px, 1fr))` }
+      isDense
+        ? {
+            "--tx-product-grid-min-column-width": `${minColumnWidth}px`,
+          }
         : undefined,
-    [compactLike, minColumnWidth]
+    [isDense, minColumnWidth]
   );
   const containerPaddingClass = compactLike ? "px-1.5 sm:px-2" : "px-3 sm:px-4";
   const gridGapClass = compactLike
@@ -142,12 +152,16 @@ const ProductGrid = ({
       : "gap-x-1 gap-y-1"
     : "gap-x-2 gap-y-2";
   const gridClassName = compactLike
-    ? `grid w-full ${gridGapClass}`
-    : "grid w-full grid-cols-3 gap-x-2 gap-y-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
+    ? isDense
+      ? `grid w-full grid-cols-3 ${gridGapClass} sm:[grid-template-columns:repeat(auto-fill,minmax(var(--tx-product-grid-min-column-width),1fr))]`
+      : `grid w-full grid-cols-3 ${gridGapClass} sm:grid-cols-5`
+    : "grid w-full grid-cols-3 gap-x-2 gap-y-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5";
   const cardBaseClass = compactLike
-    ? "group relative flex aspect-square w-full flex-col overflow-hidden rounded-[12px] border text-center shadow-[0_10px_20px_rgba(15,23,42,0.10)] ring-1 ring-white/70 transition-all duration-150 hover:-translate-y-[1px] hover:shadow-[0_14px_24px_rgba(15,23,42,0.14)] active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 dark:ring-slate-800/60"
+    ? `group relative flex ${
+        isCompact ? "aspect-[1/0.8]" : "aspect-square"
+      } w-full flex-col overflow-hidden rounded-[12px] border text-center shadow-[0_10px_20px_rgba(15,23,42,0.10)] ring-1 ring-white/70 transition-all duration-150 hover:-translate-y-[1px] hover:shadow-[0_14px_24px_rgba(15,23,42,0.14)] active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 dark:ring-slate-800/60`
     : `
-                group relative flex aspect-square w-full flex-col overflow-hidden rounded-[16px] border text-center
+                group relative flex aspect-[1/1.04] w-full flex-col overflow-hidden rounded-[16px] border text-center
                 shadow-[0_12px_24px_rgba(15,23,42,0.10)] ring-1 ring-white/70 transition-all duration-150
                 hover:-translate-y-[2px] hover:shadow-[0_18px_32px_rgba(15,23,42,0.16)] active:scale-[0.97]
                 dark:shadow-[0_12px_28px_rgba(0,0,0,0.38)] dark:hover:shadow-[0_18px_34px_rgba(0,0,0,0.45)]
@@ -185,32 +199,39 @@ const ProductGrid = ({
                   <div
                     className={
                       isDense
-                        ? "relative flex h-full w-full flex-col items-center justify-center px-1.5 pb-8 pt-1.5"
-                        : "relative flex h-full w-full flex-col items-center justify-center px-2 pb-9 pt-2"
+                        ? "relative flex h-full w-full flex-col items-center justify-center px-1.5 py-2"
+                        : "relative flex h-full w-full flex-col items-center justify-center px-2 py-2"
                     }
                   >
                     <p
-                      className="flex h-[1.25em] w-full items-center justify-center"
+                      className="flex h-[3.5em] w-full items-center justify-center"
                     >
                       <span
                         className={
                           isDense
-                            ? "block w-full truncate text-center text-[12px] font-semibold leading-tight text-slate-800 dark:text-slate-100"
-                            : "block w-full truncate text-center text-[13px] font-semibold leading-tight text-slate-800 dark:text-slate-100"
+                            ? "block w-full px-0.5 text-center text-[10px] font-semibold leading-[1.15] text-slate-800 dark:text-slate-100"
+                            : isCompact
+                            ? "block w-full px-0.5 text-center text-[12px] font-semibold leading-[1.15] text-slate-800 dark:text-slate-100"
+                            : "block w-full px-0.5 text-center text-[14px] font-semibold leading-[1.15] text-slate-800 dark:text-slate-100"
                         }
+                        style={PRODUCT_NAME_CLAMP_STYLE}
                       >
                         {productName}
                       </span>
                     </p>
                     <span
-                      className={`${theme.price} absolute bottom-2 inline-flex min-w-[62px] items-center justify-center rounded-full px-2 py-1 text-[11px] font-bold leading-none shadow-sm`}
+                      className={
+                        isDense
+                          ? "mt-1 text-center text-[10px] font-extrabold leading-none text-slate-900 dark:text-slate-50"
+                          : "mt-3 inline-flex items-center justify-center rounded-full border border-white/60 bg-white/20 px-2.5 py-1 text-center text-[12px] font-extrabold leading-none text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-sm dark:border-slate-600/60 dark:bg-slate-900/20 dark:text-slate-50"
+                      }
                     >
                       {formattedPrice}
                     </span>
                   </div>
                 ) : (
                   <div className="relative flex h-full w-full flex-col">
-                    <div className="relative w-full flex-1 min-h-0 overflow-hidden border-b border-white/40 p-1 dark:border-slate-700/60">
+                    <div className="relative w-full min-h-0 overflow-hidden border-b border-white/40 p-1 dark:border-slate-700/60 h-[64%]">
                       <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-[12px] border border-white/60 bg-white/65 dark:border-slate-700/50 dark:bg-slate-900/55">
                         {product.image ? (
                           <img
@@ -234,14 +255,20 @@ const ProductGrid = ({
                         )}
                       </div>
                     </div>
-                    <div className="flex w-full flex-none flex-col items-center justify-center gap-1 px-2 pb-2 pt-1.5">
-                      <p className="flex h-[1.25em] w-full items-center justify-center">
-                        <span className="block w-full truncate text-center text-[11px] font-semibold leading-tight tracking-[0.01em] text-slate-800 dark:text-slate-50">
+                    <div className="flex w-full flex-1 flex-col items-center justify-center gap-0.5 px-2 pb-2 pt-0.5">
+                      <p className="flex h-[2em] w-full items-center justify-center">
+                        <span
+                          className="block w-full px-0.5 text-center text-[12px] font-semibold leading-tight tracking-[0.01em] text-slate-800 dark:text-slate-50"
+                          style={{
+                            ...PRODUCT_NAME_CLAMP_STYLE,
+                            WebkitLineClamp: 2,
+                          }}
+                        >
                           {productName}
                         </span>
                       </p>
                       <span
-                        className={`${theme.price} inline-flex min-w-[74px] items-center justify-center rounded-full px-2.5 py-1 text-[12px] font-bold leading-none shadow-sm`}
+                        className="text-center text-[11px] font-extrabold leading-none text-slate-900 dark:text-slate-50"
                       >
                         {formattedPrice}
                       </span>

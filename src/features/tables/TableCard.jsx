@@ -41,6 +41,10 @@ const PANEL_BASE_CLASS =
   "rounded-[24px] border bg-white/92 p-3 shadow-[0_14px_34px_rgba(15,23,42,0.08)] backdrop-blur-sm";
 const ACTION_BUTTON_BASE_CLASS =
   "inline-flex h-10 items-center justify-center rounded-2xl border-0 px-4 text-sm font-semibold leading-none text-white shadow-[0_12px_28px_rgba(15,23,42,0.14)] transition duration-150 hover:brightness-95 active:scale-[0.99] sm:h-9 sm:px-3.5 sm:text-[13px]";
+const TABLE_CARD_FOOTER_SHELL_CLASS =
+  "mt-2 rounded-[24px] border border-slate-200/70 bg-slate-50/90 px-3 py-2.5 shadow-[0_14px_30px_rgba(15,23,42,0.08)] backdrop-blur-md dark:border-slate-800/70 dark:bg-slate-950/55";
+const TABLE_CARD_FOOTER_BUTTON_BASE_CLASS =
+  "inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold leading-none shadow-md transition active:scale-[0.98] sm:min-h-[38px] sm:px-3.5 sm:text-[13px]";
 
 const DENSITY_STATUS_META = {
   empty: { cardClass: "border-slate-500 bg-slate-300/95", label: "Empty" },
@@ -789,6 +793,22 @@ function TableCard({
         : "text-slate-500";
   const canToggleLockCompact =
     showManualTableLock && (isFreeDisplay || (isLockedTable && !hasOrderActivity));
+  const hasFooterArea = showAreas;
+  const hasFooterTiming =
+    !isFreeDisplay && !shouldShowReservedBadge && (shouldShowConfirmedTimer || showReadyAt);
+  const hasFooterLock =
+    showManualTableLock && (isFreeDisplay || (isLockedTable && !hasOrderActivity));
+  const hasFooterWaiter = isCallingWaiter;
+  const hasFooterClose = hasOrderActivity && !hasUnpaidItems;
+  const hasFooterGuestSelector =
+    showGuestCount && table.seats && !(isLockedTable && !hasOrderActivity);
+  const shouldRenderFooterShell =
+    hasFooterArea ||
+    hasFooterTiming ||
+    hasFooterLock ||
+    hasFooterWaiter ||
+    hasFooterClose ||
+    hasFooterGuestSelector;
 
   if (isCompactDensity) {
     return (
@@ -1016,156 +1036,154 @@ function TableCard({
           </div>
         ) : null}
 
-        <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-200/80 pt-2 sm:pt-3">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-            {showAreas ? (
-              <Pill className="max-w-[82%] justify-start whitespace-nowrap border-slate-200 bg-white/85 px-3 py-1.5 text-[10px] text-slate-700 sm:max-w-none sm:py-1 sm:text-xs">
-                {formatAreaLabel(table.area)}
-              </Pill>
-            ) : (
-              <span />
-            )}
-          </div>
-
-          <div className="ml-auto flex items-center justify-end gap-2 flex-nowrap">
-            {!isFreeDisplay &&
-            !shouldShowReservedBadge &&
-            (shouldShowConfirmedTimer || showReadyAt) ? (
-              <div className="hidden min-h-6 items-center justify-end gap-2 sm:flex">
-                {shouldShowConfirmedTimer ? (
-                  <Pill className="border-slate-200 bg-slate-900 px-2.5 py-1 text-[9px] font-mono text-white sm:py-1 sm:text-xs">
-                    <ElapsedTimer startTime={confirmedStartTime} />
-                  </Pill>
-                ) : null}
-                {showReadyAt ? (
-                  <Pill
-                    className={cx(
-                      "max-w-full font-bold",
-                      isOrderDelayed
-                        ? "border-amber-700 bg-amber-600 text-white"
-                        : "border-amber-600 bg-amber-500 text-white"
-                    )}
-                  >
-                    {t("Ready at")} {readyAtLabel}
-                  </Pill>
-                ) : null}
-              </div>
-            ) : null}
-
-            {!isFreeDisplay &&
-            !shouldShowReservedBadge &&
-            (shouldShowConfirmedTimer || showReadyAt) ? (
-              <div className="flex min-h-6 items-center justify-end gap-2 sm:hidden">
-                {shouldShowConfirmedTimer ? (
-                  <Pill className="border-slate-200 bg-slate-900 px-2.5 py-1 text-[9px] font-mono text-white sm:py-1 sm:text-xs">
-                    <ElapsedTimer startTime={confirmedStartTime} />
-                  </Pill>
-                ) : null}
-                {showReadyAt ? (
-                  <Pill
-                    className={cx(
-                      "max-w-full font-bold",
-                      isOrderDelayed
-                        ? "border-amber-700 bg-amber-600 text-white"
-                        : "border-amber-600 bg-amber-500 text-white"
-                    )}
-                  >
-                    {t("Ready at")} {readyAtLabel}
-                  </Pill>
-                ) : null}
-              </div>
-            ) : null}
-
-            {showManualTableLock && (isFreeDisplay || (isLockedTable && !hasOrderActivity)) ? (
-              <button
-                type="button"
-                onClick={handleToggleLockClick}
-                title={isLockedTable ? t("Unlock table") : t("Mark table occupied")}
-                className={cx(
-                  "inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-2xl border border-slate-200 bg-white/92 px-3.5 text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.08)] transition hover:bg-white active:scale-[0.98] sm:h-8",
-                  isLockedTable
-                    ? "border-yellow-200 bg-yellow-400 text-slate-900 hover:bg-yellow-400"
-                    : "w-9 sm:w-8"
-                )}
-              >
-                <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <rect x="5" y="11" width="14" height="10" rx="2" ry="2" />
-                  {isLockedTable ? (
-                    <path d="M8 11V8a4 4 0 1 1 8 0v3" />
-                  ) : (
-                    <path d="M8 11V8a4 4 0 0 1 7.2-2.4" />
-                  )}
-                </svg>
-                {isLockedTable ? (
-                  <span className="text-[11px] font-semibold leading-none sm:text-xs">
-                    {t("Unlock")}
-                  </span>
-                ) : null}
-              </button>
-            ) : null}
-
-            {isCallingWaiter && (
-              <div className="flex items-center justify-end gap-2 flex-nowrap">
-                <Pill className="border-rose-200 bg-rose-600 px-3 py-1.5 text-[10px] text-white animate-pulse sm:px-3 sm:py-1 sm:text-xs">
-                  🔴 {waiterCallLabel}
-                </Pill>
-                <ActionButton
-                  onClick={handleResolvedClick}
-                  className="bg-emerald-600 hover:bg-emerald-700"
-                >
-                  {waiterResolveLabel}
-                </ActionButton>
-              </div>
-            )}
-
-            {hasOrderActivity && !hasUnpaidItems && (
-              <div className="flex items-center justify-end gap-2 flex-nowrap">
-                {isPaidTable ? (
-                  <button
-                    type="button"
-                    onClick={handleCloseClick}
-                    className={cx(
-                      BADGE_BASE_CLASS,
-                      "border-slate-200 bg-slate-900 text-white transition duration-150 hover:bg-slate-800 active:scale-[0.99]"
-                    )}
-                  >
-                    {t("Close")}
-                  </button>
-                ) : (
-                  <ActionButton
-                    onClick={handleCloseClick}
-                    className="h-8 rounded-2xl bg-slate-900 px-3.5 text-xs font-semibold hover:bg-slate-800"
-                  >
-                    {t("Close")}
-                  </ActionButton>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {showGuestCount && table.seats && !(isLockedTable && !hasOrderActivity) ? (
-          <div className="mt-2 flex justify-center border-t border-slate-200/60 pt-2">
+        {shouldRenderFooterShell ? (
+          <div className={TABLE_CARD_FOOTER_SHELL_CLASS}>
             <div
               className={cx(
-                BADGE_BASE_CLASS,
-                "gap-1.5 border-slate-200 bg-white/92 px-3.5 text-[10px] text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.06)] sm:text-xs"
+                "flex items-center justify-between gap-2",
+                hasFooterGuestSelector && "border-b border-slate-200/70 pb-2.5 dark:border-slate-800/70"
               )}
-              onClick={stopPropagation}
             >
-              <span className="text-[11px] leading-none">👥</span>
-              <span className="font-medium text-slate-500">{t("Guests")}</span>
-              <select
-                className="min-w-[2rem] bg-transparent pr-0.5 text-[10px] font-bold text-slate-900 outline-none sm:text-[11px]"
-                value={Number.isFinite(clampedGuests) ? String(clampedGuests) : ""}
-                onChange={handleGuestsSelectChange}
-                onClick={stopPropagation}
-              >
-                <option value="">—</option>
-                {guestOptionElements}
-              </select>
-              <span className="font-medium text-slate-500">/ {seats}</span>
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                {showAreas ? (
+                  <Pill className="max-w-[82%] justify-start whitespace-nowrap border-slate-300/60 bg-white/80 px-3 py-1.5 text-[10px] text-slate-800 shadow-md backdrop-blur sm:max-w-none sm:py-1 sm:text-xs dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100">
+                    {formatAreaLabel(table.area)}
+                  </Pill>
+                ) : null}
+              </div>
+
+              <div className="ml-auto flex items-center justify-end gap-2 flex-nowrap">
+                {hasFooterTiming ? (
+                  <div className="hidden min-h-6 items-center justify-end gap-2 sm:flex">
+                    {shouldShowConfirmedTimer ? (
+                      <Pill className="border-slate-200 bg-slate-900 px-2.5 py-1 text-[9px] font-mono text-white sm:py-1 sm:text-xs">
+                        <ElapsedTimer startTime={confirmedStartTime} />
+                      </Pill>
+                    ) : null}
+                    {showReadyAt ? (
+                      <Pill
+                        className={cx(
+                          "max-w-full font-bold",
+                          isOrderDelayed
+                            ? "border-amber-700 bg-amber-600 text-white"
+                            : "border-amber-600 bg-amber-500 text-white"
+                        )}
+                      >
+                        {t("Ready at")} {readyAtLabel}
+                      </Pill>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {hasFooterTiming ? (
+                  <div className="flex min-h-6 items-center justify-end gap-2 sm:hidden">
+                    {shouldShowConfirmedTimer ? (
+                      <Pill className="border-slate-200 bg-slate-900 px-2.5 py-1 text-[9px] font-mono text-white sm:py-1 sm:text-xs">
+                        <ElapsedTimer startTime={confirmedStartTime} />
+                      </Pill>
+                    ) : null}
+                    {showReadyAt ? (
+                      <Pill
+                        className={cx(
+                          "max-w-full font-bold",
+                          isOrderDelayed
+                            ? "border-amber-700 bg-amber-600 text-white"
+                            : "border-amber-600 bg-amber-500 text-white"
+                        )}
+                      >
+                        {t("Ready at")} {readyAtLabel}
+                      </Pill>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {hasFooterLock ? (
+                  <button
+                    type="button"
+                    onClick={handleToggleLockClick}
+                    title={isLockedTable ? t("Unlock table") : t("Mark table occupied")}
+                    className={cx(
+                      TABLE_CARD_FOOTER_BUTTON_BASE_CLASS,
+                      "shrink-0 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 text-white hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(15,23,42,0.18)] dark:border-white/10",
+                      isLockedTable ? "px-4" : "w-10 px-0"
+                    )}
+                  >
+                    <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <rect x="5" y="11" width="14" height="10" rx="2" ry="2" />
+                      {isLockedTable ? (
+                        <path d="M8 11V8a4 4 0 1 1 8 0v3" />
+                      ) : (
+                        <path d="M8 11V8a4 4 0 0 1 7.2-2.4" />
+                      )}
+                    </svg>
+                    {isLockedTable ? <span>{t("Unlock")}</span> : null}
+                  </button>
+                ) : null}
+
+                {isCallingWaiter ? (
+                  <div className="flex items-center justify-end gap-2 flex-nowrap">
+                    <Pill className="border-rose-200 bg-rose-600 px-3 py-1.5 text-[10px] text-white animate-pulse sm:px-3 sm:py-1 sm:text-xs">
+                      🔴 {waiterCallLabel}
+                    </Pill>
+                    <ActionButton
+                      onClick={handleResolvedClick}
+                      className="rounded-xl bg-gradient-to-br from-emerald-400 via-emerald-500 to-teal-500 px-5 text-sm font-semibold text-white shadow-md hover:from-emerald-500 hover:via-emerald-600 hover:to-teal-600"
+                    >
+                      {waiterResolveLabel}
+                    </ActionButton>
+                  </div>
+                ) : null}
+
+                {hasFooterClose ? (
+                  <div className="flex items-center justify-end gap-2 flex-nowrap">
+                    {isPaidTable ? (
+                      <button
+                        type="button"
+                        onClick={handleCloseClick}
+                        className={cx(
+                          TABLE_CARD_FOOTER_BUTTON_BASE_CLASS,
+                          "bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 text-white hover:from-indigo-500 hover:via-indigo-600 hover:to-violet-600"
+                        )}
+                      >
+                        {t("Close")}
+                      </button>
+                    ) : (
+                      <ActionButton
+                        onClick={handleCloseClick}
+                        className="rounded-xl bg-gradient-to-br from-indigo-400 via-indigo-500 to-violet-500 px-5 text-sm font-semibold text-white shadow-md hover:from-indigo-500 hover:via-indigo-600 hover:to-violet-600"
+                      >
+                        {t("Close")}
+                      </ActionButton>
+                    )}
+                  </div>
+                ) : null}
+              </div>
             </div>
+
+            {hasFooterGuestSelector ? (
+              <div className="flex justify-center pt-2.5">
+                <div
+                  className={cx(
+                    BADGE_BASE_CLASS,
+                    "gap-1.5 border-slate-300/60 bg-white/80 px-3.5 text-[10px] text-slate-800 shadow-md backdrop-blur sm:text-xs dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-100"
+                  )}
+                  onClick={stopPropagation}
+                >
+                  <span className="text-[11px] leading-none">👥</span>
+                  <span className="font-medium text-slate-500 dark:text-slate-300">{t("Guests")}</span>
+                  <select
+                    className="min-w-[2rem] bg-transparent pr-0.5 text-[10px] font-bold text-slate-900 outline-none sm:text-[11px] dark:text-slate-50"
+                    value={Number.isFinite(clampedGuests) ? String(clampedGuests) : ""}
+                    onChange={handleGuestsSelectChange}
+                    onClick={stopPropagation}
+                  >
+                    <option value="">—</option>
+                    {guestOptionElements}
+                  </select>
+                  <span className="font-medium text-slate-500 dark:text-slate-300">/ {seats}</span>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
 

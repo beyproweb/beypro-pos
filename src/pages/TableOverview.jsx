@@ -594,7 +594,7 @@ export default function TableOverview() {
   const [fromDate, setFromDate] = useState(() => {
     return new Date().toISOString().slice(0, 10);
   });
-  const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [toDate, setToDate] = useState(() => "");
   const [transactionSettings, setTransactionSettings] = useState(() =>
     readInitialTransactionSettings()
   );
@@ -660,6 +660,8 @@ export default function TableOverview() {
   const canSeeTablesGrid = useHasPermission("tables");
   const canSeeViewBookingTab = useHasPermission("view-booking");
   const canSeeSongRequestTab = useHasPermission("song-request");
+  const canShowSongRequestFooterTab =
+    canSeeSongRequestTab && !transactionSettings.disableTableOverviewSongRequestFooterButton;
   const canSeeTablesTab =
     canSeeTablesGrid || canSeeViewBookingTab || canSeeSongRequestTab;
   const canSeeKitchenTab = useHasPermission("kitchen");
@@ -3185,7 +3187,7 @@ const handleTakeawayConcertTicketCheckIn = useCallback(
 useEffect(() => {
   const today = formatLocalYmd(new Date());
   setFromDate(today);
-  setToDate(today);
+  setToDate("");
 }, []);
 
   const loadConcertBookingsForOverview = useCallback(async (options = {}) => {
@@ -3833,7 +3835,7 @@ useEffect(() => {
     }
     const limitedAreas = [
       ...(canSeeViewBookingTab ? [AREA_FILTER_VIEW_BOOKING] : []),
-      ...(canSeeSongRequestTab ? [AREA_FILTER_SONG_REQUEST] : []),
+      ...(canShowSongRequestFooterTab ? [AREA_FILTER_SONG_REQUEST] : []),
     ];
 
     if (!canSeeTablesGrid && limitedAreas.length > 0) {
@@ -3860,7 +3862,7 @@ useEffect(() => {
   }, [
     activeArea,
     activeTab,
-    canSeeSongRequestTab,
+    canShowSongRequestFooterTab,
     canSeeTablesGrid,
     canSeeViewBookingTab,
     requestedAreaFromUrl,
@@ -3876,14 +3878,14 @@ useEffect(() => {
   useEffect(() => {
     if (activeArea === AREA_FILTER_VIEW_BOOKING && !canSeeViewBookingTab) {
       handleAreaSelect(
-        !canSeeTablesGrid && canSeeSongRequestTab
+        !canSeeTablesGrid && canShowSongRequestFooterTab
           ? AREA_FILTER_SONG_REQUEST
           : AREA_FILTER_ALL,
         { replace: true }
       );
       return;
     }
-    if (activeArea === AREA_FILTER_SONG_REQUEST && !canSeeSongRequestTab) {
+    if (activeArea === AREA_FILTER_SONG_REQUEST && !canShowSongRequestFooterTab) {
       handleAreaSelect(
         !canSeeTablesGrid && canSeeViewBookingTab
           ? AREA_FILTER_VIEW_BOOKING
@@ -3893,6 +3895,7 @@ useEffect(() => {
     }
   }, [
     activeArea,
+    canShowSongRequestFooterTab,
     canSeeSongRequestTab,
     canSeeTablesGrid,
     canSeeViewBookingTab,
@@ -5789,7 +5792,7 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
       onReservationBookingUpdateStatus={updateReservationBookingStatusFromOverview}
       onClearBookings={handleClearOldFulfilledBookings}
       clearingBookings={clearingBookings}
-      showSongRequestTab={canSeeSongRequestTab}
+      showSongRequestTab={canShowSongRequestFooterTab}
       songRequests={songRequests}
       songRequestsLoading={songRequestsLoading}
       songRequestUpdatingId={songRequestUpdatingId}

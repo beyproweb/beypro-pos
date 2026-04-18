@@ -438,7 +438,7 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
                           </div>
                           <div className="min-w-0 flex-1">
                             <span
-                              className="truncate font-semibold text-slate-800 block text-[12px]"
+                              className="truncate font-semibold text-slate-800 block text-[13px] leading-tight"
                               onClick={item.onNameClick}
                             >
                               {item.name}
@@ -528,18 +528,18 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
 
                           <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5 border-t border-slate-200/50">
                             <div className="flex items-center gap-0.5">
-                              <span className="text-[9px]">{t("Qty")}: </span>
+                              <span className="text-[11px] leading-none">{t("Qty")}: </span>
                               <button
                                 onClick={item.onDecrement}
-                                className="h-4 w-4 flex items-center justify-center rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 font-bold text-[10px] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                className="h-4 w-4 flex items-center justify-center rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 font-bold text-[10px] leading-none disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                                 disabled={!item.isEditable}
                               >
                                 −
                               </button>
-                              <span className="min-w-[16px] text-center text-[10px]">{item.quantity}</span>
+                              <span className="min-w-[16px] text-center text-[12px] leading-none">{item.quantity}</span>
                               <button
                                 onClick={item.onIncrement}
-                                className="h-4 w-4 flex items-center justify-center rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 font-bold text-[10px] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                className="h-4 w-4 flex items-center justify-center rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 font-bold text-[10px] leading-none disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                                 disabled={!item.isEditable}
                               >
                                 +
@@ -550,14 +550,14 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
                               <div className="flex items-center gap-0.5">
                                 <button
                                   onClick={item.onEdit}
-                                  className="rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold text-blue-600 hover:bg-blue-100 transition-colors"
+                                  className="inline-flex h-5 items-center justify-center rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-blue-600 hover:bg-blue-100 transition-colors"
                                   title={t("Edit item")}
                                 >
                                   {t("Edit")}
                                 </button>
                                 <button
                                   onClick={item.onRemove}
-                                  className="rounded-full border border-red-200 bg-red-50 px-1.5 py-0.5 text-[9px] font-semibold text-red-600 hover:bg-red-100 transition-colors"
+                                  className="inline-flex h-5 items-center justify-center rounded-full border border-red-200 bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-red-600 hover:bg-red-100 transition-colors"
                                   title={t("Remove item")}
                                 >
                                   {t("Delete")}
@@ -624,7 +624,7 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
                               )}
                             </div>
                             <div className="min-w-0 flex-1">
-                              <span className="truncate font-semibold text-slate-800 block">
+                              <span className="truncate font-semibold text-slate-800 block text-[13px] leading-tight">
                                 {item.name}
                                 <span className="ml-2 text-[11px] font-medium text-slate-600">
                                   {item.basePriceLabel} ×{item.quantity}

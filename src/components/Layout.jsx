@@ -456,6 +456,7 @@ export default function Layout({
           tableNav={tableNav}
           previousRoute={headerPreviousRoute}
           onSidebarToggle={() => setIsSidebarOpen((v) => !v)}
+          onHeaderButtonClick={() => setIsSidebarOpen(false)}
           onLockClick={handleManualLock}
           rightContent={rightContent}
           userName={username}

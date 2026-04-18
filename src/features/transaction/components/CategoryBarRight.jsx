@@ -21,7 +21,7 @@ const CategoryBarRight = React.memo(function CategoryBarRight({
     <div
       className={
         isCompactMode
-          ? "flex w-[190px] sm:w-[206px] lg:w-[220px] xl:w-[236px] flex-none min-h-0 h-[calc(100vh-260px)] pt-2"
+          ? "flex w-[124px] sm:w-[150px] lg:w-[176px] xl:w-[188px] flex-none min-h-0 h-[calc(100vh-260px)] pt-2"
           : "flex w-[92px] sm:w-[110px] lg:w-[120px] xl:w-[180px] flex-none min-h-0 h-[calc(100vh-260px)] pt-2"
       }
     >

@@ -10,6 +10,7 @@ export const DEFAULT_TRANSACTION_SETTINGS = {
   disableAutoPrintPacket: false,
   disableTableOverviewOrdersFloatingButton: false,
   disableTableOverviewGuestsFloatingButton: false,
+  disableTableOverviewSongRequestFooterButton: false,
   requireGuestsBeforeOpen: true,
   enableManualTableLock: true,
   enableProductGridVirtualization: false,

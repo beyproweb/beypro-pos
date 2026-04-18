@@ -189,7 +189,7 @@ function CategoryButton({
           data-cat-idx={idx}
           onClick={handleSelectCategory}
           className={[
-            "group relative flex w-full items-center justify-center overflow-hidden rounded-lg px-2 py-2",
+            "group relative flex w-full items-center justify-center overflow-hidden rounded-lg px-1.5 py-1.5 sm:px-2 sm:py-2",
             "border text-left shadow-none transition-all duration-150 select-none",
             isActive ? "" : paletteClass.base,
             "active:scale-[0.985]",
@@ -200,7 +200,7 @@ function CategoryButton({
         >
           <span
             className={[
-              "min-w-0 truncate text-sm font-semibold leading-tight text-center",
+              "min-w-0 truncate text-[12px] sm:text-sm font-semibold leading-tight text-center",
               isActive ? "text-slate-900 dark:text-slate-50" : paletteClass.text,
             ].join(" ")}
           >

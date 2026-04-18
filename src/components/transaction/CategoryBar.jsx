@@ -169,7 +169,7 @@ const CategoryBar = ({
           onScroll={scheduleSync}
           className={
             isCompactMode
-              ? "grid flex-1 min-h-0 max-h-full grid-cols-2 gap-1.5 px-0.5 pt-0.5 pr-2 pb-[calc(200px+env(safe-area-inset-bottom))] overflow-y-auto scroll-smooth scrollbar-hide overscroll-contain touch-pan-y"
+              ? "grid flex-1 min-h-0 max-h-full grid-cols-1 gap-1.5 px-0.5 pt-0.5 pr-2 pb-[calc(200px+env(safe-area-inset-bottom))] overflow-y-auto scroll-smooth scrollbar-hide overscroll-contain touch-pan-y"
               : "grid flex-1 min-h-0 max-h-full grid-cols-1 gap-2 px-0.5 pt-0.5 pr-3 pb-[calc(200px+env(safe-area-inset-bottom))] overflow-y-auto scroll-smooth xl:grid-cols-2 scrollbar-hide overscroll-contain touch-pan-y"
           }
           style={{ scrollBehavior: "smooth", maxHeight: '100%' }}
