@@ -436,7 +436,7 @@ const DICT = {
     "Something went wrong. Please try again.": "Bir şeyler ters gitti. Lütfen tekrar deneyin.",
     Close: "Kapat",
       "Continue Shopping": "Alışverişe Devam Et",
-    "Dine in": "Restoranda",
+    "Dine in": "Masa",
     "Order Another": "Yeni Sipariş Ver",
     "Order Again": "Tekrar Sipariş Ver",
     Table: "Masa",

@@ -4796,7 +4796,7 @@ const resources = {
       "Story Video Source": "Hikaye Video Kaynağı",
       "Story Video Title": "Hikaye Video Başlığı",
       "Story Video Upload": "Hikaye Video Yükleme",
-      "Dine in": "Restoranda",
+      "Dine in": "Masa",
       "Dine in is closed": "Restoranda kapalı",
       "Dine in is open": "Restoranda açık",
       "Open Dine in": "Restorandayı Aç",

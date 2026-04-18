@@ -2345,30 +2345,28 @@ async function load() {
                                 </div>
                               </div>
                             </div>
-                            <span
-                              className={`text-xs px-2 py-1 rounded-full border ${
-                                concertBookingDeactivated
-                                  ? "border-neutral-300 bg-neutral-100 text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
-                                  : badgeSoldOut
-                                  ? "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200"
-                                  : "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
-                              }`}
-                            >
-                              {concertBookingDeactivated
-                                ? t("Deactivated")
-                                : badgeSoldOut
-                                ? t("Sold Out")
-                                : t("Available")}
-                            </span>
+                            {concertBookingDeactivated || badgeSoldOut ? (
+                              <span
+                                className={`text-xs px-2 py-1 rounded-full border ${
+                                  concertBookingDeactivated
+                                    ? "border-neutral-300 bg-neutral-100 text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                                    : "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200"
+                                }`}
+                              >
+                                {concertBookingDeactivated ? t("Deactivated") : t("Sold Out")}
+                              </span>
+                            ) : null}
                           </div>
 
-                          {(event?.ticket_types || []).length > 0 ? (
+                          {(event?.ticket_types || []).length > 0 && !event?.hide_ticket_amount_display_badge ? (
                             <div className="mt-2 pl-2.5 text-xs text-neutral-600 dark:text-neutral-300 space-y-1">
                               {(event.ticket_types || []).slice(0, 4).map((ticketType) => (
                                 <div key={ticketType.id}>
                                   {ticketType.name}
                                   {ticketType.area_name ? ` • ${ticketType.area_name}` : ""}
-                                  {` • ${ticketType.available_count}/${ticketType.quantity_total}`}
+                                  {!event?.hide_ticket_amount_display_badge
+                                    ? ` • ${ticketType.available_count}/${ticketType.quantity_total}`
+                                    : ""}
                                 </div>
                               ))}
                             </div>
@@ -3042,7 +3040,7 @@ async function load() {
                         (row?.is_table_package && Number(selectedConcertTableStockAvailable) <= 0)
                       }
                     >
-                      {`${row.name}${row.area_name ? ` • ${row.area_name}` : ""} • ${formatCurrency(Number(row?.price || concertModalEvent?.ticket_price || 0))} • ${row.available_count}/${row.quantity_total}`}
+                      {`${concertModalEvent?.hide_ticket_amount_display_badge ? "" : row.name}${row.area_name ? `${concertModalEvent?.hide_ticket_amount_display_badge ? "" : " • "}${row.area_name}` : ""}${concertModalEvent?.hide_ticket_amount_display_badge ? `${row.is_table_package ? t("Table package") : t("Ticket")} • ` : " • "}${formatCurrency(Number(row?.price || concertModalEvent?.ticket_price || 0))}${concertModalEvent?.hide_ticket_amount_display_badge ? "" : ` • ${row.available_count}/${row.quantity_total}`}`}
                     </option>
                   ))}
                 </select>
@@ -3090,7 +3088,11 @@ async function load() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                      {selectedConcertTicketType.name}
+                      {concertModalEvent?.hide_ticket_amount_display_badge
+                        ? selectedConcertTicketType.is_table_package
+                          ? t("Table package")
+                          : t("Ticket")
+                        : selectedConcertTicketType.name}
                     </p>
                     {selectedConcertTicketType.area_name ? (
                       <p className="text-xs text-neutral-500 dark:text-neutral-400">

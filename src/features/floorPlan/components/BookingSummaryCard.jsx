@@ -15,7 +15,9 @@ export default function BookingSummaryCard({ items = [], accentColor = "#111827"
       <div className="mt-4 space-y-3">
         {visibleItems.map((item) => (
           <div key={item.label} className="flex items-start justify-between gap-3">
-            <div className="text-sm text-neutral-500 dark:text-neutral-400">{item.label}</div>
+            <div className="text-sm text-neutral-500 dark:text-neutral-400">
+              {typeof item.label === "string" ? t(item.label) : item.label}
+            </div>
             <div className="text-right text-sm font-medium text-neutral-900 dark:text-neutral-50">
               {item.value}
             </div>

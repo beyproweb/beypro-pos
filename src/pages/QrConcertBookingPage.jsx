@@ -933,10 +933,28 @@ export default function QrConcertBookingPage() {
   ]);
 
   const ticketTypes = Array.isArray(event?.ticket_types) ? event.ticket_types : [];
+  const hideTicketAmountDisplayBadge = Boolean(event?.hide_ticket_amount_display_badge);
   const selectedTicketType = React.useMemo(() => {
     const selectedId = Number(form.ticket_type_id || 0);
     return ticketTypes.find((row) => Number(row?.id) === selectedId) || null;
   }, [form.ticket_type_id, ticketTypes]);
+  const publicTicketTypeLabel = React.useMemo(() => {
+    if (!selectedTicketType) return "";
+    if (!hideTicketAmountDisplayBadge) return selectedTicketType.name || "";
+    return [
+      selectedTicketType.area_name,
+      selectedTicketType.is_table_package ? t("Table package") : t("Ticket"),
+    ]
+      .filter(Boolean)
+      .join(" • ");
+  }, [
+    hideTicketAmountDisplayBadge,
+    selectedTicketType,
+    selectedTicketType?.area_name,
+    selectedTicketType?.is_table_package,
+    selectedTicketType?.name,
+    t,
+  ]);
   const isTableBooking = Boolean(selectedTicketType?.is_table_package);
   const showGuestStep = !isTableBooking;
   const isFreeConcert = Boolean(event?.free_concert);
@@ -1734,7 +1752,7 @@ export default function QrConcertBookingPage() {
     },
     {
       label: t("Package"),
-      value: selectedTicketType?.name || "",
+      value: publicTicketTypeLabel,
     },
     {
       label: isTableBooking ? t("Guests") : t("Quantity"),
@@ -1808,7 +1826,6 @@ export default function QrConcertBookingPage() {
     <>
       <BookingPageLayout
         title={t("Concert Booking")}
-        subtitle={loading ? t("Loading event") : t("Premium event checkout flow")}
         onBack={handleBack}
         accentColor={accentColor}
         showHeaderIndicator={false}
@@ -1950,7 +1967,13 @@ export default function QrConcertBookingPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-sm font-semibold">{ticketType.name}</div>
+                      <div className="text-sm font-semibold">
+                        {hideTicketAmountDisplayBadge
+                          ? ticketType.is_table_package
+                            ? t("Table package")
+                            : t("Ticket")
+                          : ticketType.name}
+                      </div>
                       <div className="mt-1 text-xs opacity-80">
                         {[ticketType.area_name, ticketType.is_table_package ? t("Table package") : t("Ticket")]
                           .filter(Boolean)
@@ -1959,11 +1982,13 @@ export default function QrConcertBookingPage() {
                     </div>
                     <div className="text-right">
                       <div className="text-sm font-semibold">{formatCurrency(ticketType.price || 0)}</div>
-                      <div className="mt-1 text-xs opacity-80">
-                        {soldOut
-                          ? t("Sold out")
-                          : t("{{count}} left", { count: Number(ticketType.available_count || 0) })}
-                      </div>
+                      {!hideTicketAmountDisplayBadge || soldOut ? (
+                        <div className="mt-1 text-xs opacity-80">
+                          {soldOut
+                            ? t("Sold out")
+                            : t("{{count}} left", { count: Number(ticketType.available_count || 0) })}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </button>
@@ -2083,7 +2108,7 @@ export default function QrConcertBookingPage() {
       <FloorPlanPickerModal
         open={pickerOpen}
         title={t("Choose concert table")}
-        subtitle={selectedTicketType?.name || t("Table package")}
+        subtitle={publicTicketTypeLabel || t("Table package")}
         layout={floorPlan}
         tables={tables}
         tableStates={tableStates}

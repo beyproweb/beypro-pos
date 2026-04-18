@@ -260,6 +260,7 @@ const makeEmptyConcertForm = () => ({
   bank_transfer_instructions: "",
   status: "active",
   free_concert: false,
+  hide_ticket_amount_display_badge: false,
   guest_composition_enabled: false,
   guest_composition_field_mode: "optional",
   guest_composition_restriction_rule: "no_restriction",
@@ -1645,6 +1646,7 @@ async function saveAllCustomization() {
     bank_transfer_instructions: String(source?.bank_transfer_instructions || "").trim(),
     status: String(source?.status || "active").toLowerCase(),
     free_concert: Boolean(source?.free_concert),
+    hide_ticket_amount_display_badge: Boolean(source?.hide_ticket_amount_display_badge),
     guest_composition_enabled: Boolean(source?.guest_composition_enabled),
     guest_composition_field_mode: String(
       source?.guest_composition_field_mode || "optional"
@@ -1811,6 +1813,7 @@ async function saveAllCustomization() {
       bank_transfer_instructions: event.bank_transfer_instructions || "",
       status: event.status || "active",
       free_concert: Boolean(event.free_concert),
+      hide_ticket_amount_display_badge: Boolean(event.hide_ticket_amount_display_badge),
       guest_composition_enabled: Boolean(event.guest_composition_enabled),
       guest_composition_field_mode: event.guest_composition_field_mode || "optional",
       guest_composition_restriction_rule:
@@ -4674,6 +4677,20 @@ async function saveAllCustomization() {
                 {t("Add")}
               </button>
             </div>
+            <label className="mt-3 inline-flex items-center gap-2 rounded-lg border bg-white dark:bg-zinc-900 px-3 py-2 text-sm font-semibold">
+              <input
+                type="checkbox"
+                checked={Boolean(concertForm.hide_ticket_amount_display_badge)}
+                onChange={(e) =>
+                  updateConcertFormField("hide_ticket_amount_display_badge", e.target.checked)
+                }
+              />
+              <span>
+                {t("Hide ticket amount display badge", {
+                  defaultValue: "Hide ticket amount display badge",
+                })}
+              </span>
+            </label>
             <div className="mt-3 space-y-3">
               {(concertForm.ticket_types || []).map((row, index) => (
                 <div key={`ticket-type-${index}`} className="grid grid-cols-1 md:grid-cols-6 gap-3 p-3 rounded-xl border bg-white dark:bg-zinc-900">
