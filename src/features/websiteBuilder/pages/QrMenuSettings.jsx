@@ -539,6 +539,10 @@ export default function QrMenuSettings() {
   }, [activeSettingsTab, editingConcertId]);
 
   const uploadsBaseUrl = API_ORIGIN || "";
+  const webUploadsBaseUrl =
+    typeof window !== "undefined" && /^https?:$/i.test(window.location.protocol)
+      ? window.location.origin
+      : uploadsBaseUrl;
 
   const resolveUploadSrc = (raw, version = "") => {
     const value = normalizeAssetValue(raw);
@@ -547,19 +551,32 @@ export default function QrMenuSettings() {
     let resolved = "";
 
     if (/^https?:\/\//i.test(normalized)) {
-      resolved = normalized;
+      try {
+        const parsed = new URL(normalized);
+        if (/^\/api\/uploads\//i.test(parsed.pathname)) {
+          resolved = `${webUploadsBaseUrl}${parsed.pathname.replace(/^\/api/i, "")}${parsed.search}`;
+        } else if (/^\/public\/uploads\//i.test(parsed.pathname)) {
+          resolved = `${webUploadsBaseUrl}${parsed.pathname.replace(/^\/public/i, "")}${parsed.search}`;
+        } else if (/^\/uploads\//i.test(parsed.pathname)) {
+          resolved = `${webUploadsBaseUrl}${parsed.pathname}${parsed.search}`;
+        } else {
+          resolved = normalized;
+        }
+      } catch {
+        resolved = normalized;
+      }
     } else if (/^\/api\/uploads\//i.test(normalized)) {
-      resolved = `${uploadsBaseUrl}${normalized.replace(/^\/api/i, "")}`;
+      resolved = `${webUploadsBaseUrl}${normalized.replace(/^\/api/i, "")}`;
     } else if (/^\/public\/uploads\//i.test(normalized)) {
-      resolved = `${uploadsBaseUrl}${normalized.replace(/^\/public/i, "")}`;
+      resolved = `${webUploadsBaseUrl}${normalized.replace(/^\/public/i, "")}`;
     } else if (/^\/uploads\//i.test(normalized)) {
-      resolved = `${uploadsBaseUrl}${normalized}`;
+      resolved = `${webUploadsBaseUrl}${normalized}`;
     } else if (/^uploads\//i.test(normalized)) {
-      resolved = `${uploadsBaseUrl}/${normalized}`;
+      resolved = `${webUploadsBaseUrl}/${normalized}`;
     } else if (/^\/.+/.test(normalized)) {
       resolved = `${uploadsBaseUrl}${normalized}`;
     } else {
-      resolved = `${uploadsBaseUrl}/uploads/${normalized.replace(/^\/?uploads\//i, "")}`;
+      resolved = `${webUploadsBaseUrl}/uploads/${normalized.replace(/^\/?uploads\//i, "")}`;
     }
 
     if (!version) return resolved;

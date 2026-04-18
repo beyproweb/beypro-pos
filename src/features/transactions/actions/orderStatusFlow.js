@@ -4,6 +4,7 @@ export function createOrderStatusFlow(deps) {
     orderId,
     tableId,
     orderType,
+    loadOrCreateTableOrder,
     phoneOrderDraft,
     selectedPaymentMethod,
     phoneOrderCreatePromiseRef,
@@ -16,7 +17,7 @@ export function createOrderStatusFlow(deps) {
   } = deps;
 
   async function updateOrderStatus(newStatus = null, total = null, method = null) {
-    let targetId = order?.id || (orderId && String(orderId) !== "new" ? orderId : null) || tableId;
+    let targetId = order?.id || (orderId && String(orderId) !== "new" ? orderId : null);
     if (!targetId) {
       if (orderType === "phone") {
         try {
@@ -80,9 +81,21 @@ export function createOrderStatusFlow(deps) {
           showToast(err?.message || t("Failed to create phone order"));
           return null;
         }
+      } else if (loadOrCreateTableOrder && Number.isFinite(Number(tableId))) {
+        try {
+          const ensuredOrder = await loadOrCreateTableOrder(Number(tableId));
+          if (!ensuredOrder?.id) {
+            throw new Error("Failed to load table order");
+          }
+          targetId = ensuredOrder.id;
+        } catch (err) {
+          console.error("❌ Failed to load table order before status update:", err);
+          showToast(err?.message || t("Failed to load order"));
+          return null;
+        }
       } else {
-        console.error("❌ No order ID found.");
-        showToast("Invalid order ID");
+        console.error("❌ No order ID found.", { orderId, tableId, orderType });
+        showToast(t("Invalid order ID"));
         return null;
       }
     }

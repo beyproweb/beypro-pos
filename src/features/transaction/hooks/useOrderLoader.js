@@ -207,9 +207,12 @@ export const useOrderLoader = ({
         }).catch((err) => {
           console.error("❌ Error fetching order items:", err);
         });
+
+        return currentOrder;
       } catch (err) {
         console.error("❌ Error creating/fetching table order:", err);
         setLoading(false);
+        return null;
       }
     },
     [appendIdentifier, fetchOrderItems, reopenOrderIfNeeded, setLoading, setOrder]
