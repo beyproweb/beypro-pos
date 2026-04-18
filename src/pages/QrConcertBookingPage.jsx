@@ -612,10 +612,15 @@ function buildMergedConcertTableStates({
     });
 }
 
-async function fetchUnavailableTablesSnapshot(identifier, cacheBustValue = "") {
+async function fetchUnavailableTablesSnapshot(identifier, params = {}, cacheBustValue = "") {
   if (!identifier) return null;
+  const searchParams = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null || String(value).trim() === "") return;
+    searchParams.set(key, String(value));
+  });
   const cacheBust = String(cacheBustValue || "").trim();
-  const cacheBustParam = cacheBust ? `_ts=${encodeURIComponent(cacheBust)}` : "";
+  if (cacheBust) searchParams.set("_ts", cacheBust);
   const token = getAuthToken();
   const authorization = token
     ? token.startsWith("Bearer ")
@@ -626,12 +631,11 @@ async function fetchUnavailableTablesSnapshot(identifier, cacheBustValue = "") {
     ...(authorization ? { headers: { Authorization: authorization } } : {}),
     cache: "no-store",
   };
+  const query = searchParams.toString();
 
   try {
     return await secureFetch(
-      `/public/unavailable-tables/${encodeURIComponent(identifier)}${
-        cacheBustParam ? `?${cacheBustParam}` : ""
-      }`,
+      `/public/unavailable-tables/${encodeURIComponent(identifier)}${query ? `?${query}` : ""}`,
       requestOptions
     );
   } catch (primaryError) {
@@ -639,10 +643,10 @@ async function fetchUnavailableTablesSnapshot(identifier, cacheBustValue = "") {
       String(primaryError?.message || "")
     );
     if (!shouldRetryLegacy) throw primaryError;
+    const fallbackQuery = new URLSearchParams(query);
+    fallbackQuery.set("identifier", identifier);
     return secureFetch(
-      `/public/unavailable-tables?identifier=${encodeURIComponent(identifier)}${
-        cacheBustParam ? `&${cacheBustParam}` : ""
-      }`,
+      `/public/unavailable-tables?${fallbackQuery.toString()}`,
       requestOptions
     );
   }
@@ -1091,7 +1095,13 @@ export default function QrConcertBookingPage() {
               cache: "no-store",
             }
           ).catch(() => null),
-          fetchUnavailableTablesSnapshot(identifier, cacheBust).catch((error) => {
+          fetchUnavailableTablesSnapshot(
+            identifier,
+            {
+              date: normalizeConcertDateYmd(event?.event_date ?? event?.eventDate),
+            },
+            cacheBust
+          ).catch((error) => {
             console.warn("Failed to load unavailable concert tables:", error);
             return null;
           }),
