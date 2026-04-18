@@ -592,7 +592,7 @@ export default function TableOverview() {
   const [paymentFilter, setPaymentFilter] = useState("All");
   const [orderTypeFilter, setOrderTypeFilter] = useState("All");
   const [fromDate, setFromDate] = useState(() => {
-    return new Date().toISOString().slice(0, 10);
+    return isDedicatedViewBookingPage ? "" : new Date().toISOString().slice(0, 10);
   });
   const [toDate, setToDate] = useState(() => "");
   const [transactionSettings, setTransactionSettings] = useState(() =>
@@ -3186,9 +3186,9 @@ const handleTakeawayConcertTicketCheckIn = useCallback(
 
 useEffect(() => {
   const today = formatLocalYmd(new Date());
-  setFromDate(today);
+  setFromDate(isDedicatedViewBookingPage ? "" : today);
   setToDate("");
-}, []);
+}, [isDedicatedViewBookingPage]);
 
   const loadConcertBookingsForOverview = useCallback(async (options = {}) => {
     void options;

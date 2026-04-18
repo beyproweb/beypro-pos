@@ -169,6 +169,74 @@ function getReservationLocalTodayYmd() {
   return `${year}-${month}-${day}`;
 }
 
+const RESERVATION_SHOP_HOURS_DAYS = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
+
+const RESERVATION_WEEKDAY_NAMES_BY_INDEX = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+function createEmptyReservationShopHoursMap() {
+  const hoursMap = {};
+  RESERVATION_SHOP_HOURS_DAYS.forEach((day) => {
+    hoursMap[day] = { open: "", close: "", enabled: false };
+  });
+  return hoursMap;
+}
+
+function getReservationShopHoursDayKey(value = "") {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return "";
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day, 12, 0, 0, 0);
+
+  if (Number.isNaN(date.getTime())) return "";
+  return RESERVATION_WEEKDAY_NAMES_BY_INDEX[date.getDay()] || "";
+}
+
+function parseReservationTimeToMinutes(value = "") {
+  const match = String(value || "")
+    .trim()
+    .match(/^(\d{2}):(\d{2})/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+function isReservationTimeWithinShopHours(timeValue = "", shopHoursEntry = null) {
+  if (!shopHoursEntry?.enabled) return false;
+
+  const targetMinutes = parseReservationTimeToMinutes(timeValue);
+  const openMinutes = parseReservationTimeToMinutes(shopHoursEntry?.open);
+  const closeMinutes = parseReservationTimeToMinutes(shopHoursEntry?.close);
+
+  if (targetMinutes === null || openMinutes === null || closeMinutes === null) return false;
+  if (openMinutes === closeMinutes) return true;
+  if (closeMinutes > openMinutes) {
+    return targetMinutes >= openMinutes && targetMinutes <= closeMinutes;
+  }
+  return targetMinutes >= openMinutes || targetMinutes <= closeMinutes;
+}
+
 function isReservationSelectedDateToday(reservationDateYmd = "") {
   const targetYmd = normalizeReservationDateYmd(reservationDateYmd);
   if (!targetYmd) return true;
@@ -419,7 +487,6 @@ function buildMergedReservationTableStates({
   includeCurrentOccupancy = isReservationSelectedDateToday(reservationDateYmd),
 }) {
   const merged = new Map();
-  const hasSelectedReservationTime = Boolean(String(reservationTimeValue || "").trim());
   const shouldMergeCurrentOccupancy = Boolean(includeCurrentOccupancy);
   const shouldMergeCurrentLocks = isReservationSelectedDateToday(reservationDateYmd);
 
@@ -524,27 +591,25 @@ function buildMergedReservationTableStates({
     );
   }
 
-  if (!hasSelectedReservationTime || isReservationSelectedDateToday(reservationDateYmd)) {
-    (Array.isArray(activeOrders) ? activeOrders : []).forEach((order) => {
-      if (!isOrderOccupyingForReservationDate(order, reservationDateYmd)) return;
-      const tableNumber = resolveReservationTableNumberFromTables(
-        tables,
-        getOrderTableNumberKey(order)
-      );
-      if (!tableNumber) return;
-      mergeStateEntryByPriority(
-        merged,
-        {
-          table_number: tableNumber,
-        },
-        "occupied",
-        {
-          source: "active_order",
-          forceStatus: true,
-        }
-      );
-    });
-  }
+  (Array.isArray(activeOrders) ? activeOrders : []).forEach((order) => {
+    if (!isOrderOccupyingForReservationDate(order, reservationDateYmd)) return;
+    const tableNumber = resolveReservationTableNumberFromTables(
+      tables,
+      getOrderTableNumberKey(order)
+    );
+    if (!tableNumber) return;
+    mergeStateEntryByPriority(
+      merged,
+      {
+        table_number: tableNumber,
+      },
+      "occupied",
+      {
+        source: "active_order",
+        forceStatus: true,
+      }
+    );
+  });
 
   if (shouldMergeCurrentLocks) {
     (Array.isArray(tables) ? tables : []).forEach((table) => {
@@ -686,6 +751,8 @@ export default function QrReservationBookingPage() {
   const [floorPlan, setFloorPlan] = React.useState(null);
   const [floorPlanSource, setFloorPlanSource] = React.useState("generated");
   const [tableStates, setTableStates] = React.useState([]);
+  const [shopHours, setShopHours] = React.useState(() => createEmptyReservationShopHoursMap());
+  const [shopHoursLoading, setShopHoursLoading] = React.useState(false);
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const phoneVerificationResolverRef = React.useRef(null);
@@ -785,6 +852,51 @@ export default function QrReservationBookingPage() {
         // Realtime socket remains optional.
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [identifier]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadShopHours() {
+      if (!identifier) {
+        setShopHours(createEmptyReservationShopHoursMap());
+        setShopHoursLoading(false);
+        return;
+      }
+
+      setShopHoursLoading(true);
+      try {
+        const response = await secureFetch(`/public/shop-hours/${encodeURIComponent(identifier)}`);
+        if (cancelled) return;
+
+        const nextHours = createEmptyReservationShopHoursMap();
+        if (Array.isArray(response)) {
+          response.forEach((row) => {
+            nextHours[row.day] = {
+              open: String(row?.open_time || "").slice(0, 5),
+              close: String(row?.close_time || "").slice(0, 5),
+              enabled: Boolean(row?.open_time && row?.close_time),
+            };
+          });
+        }
+        setShopHours(nextHours);
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("Failed to load public shop hours:", error);
+          setShopHours(createEmptyReservationShopHoursMap());
+        }
+      } finally {
+        if (!cancelled) {
+          setShopHoursLoading(false);
+        }
+      }
+    }
+
+    loadShopHours();
 
     return () => {
       cancelled = true;
@@ -996,6 +1108,7 @@ export default function QrReservationBookingPage() {
   }, [form.reservation_date, identifier]);
 
   const hasConcertEventOnSelectedDate = concertEventsForDate.length > 0;
+  const bookingSlotRulesEnabled = settings?.booking_slot_settings_enabled !== false;
 
   React.useEffect(() => {
     if (!hasConcertEventOnSelectedDate) return;
@@ -1012,7 +1125,12 @@ export default function QrReservationBookingPage() {
   React.useEffect(() => {
     let cancelled = false;
     async function loadSlots() {
-      if (!identifier || !form.reservation_date || hasConcertEventOnSelectedDate) {
+      if (
+        !identifier ||
+        !form.reservation_date ||
+        hasConcertEventOnSelectedDate ||
+        !bookingSlotRulesEnabled
+      ) {
         setSlots([]);
         setSlotsLoading(false);
         return;
@@ -1049,16 +1167,23 @@ export default function QrReservationBookingPage() {
     return () => {
       cancelled = true;
     };
-  }, [form.reservation_date, hasConcertEventOnSelectedDate, identifier, selectedGuestCount, t]);
+  }, [
+    bookingSlotRulesEnabled,
+    form.reservation_date,
+    hasConcertEventOnSelectedDate,
+    identifier,
+    selectedGuestCount,
+    t,
+  ]);
 
   React.useEffect(() => {
-    if (!form.reservation_time) return;
+    if (!bookingSlotRulesEnabled || !form.reservation_time) return;
     const currentTime = String(form.reservation_time || "").slice(0, 5);
     const slotStillAvailable = slots.some((slot) => slot.time === currentTime && slot.isAvailable);
     if (!slotStillAvailable) {
       setForm((prev) => ({ ...prev, reservation_time: "" }));
     }
-  }, [form.reservation_time, slots]);
+  }, [bookingSlotRulesEnabled, form.reservation_time, slots]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -1370,9 +1495,49 @@ export default function QrReservationBookingPage() {
     isLoggedInEffective && form.name.trim() && phoneValid && emailValid
   );
   const hasConfirmedTable = Number(form.table_number || 0) > 0;
+  const normalizedReservationTime = String(form.reservation_time || "").slice(0, 5);
+  const selectedShopHours = React.useMemo(() => {
+    const dayKey = getReservationShopHoursDayKey(form.reservation_date);
+    const entry = dayKey ? shopHours?.[dayKey] : null;
+    const open = String(entry?.open || "").slice(0, 5);
+    const close = String(entry?.close || "").slice(0, 5);
+
+    return {
+      day: dayKey,
+      open,
+      close,
+      enabled: Boolean(entry?.enabled && open && close),
+    };
+  }, [form.reservation_date, shopHours]);
   const selectedTimeSlot = slots.find(
-    (slot) => slot.time === String(form.reservation_time || "").slice(0, 5)
+    (slot) => slot.time === normalizedReservationTime
   );
+  const manualTimeHasBoundedInputWindow = React.useMemo(() => {
+    const openMinutes = parseReservationTimeToMinutes(selectedShopHours.open);
+    const closeMinutes = parseReservationTimeToMinutes(selectedShopHours.close);
+    return (
+      selectedShopHours.enabled &&
+      openMinutes !== null &&
+      closeMinutes !== null &&
+      closeMinutes > openMinutes
+    );
+  }, [selectedShopHours.close, selectedShopHours.enabled, selectedShopHours.open]);
+  const manualTimeDayClosed =
+    !bookingSlotRulesEnabled &&
+    !shopHoursLoading &&
+    !hasConcertEventOnSelectedDate &&
+    !selectedShopHours.enabled;
+  const manualTimeWithinShopHours = bookingSlotRulesEnabled
+    ? true
+    : isReservationTimeWithinShopHours(normalizedReservationTime, selectedShopHours);
+  const manualTimeOutsideShopHours =
+    !bookingSlotRulesEnabled &&
+    Boolean(normalizedReservationTime) &&
+    !manualTimeDayClosed &&
+    !manualTimeWithinShopHours;
+  const hasValidReservationTimeSelection = bookingSlotRulesEnabled
+    ? Boolean(selectedTimeSlot?.isAvailable)
+    : Boolean(normalizedReservationTime) && !manualTimeDayClosed && manualTimeWithinShopHours;
   const formErrors = {
     name: form.name.trim() ? "" : t("Please enter your name."),
     phone: phoneValid ? "" : t("Please enter a valid phone number."),
@@ -1385,7 +1550,7 @@ export default function QrReservationBookingPage() {
     form.reservation_date &&
     form.reservation_time &&
     selectedGuestCount > 0 &&
-    selectedTimeSlot?.isAvailable &&
+    hasValidReservationTimeSelection &&
     Number(form.table_number || 0) > 0 &&
     !guestCompositionError &&
     !submitting;
@@ -1508,9 +1673,18 @@ export default function QrReservationBookingPage() {
         formErrors.phone ||
         formErrors.email ||
         (!form.reservation_date ? t("Please select a date.") : "") ||
+        (manualTimeDayClosed ? t("Reservations are unavailable for the selected day.") : "") ||
         (!form.reservation_time ? t("Please select a time.") : "") ||
+        (manualTimeOutsideShopHours
+          ? t("Please select a time between {{open}} and {{close}}.", {
+              open: selectedShopHours.open,
+              close: selectedShopHours.close,
+            })
+          : "") ||
         (selectedGuestCount <= 0 ? t("Please select guest amount.") : "") ||
-        (!selectedTimeSlot?.isAvailable ? t("Please select an available time.") : "") ||
+        (bookingSlotRulesEnabled && !selectedTimeSlot?.isAvailable
+          ? t("Please select an available time.")
+          : "") ||
         (!Number(form.table_number || 0) ? t("Please select a table from the floor plan.") : "") ||
         guestCompositionError;
       if (firstError) {
@@ -1643,18 +1817,23 @@ export default function QrReservationBookingPage() {
     formErrors.email,
     formErrors.name,
     formErrors.phone,
+    bookingSlotRulesEnabled,
     guestCompositionError,
     guestCompositionVisible,
     hasGuestCompositionInput,
     identifier,
     getCustomerPhoneVerificationStatus,
+    manualTimeDayClosed,
+    manualTimeOutsideShopHours,
     menuPath,
     menCount,
     navigate,
     phoneValue,
     saveCheckoutPrefill,
+    selectedShopHours.close,
+    selectedShopHours.open,
     selectedGuestCount,
-    selectedTimeSlot?.isAvailable,
+    hasValidReservationTimeSelection,
     storage,
     t,
     womenCount,
@@ -1716,7 +1895,7 @@ export default function QrReservationBookingPage() {
     : hasConfirmedTable
       ? !canSubmit
       : !form.reservation_date ||
-        !form.reservation_time ||
+        !hasValidReservationTimeSelection ||
         pickerOpen ||
         selectedGuestCount <= 0 ||
         Boolean(guestCompositionError);
@@ -1759,7 +1938,9 @@ export default function QrReservationBookingPage() {
         description={
           hasConcertEventOnSelectedDate
             ? t("This date has an event. Open the event instead of selecting a reservation slot.")
-            : t("Available slots update live based on your guest count.")
+            : bookingSlotRulesEnabled
+              ? t("Available slots update live based on your guest count.")
+              : t("Choose your preferred reservation time.")
         }
         rightSlot={
           hasConcertEventOnSelectedDate ? (
@@ -1768,7 +1949,7 @@ export default function QrReservationBookingPage() {
                 {t("Loading")}
               </span>
             ) : null
-          ) : slotsLoading ? (
+          ) : bookingSlotRulesEnabled && slotsLoading ? (
             <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
               {t("Loading")}
             </span>
@@ -1812,7 +1993,7 @@ export default function QrReservationBookingPage() {
               );
             })}
           </div>
-        ) : (
+        ) : bookingSlotRulesEnabled ? (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {(Array.isArray(slots) ? slots : []).map((slot) => {
               const selected = slot.time === form.reservation_time;
@@ -1843,6 +2024,52 @@ export default function QrReservationBookingPage() {
                   : t("Select a date to load reservation slots.")}
               </div>
             ) : null}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <input
+              type="time"
+              value={normalizedReservationTime}
+              min={manualTimeHasBoundedInputWindow ? selectedShopHours.open : undefined}
+              max={manualTimeHasBoundedInputWindow ? selectedShopHours.close : undefined}
+              disabled={manualTimeDayClosed || shopHoursLoading}
+              onChange={(event) =>
+                setForm((prev) => ({
+                  ...prev,
+                  reservation_time: event.target.value,
+                }))
+              }
+              className={[
+                "w-full rounded-[24px] border bg-white px-4 py-4 text-base text-neutral-900 dark:bg-neutral-950 dark:text-white",
+                manualTimeOutsideShopHours
+                  ? "border-rose-500 dark:border-rose-500"
+                  : "border-neutral-200 dark:border-neutral-800",
+              ].join(" ")}
+            />
+            <p
+              className={[
+                "text-sm",
+                manualTimeOutsideShopHours
+                  ? "text-rose-600 dark:text-rose-400"
+                  : "text-neutral-500 dark:text-neutral-400",
+              ].join(" ")}
+            >
+              {shopHoursLoading
+                ? t("Loading shop hours.")
+                : manualTimeDayClosed
+                  ? t("Reservations are unavailable for the selected day.")
+                  : manualTimeOutsideShopHours
+                    ? t("Please select a time between {{open}} and {{close}}.", {
+                        open: selectedShopHours.open,
+                        close: selectedShopHours.close,
+                      })
+                    : selectedShopHours.open && selectedShopHours.close
+                      ? t("Choose a time between {{open}} and {{close}}.", {
+                          open: selectedShopHours.open,
+                          close: selectedShopHours.close,
+                        })
+                      : t("Choose your preferred reservation time.")}
+            </p>
           </div>
         )}
       </BookingSection>

@@ -433,7 +433,7 @@ function TablesView({
   const tableTimers = useTableTimers({ ordersByTable, productPrepById });
   const [bookingSearch, setBookingSearch] = React.useState("");
   const [bookingDateFrom, setBookingDateFrom] = React.useState(() => formatDateInputValue(new Date()));
-  const [bookingDateTo, setBookingDateTo] = React.useState(() => formatDateInputValue(new Date()));
+  const [bookingDateTo, setBookingDateTo] = React.useState(() => "");
   const [bookingActionSubmittingKey, setBookingActionSubmittingKey] = React.useState("");
   const normalizedTableDensity = React.useMemo(
     () => normalizeTableDensity(tableDensity),
