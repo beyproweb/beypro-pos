@@ -134,6 +134,7 @@ import {
   toRgba,
   writeCachedQrMenuBranding,
 } from "../features/qrmenu/utils/branding";
+import { normalizeQrMenuHomepageSectionOrder } from "../features/qrmenu/utils/homepageLayout";
 import {
   boolish,
   extractTableNumberFromQrText,
@@ -735,8 +736,9 @@ async function load() {
     };
   }, [displayRestaurantName, subtitle, tagline]);
 
-  const storyTitle = c.story_title || "Our Story";
-  const storyText = c.story_text || "";
+  const storyTitleRaw = String(c.story_title || "").trim();
+  const storyTitle = storyTitleRaw || "Our Story";
+  const storyText = String(c.story_text || "");
   const storyVideoTitle = String(c.story_video_title || "").trim();
   const storyVideoSource = String(c.story_video_source || "").trim().toLowerCase();
   const storyVideoYoutubeEmbeds = React.useMemo(() => {
@@ -822,7 +824,16 @@ async function load() {
 
     return uniqueImages.map((item) => resolveUploadedAsset(item));
   }, [c.story_images, c.story_image]);
-  const showStorySection = boolish(c.story_enabled, true) && storyImages.length > 0;
+  const storyEnabled = boolish(c.story_enabled, true);
+  const homepageSectionOrder = React.useMemo(
+    () => normalizeQrMenuHomepageSectionOrder(c.display_order),
+    [c.display_order]
+  );
+  const showStorySection =
+    storyEnabled &&
+    (storyImages.length > 0 || Boolean(storyTitleRaw) || Boolean(storyText.trim()) || showStoryVideoSection);
+  const showStoryImagesSection = storyEnabled && storyImages.length > 0;
+  const showStoryVideoContentSection = storyEnabled && showStoryVideoSection;
 
   const reviews = Array.isArray(c.reviews) ? c.reviews : [];
 
@@ -1059,6 +1070,8 @@ async function load() {
     if (!active) return list;
     return list.filter((p) => (p?.category || "").trim().toLowerCase() === active);
   }, [homeProducts, activeHomeCategory, homeSearch, hideAllProducts]);
+  const showProductsSearchCategoriesSection =
+    !hideAllProducts && (homeCategories.length > 0 || homeVisibleProducts.length > 0);
 
   // ===== Loyalty (optional) =====
   const [deviceId, setDeviceId] = React.useState(() => {
@@ -1133,6 +1146,7 @@ async function load() {
 
   const [concertLoading, setConcertLoading] = React.useState(false);
   const [concertEvents, setConcertEvents] = React.useState([]);
+  const showConcertTicketsEventsSection = concertEvents.length > 0;
   const [concertModalOpen, setConcertModalOpen] = React.useState(false);
   const [concertModalEvent, setConcertModalEvent] = React.useState(null);
   const [concertSubmitting, setConcertSubmitting] = React.useState(false);
@@ -1883,6 +1897,7 @@ async function load() {
           src: s.image,
         }))
       : [];
+  const showHeroSection = slides.length > 0 || Boolean(tagline);
 
 
   const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -2156,6 +2171,611 @@ async function load() {
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  const homepageSectionShellClassName = "max-w-6xl mx-auto px-4";
+
+  const orderedHomepageSections = homepageSectionOrder
+    .map((sectionId) => {
+      switch (sectionId) {
+        case "products_search_categories":
+          if (!showProductsSearchCategoriesSection) return null;
+          return (
+            <section key="products_search_categories" id="products-search-categories-section" className={`${homepageSectionShellClassName} space-y-5`}>
+              {!hideAllProducts && homeCategories.length > 0 ? (
+                <div className="max-w-3xl">
+                  <div className="mb-4">
+                    <div className="relative flex items-center gap-2">
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-neutral-500" />
+                      <input
+                        value={homeSearch}
+                        onChange={(e) => setHomeSearch(e.target.value)}
+                        placeholder={t("Search")}
+                        className="w-full rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/70 shadow-sm pl-11 pr-10 py-3 text-sm text-gray-800 dark:text-neutral-100 placeholder:text-gray-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-gray-300/60 dark:focus:ring-white/10"
+                        autoComplete="off"
+                        inputMode="search"
+                      />
+                      {homeSearch ? (
+                        <button
+                          type="button"
+                          onClick={() => setHomeSearch("")}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-200 hover:bg-gray-200 dark:hover:bg-neutral-700 transition flex items-center justify-center"
+                          aria-label={t("Clear")}
+                        >
+                          ×
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={handleVoiceStart}
+                        className={`ml-3 flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow ${
+                          voiceListening
+                            ? "bg-emerald-600 text-white animate-pulse"
+                            : "bg-white border border-gray-200 text-gray-800 hover:bg-gray-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100"
+                        }`}
+                      >
+                        <Mic className="w-4 h-4" />
+                        <span className="hidden sm:inline">{t("Voice Order")}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <CategorySlider
+                      categories={homeCategories}
+                      activeCategory={activeHomeCategory}
+                      onCategorySelect={(cat) => setActiveHomeCategory(cat)}
+                      categoryImages={homeCategoryImages}
+                      apiUrl={API_URL}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {!hideAllProducts && homeVisibleProducts.length > 0 ? (
+                <div className="max-w-3xl">
+                  <div className="grid grid-cols-2 gap-3">
+                    {homeVisibleProducts.map((product) => {
+                      const fallbackSrc = "/Productsfallback.jpg";
+                      const img = product?.image;
+                      const src = img
+                        ? /^https?:\/\//.test(String(img))
+                          ? String(img)
+                          : `${API_URL}/uploads/${String(img).replace(/^\/+/, "")}`
+                        : "";
+
+                      return (
+                        <button
+                          key={product?.id ?? `${product?.name}-${product?.price}`}
+                          type="button"
+                          onClick={() =>
+                            onPopularClick?.(product, {
+                              source: "home-products",
+                              returnToHomeAfterAdd: true,
+                            })
+                          }
+                          className="group text-left rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/70 shadow-sm hover:shadow-md hover:-translate-y-[1px] transition"
+                        >
+                          <div className="p-2">
+                            <div className="w-full aspect-[4/5] rounded-xl overflow-hidden bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800">
+                              <img
+                                src={src || fallbackSrc}
+                                alt={product?.name || "Product"}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                loading="lazy"
+                                onError={(e) => {
+                                  e.currentTarget.onerror = null;
+                                  e.currentTarget.src = fallbackSrc;
+                                }}
+                              />
+                            </div>
+                            <div className="mt-2 text-xs font-semibold text-neutral-800 dark:text-neutral-100 line-clamp-2 text-center">
+                              {product?.name || "-"}
+                            </div>
+                            <div className="mt-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100 text-center">
+                              {formatCurrency(parseFloat(product?.price || 0))}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          );
+
+        case "concert_tickets_events":
+          if (!showConcertTicketsEventsSection) return null;
+          return (
+            <section key="concert_tickets_events" id="concert-tickets-events-section" className={homepageSectionShellClassName}>
+              <div className="space-y-3">
+                {concertEvents.map((event) => {
+                  const isFreeConcert = boolish(event?.free_concert, false);
+                  const forcedSoldOut =
+                    String(event?.status || "").toLowerCase() === "sold_out" ||
+                    (event?.auto_sold_out === true);
+                  const computedEventSlot = computeConcertSlot({
+                    eventDate: event?.event_date,
+                    eventTime: event?.event_time,
+                    settings: qrBookingSettings,
+                  });
+                  const eventSlotEndRaw =
+                    event?.slot_end_datetime ||
+                    computedEventSlot?.slot_end_datetime ||
+                    "";
+                  const eventSlotEndDate = parseLocalDateTime(eventSlotEndRaw);
+                  let fallbackEventEndDate = null;
+                  if (!eventSlotEndDate) {
+                    const fallbackDate = String(event?.event_date || "").slice(0, 10);
+                    const fallbackTimeRaw = String(event?.event_time || "").trim();
+                    const fallbackTime = /^\d{2}:\d{2}(:\d{2})?$/.test(fallbackTimeRaw)
+                      ? fallbackTimeRaw
+                      : "00:00:00";
+                    if (fallbackDate) {
+                      const fallbackStartDate = parseLocalDateTime(`${fallbackDate} ${fallbackTime}`);
+                      if (fallbackStartDate) {
+                        const fallbackDurationMinutes = Math.max(
+                          15,
+                          Number(event?.event_duration_minutes) ||
+                            Number(qrBookingSettings?.concert_event_duration_minutes) ||
+                            150
+                        );
+                        fallbackStartDate.setMinutes(
+                          fallbackStartDate.getMinutes() + fallbackDurationMinutes
+                        );
+                        fallbackEventEndDate = fallbackStartDate;
+                      }
+                    }
+                  }
+                  const eventDateIsOver =
+                    ((eventSlotEndDate instanceof Date &&
+                      Number.isFinite(eventSlotEndDate.getTime()) &&
+                      eventSlotEndDate.getTime() < Date.now()) ||
+                      (fallbackEventEndDate instanceof Date &&
+                        Number.isFinite(fallbackEventEndDate.getTime()) &&
+                        fallbackEventEndDate.getTime() < Date.now()));
+                  const eventImage = resolveUploadedAsset(event?.event_image);
+                  const artistName = String(event?.artist_name || "").trim();
+                  const eventTitle = String(event?.event_title || "").trim();
+                  const showEventTitle =
+                    eventTitle && eventTitle.toLowerCase() !== artistName.toLowerCase();
+                  const eventDate = formatConcertDisplayDateWithoutYear(event?.event_date, lang);
+                  const eventWeekday = formatConcertDisplayWeekday(event?.event_date, lang);
+                  const eventTime = String(event?.event_time || "").slice(0, 5);
+                  const tableCountAvailable = Number(event?.available_table_count || 0) > 0;
+                  const ticketCountAvailable = Number(event?.available_ticket_count || 0) > 0;
+                  const normalTicketTypeAvailable = (event?.ticket_types || []).some(
+                    (row) => !row?.is_table_package && Number(row?.available_count || 0) > 0
+                  );
+                  const tablePackageTypeAvailable = (event?.ticket_types || []).some(
+                    (row) => row?.is_table_package && Number(row?.available_count || 0) > 0
+                  );
+                  const ticketAvailable = ticketCountAvailable || normalTicketTypeAvailable;
+                  const tableAvailable = tableCountAvailable && tablePackageTypeAvailable;
+                  const badgeSoldOut =
+                    forcedSoldOut ||
+                    (!isFreeConcert && !ticketAvailable && !tableAvailable);
+                  const fullySoldOut = badgeSoldOut;
+                  const concertBookingDeactivated = eventDateIsOver;
+                  const tableTicketType = (event?.ticket_types || []).find(
+                    (row) => row?.is_table_package && Number(row?.available_count || 0) > 0
+                  );
+                  const normalTicketType = (event?.ticket_types || []).find(
+                    (row) => !row?.is_table_package && Number(row?.available_count || 0) > 0
+                  );
+
+                  return (
+                    <div
+                      key={event.id}
+                      className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/75 p-4 shadow-sm"
+                    >
+                      {eventImage ? (
+                        <div className="mb-3 w-full aspect-[16/9] rounded-xl overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-950">
+                          <img
+                            src={eventImage}
+                            alt={event.event_title || event.artist_name || "Concert"}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        </div>
+                      ) : null}
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          {!isFreeConcert ? (
+                            <div className="mb-2 inline-flex items-center rounded-full border border-neutral-200 dark:border-neutral-700 bg-white/80 dark:bg-neutral-900 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-500 dark:text-neutral-300">
+                              {t("Concert Tickets")}
+                            </div>
+                          ) : null}
+                          <div className="pl-2.5">
+                            <div className="text-xl sm:text-2xl font-extrabold leading-tight text-neutral-900 dark:text-neutral-100">
+                              {artistName || eventTitle}
+                            </div>
+                            {showEventTitle ? (
+                              <div className="mt-0.5 text-xs sm:text-sm uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+                                {eventTitle}
+                              </div>
+                            ) : null}
+                            <div className="mt-1 text-sm sm:text-base font-medium text-neutral-700 dark:text-white/90">
+                              {eventDate}
+                              {eventWeekday ? ` • ${eventWeekday}` : ""}
+                              {eventTime ? ` ${eventTime}` : ""}
+                              {!isFreeConcert ? ` • ${concertPriceLabel(event)}` : ""}
+                            </div>
+                          </div>
+                        </div>
+                        {concertBookingDeactivated || badgeSoldOut ? (
+                          <span
+                            className={`text-xs px-2 py-1 rounded-full border ${
+                              concertBookingDeactivated
+                                ? "border-neutral-300 bg-neutral-100 text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                                : "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200"
+                            }`}
+                          >
+                            {concertBookingDeactivated ? t("Deactivated") : t("Sold Out")}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {(event?.ticket_types || []).length > 0 && !event?.hide_ticket_amount_display_badge ? (
+                        <div className="mt-2 pl-2.5 text-xs text-neutral-600 dark:text-neutral-300 space-y-1">
+                          {(event.ticket_types || []).slice(0, 4).map((ticketType) => (
+                            <div key={ticketType.id}>
+                              {ticketType.name}
+                              {ticketType.area_name ? ` • ${ticketType.area_name}` : ""}
+                              {!event?.hide_ticket_amount_display_badge
+                                ? ` • ${ticketType.available_count}/${ticketType.quantity_total}`
+                                : ""}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {(event?.area_allocations || []).length > 0 ? (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {(event.area_allocations || []).slice(0, 4).map((area) => (
+                            <span
+                              key={`${event.id}-${area.id}`}
+                              className="text-[11px] px-2 py-0.5 rounded-full border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300"
+                            >
+                              {area.area_name} • {area.allocation_type}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      <div className="mt-3 grid grid-cols-1 gap-2">
+                        <button
+                          type="button"
+                          disabled={fullySoldOut || concertBookingDeactivated}
+                          onClick={() => {
+                            if (isFreeConcert) {
+                              openFreeConcertReservationModal(event);
+                              return;
+                            }
+                            openConcertBookingModal(event, {
+                              bookingType: tableAvailable && tableTicketType ? "table" : "ticket",
+                              ticketTypeId:
+                                (tableAvailable && tableTicketType
+                                  ? tableTicketType?.id
+                                  : normalTicketType?.id || tableTicketType?.id) || "",
+                            });
+                          }}
+                          className="rounded-xl border px-3 py-2 text-sm font-semibold text-white transition disabled:opacity-45 disabled:cursor-not-allowed"
+                          style={{
+                            backgroundColor: concertReservationButtonColor,
+                            borderColor: concertReservationButtonColor,
+                          }}
+                        >
+                          {isFreeConcert ? t("Reservation") : t("Buy Ticket")}
+                        </button>
+                        {concertBookingDeactivated ? (
+                          <p className="text-xs text-neutral-600 dark:text-neutral-300">
+                            {t("Concert date is over. Booking is disabled.")}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          );
+
+        case "hero_slider":
+          if (!showHeroSection) return null;
+          return (
+            <section key="hero_slider" id="hero-slider-section" className={homepageSectionShellClassName}>
+              <div className="space-y-4 max-w-3xl mx-auto">
+                {slides.length > 0 ? (
+                  <FeaturedCard
+                    slides={slides}
+                    currentSlide={currentSlide}
+                    setCurrentSlide={setCurrentSlide}
+                    onTouchStart={handleTouchStart}
+                    onTouchEnd={handleTouchEnd}
+                    t={t}
+                  />
+                ) : null}
+                {tagline ? (
+                  <p className="text-sm text-gray-500 dark:text-neutral-400 max-w-xl mx-auto text-center leading-relaxed">
+                    {tagline}
+                  </p>
+                ) : null}
+              </div>
+            </section>
+          );
+
+        case "loyalty_program":
+          if (!loyalty.enabled) return null;
+          return (
+            <section key="loyalty_program" id="loyalty-program-section" className={homepageSectionShellClassName}>
+              <div className="rounded-3xl border border-amber-200/70 dark:border-amber-800/50 bg-white/80 dark:bg-amber-950/20 p-5 shadow-sm max-w-3xl mx-auto">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-lg font-semibold">⭐ {t("Loyalty Card")}</div>
+                  <div className="text-sm text-right text-gray-600 dark:text-gray-300">
+                    {t("Reward")}: {loyalty.reward_text || t("Free Menu Item")}
+                  </div>
+                </div>
+                <button
+                  onClick={handleStamp}
+                  style={{ backgroundColor: loyalty.color }}
+                  disabled={!canStampLoyalty}
+                  className={`mt-3 mb-5 px-4 py-2 rounded-xl text-[14px] text-white font-semibold shadow transition ${
+                    canStampLoyalty ? "hover:opacity-90" : "opacity-50 cursor-not-allowed"
+                  }`}
+                >
+                  {t("Stamp my card")}
+                </button>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: loyalty.goal || 10 }).map((_, i) => {
+                    const filled = i < Math.min(loyalty.points % (loyalty.goal || 10), loyalty.goal || 10);
+                    return (
+                      <span
+                        key={i}
+                        className={`w-5 h-5 rounded-full border ${filled ? "bg-amber-500 border-amber-600" : "bg-transparent border-amber-400"} inline-block`}
+                      />
+                    );
+                  })}
+                  <span className="ml-2 text-sm text-gray-500">
+                    ({Math.min(loyalty.points % (loyalty.goal || 10), loyalty.goal || 10)}/{loyalty.goal})
+                  </span>
+                </div>
+              </div>
+            </section>
+          );
+
+        case "popular_this_week":
+          if (hideAllProducts || !c.enable_popular || popularProducts.length === 0) return null;
+          return (
+            <section key="popular_this_week" id="popular-this-week-section" className={homepageSectionShellClassName}>
+              <div className="max-w-3xl mx-auto">
+                <PopularCarousel
+                  title={`⭐ ${t("Popular This Week")}`}
+                  items={popularProducts}
+                  onProductClick={onPopularClick}
+                />
+              </div>
+            </section>
+          );
+
+        case "our_story_section":
+          if (!showStoryVideoContentSection) return null;
+          return (
+            <section key="our_story_section" id="story-section" className={homepageSectionShellClassName}>
+              <div className="max-w-4xl mx-auto">
+                <div id="story-video-section">
+                  {storyVideoTitle ? (
+                    <h2 className="mb-3 text-center text-[1.4rem] sm:text-[1.7rem] font-serif font-semibold tracking-[-0.02em] text-gray-900 dark:text-neutral-50">
+                      {storyVideoTitle}
+                    </h2>
+                  ) : null}
+                  {storyVideoYoutubePlayerUrls.length > 0 ? (
+                    <div className="mx-auto max-w-4xl space-y-4">
+                      {storyVideoYoutubePlayerUrls.map((videoUrl, index) => (
+                        <div
+                          key={`story-video-${index}`}
+                          className="overflow-hidden rounded-[28px] border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
+                        >
+                          <div className="aspect-video w-full bg-black">
+                            <iframe
+                              src={videoUrl}
+                              title={`${t("Story Video")} ${index + 1}`}
+                              className="h-full w-full"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                              referrerPolicy="strict-origin-when-cross-origin"
+                              allowFullScreen
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="max-w-4xl mx-auto overflow-hidden rounded-[28px] border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+                      <div className="aspect-video w-full bg-black">
+                        <video
+                          src={activeStoryVideo}
+                          autoPlay
+                          muted
+                          playsInline
+                          loop
+                          controls
+                          preload="metadata"
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+          );
+
+        case "story_images":
+          if (!showStoryImagesSection) return null;
+          return (
+            <section key="story_images" id="story-images-section" className={homepageSectionShellClassName}>
+              <div className="w-full max-w-4xl mx-auto space-y-5">
+                <div className="mx-auto w-full max-w-[390px]">
+                  <div
+                    className="relative overflow-hidden rounded-[36px] border border-white/20 bg-neutral-950 shadow-[0_26px_80px_rgba(15,23,42,0.32)]"
+                    onTouchStart={storyImages.length > 1 ? handleStoryTouchStart : undefined}
+                    onTouchEnd={storyImages.length > 1 ? handleStoryTouchEnd : undefined}
+                    style={{
+                      touchAction: "pan-y",
+                      boxShadow: `0 26px 80px ${toRgba(primaryAccentColor, 0.24) || "rgba(15,23,42,0.24)"}`,
+                    }}
+                  >
+                    <div className="absolute inset-x-0 top-0 z-20 p-3 sm:p-4">
+                      <div className="flex items-center gap-1.5">
+                        {storyImages.map((_, index) => (
+                          <span
+                            key={`story-progress-${index}`}
+                            className="h-1 flex-1 overflow-hidden rounded-full bg-white/25"
+                          >
+                            <span
+                              className="block h-full rounded-full transition-all duration-300"
+                              style={{
+                                width:
+                                  index < currentStorySlide
+                                    ? "100%"
+                                    : index === currentStorySlide
+                                      ? "100%"
+                                      : "0%",
+                                backgroundColor: "rgba(255,255,255,0.96)",
+                              }}
+                            />
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="mt-3 flex items-center justify-between gap-3 text-white">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div
+                            className="h-10 w-10 shrink-0 overflow-hidden rounded-full p-[2px]"
+                            style={{
+                              background: `linear-gradient(135deg, ${primaryAccentColor}, ${toRgba(primaryAccentColor, 0.45) || primaryAccentColor})`,
+                            }}
+                          >
+                            <div className="h-full w-full overflow-hidden rounded-full border border-white/70 bg-neutral-900">
+                              {mainTitleLogo ? (
+                                <img
+                                  src={mainTitleLogo}
+                                  alt={displayRestaurantName || storyTitle}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-sm font-semibold text-white">
+                                  {String(displayRestaurantName || storyTitle || "S").charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold">
+                              {displayRestaurantName || storyTitle || ""}
+                            </div>
+                            <div className="truncate text-[11px] text-white/70">
+                              {storyImages.length > 1
+                                ? `${currentStorySlide + 1}/${storyImages.length}`
+                                : ""}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="relative aspect-[9/16] w-full bg-neutral-900">
+                      <div
+                        className="flex h-full w-full transition-transform duration-700 ease-out"
+                        style={{ transform: `translateX(-${currentStorySlide * 100}%)` }}
+                      >
+                        {storyImages.map((image, index) => (
+                          <div key={`${image}-${index}`} className="relative h-full w-full shrink-0 overflow-hidden">
+                            <img
+                              src={image}
+                              alt={`${storyTitle} ${index + 1}`}
+                              className="h-full w-full object-cover"
+                              loading={index === 0 ? "eager" : "lazy"}
+                            />
+                            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.42)_0%,rgba(0,0,0,0.08)_28%,rgba(0,0,0,0)_48%,rgba(0,0,0,0.22)_78%,rgba(0,0,0,0.7)_100%)]" />
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-4 pb-5 pt-16 text-white">
+                        <div className="space-y-1.5">
+                          {storyTitleRaw ? (
+                            <div className="text-lg font-semibold leading-tight text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
+                              {storyTitle}
+                            </div>
+                          ) : null}
+                          {storyText ? (
+                            <p className="max-w-[88%] text-sm leading-relaxed text-white/90 whitespace-pre-line drop-shadow-[0_2px_12px_rgba(0,0,0,0.42)]">
+                              {storyText}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {storyImages.length > 1 ? (
+                  <div className="flex items-center justify-center gap-2">
+                    {storyImages.map((_, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => setCurrentStorySlide(index)}
+                        className={`transition-all ${
+                          index === currentStorySlide
+                            ? "w-7 h-1.5 rounded-full bg-neutral-900 dark:bg-neutral-100"
+                            : "w-2 h-2 rounded-full bg-neutral-300 dark:bg-neutral-700 hover:bg-neutral-400 dark:hover:bg-neutral-500"
+                        }`}
+                        aria-label={`${t("Go to slide")} ${index + 1}`}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          );
+
+        case "customer_reviews":
+          if (reviews.length === 0) return null;
+          return (
+            <section key="customer_reviews" id="reviews-section" className={homepageSectionShellClassName}>
+              <h2 className="text-3xl font-serif font-bold text-gray-900 dark:text-neutral-50 mb-4">
+                {t("Reviews")}
+              </h2>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {reviews.map((r, idx) => (
+                  <div
+                    key={idx}
+                    className="rounded-2xl bg-white dark:bg-neutral-900 shadow-sm border border-neutral-200 dark:border-neutral-800 p-4 flex flex-col gap-2"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-xs font-semibold text-neutral-700 dark:text-neutral-200">
+                        {(r.name || "?")[0]}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{r.name}</p>
+                        <p className="text-xs text-amber-500">★★★★★</p>
+                      </div>
+                    </div>
+                    <p className="text-sm text-neutral-600 dark:text-neutral-300 mt-1">{r.text}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          );
+
+        default:
+          return null;
+      }
+    })
+    .filter(Boolean);
+
   /* ============================================================
      4) Render the UI (same structure, now dynamic)
      ============================================================ */
@@ -2224,509 +2844,13 @@ async function load() {
           />
         }
       />
-		
-      {/* === HERO SECTION === */}
-        <section id="order-section" className="max-w-6xl mx-auto px-4 pt-[24px] pb-4 space-y-10">
 
-              {/* CONCERT TICKETS */}
-                {concertEvents.length > 0 ? (
-	                  <div className="space-y-3">
-                    {concertEvents.map((event) => {
-                      const isFreeConcert = boolish(event?.free_concert, false);
-                      const forcedSoldOut =
-                        String(event?.status || "").toLowerCase() === "sold_out" ||
-                        (event?.auto_sold_out === true);
-                      const computedEventSlot = computeConcertSlot({
-                        eventDate: event?.event_date,
-                        eventTime: event?.event_time,
-                        settings: qrBookingSettings,
-                      });
-                      const eventSlotEndRaw =
-                        event?.slot_end_datetime ||
-                        computedEventSlot?.slot_end_datetime ||
-                        "";
-                      const eventSlotEndDate = parseLocalDateTime(eventSlotEndRaw);
-                      let fallbackEventEndDate = null;
-                      if (!eventSlotEndDate) {
-                        const fallbackDate = String(event?.event_date || "").slice(0, 10);
-                        const fallbackTimeRaw = String(event?.event_time || "").trim();
-                        const fallbackTime = /^\d{2}:\d{2}(:\d{2})?$/.test(fallbackTimeRaw)
-                          ? fallbackTimeRaw
-                          : "00:00:00";
-                        if (fallbackDate) {
-                          const fallbackStartDate = parseLocalDateTime(`${fallbackDate} ${fallbackTime}`);
-                          if (fallbackStartDate) {
-                            const fallbackDurationMinutes = Math.max(
-                              15,
-                              Number(event?.event_duration_minutes) ||
-                                Number(qrBookingSettings?.concert_event_duration_minutes) ||
-                                150
-                            );
-                            fallbackStartDate.setMinutes(
-                              fallbackStartDate.getMinutes() + fallbackDurationMinutes
-                            );
-                            fallbackEventEndDate = fallbackStartDate;
-                          }
-                        }
-                      }
-                      const eventDateIsOver =
-                        ((eventSlotEndDate instanceof Date &&
-                          Number.isFinite(eventSlotEndDate.getTime()) &&
-                          eventSlotEndDate.getTime() < Date.now()) ||
-                          (fallbackEventEndDate instanceof Date &&
-                            Number.isFinite(fallbackEventEndDate.getTime()) &&
-                            fallbackEventEndDate.getTime() < Date.now()));
-                      const eventImage = resolveUploadedAsset(event?.event_image);
-                      const artistName = String(event?.artist_name || "").trim();
-                      const eventTitle = String(event?.event_title || "").trim();
-                      const showEventTitle =
-                        eventTitle && eventTitle.toLowerCase() !== artistName.toLowerCase();
-                      const eventDate = formatConcertDisplayDateWithoutYear(event?.event_date, lang);
-                      const eventWeekday = formatConcertDisplayWeekday(event?.event_date, lang);
-                      const eventTime = String(event?.event_time || "").slice(0, 5);
-                      const tableCountAvailable = Number(event?.available_table_count || 0) > 0;
-                      const ticketCountAvailable = Number(event?.available_ticket_count || 0) > 0;
-                      const normalTicketTypeAvailable = (event?.ticket_types || []).some(
-                        (row) => !row?.is_table_package && Number(row?.available_count || 0) > 0
-                      );
-                      const tablePackageTypeAvailable = (event?.ticket_types || []).some(
-                        (row) => row?.is_table_package && Number(row?.available_count || 0) > 0
-                      );
-                      const ticketAvailable = ticketCountAvailable || normalTicketTypeAvailable;
-                      const tableAvailable = tableCountAvailable && tablePackageTypeAvailable;
-                      const badgeSoldOut =
-                        forcedSoldOut ||
-                        (!isFreeConcert && !ticketAvailable && !tableAvailable);
-                      const fullySoldOut = badgeSoldOut;
-                      const concertBookingDeactivated = eventDateIsOver;
-                      const tableTicketType = (event?.ticket_types || []).find(
-                        (row) => row?.is_table_package && Number(row?.available_count || 0) > 0
-                      );
-                      const normalTicketType = (event?.ticket_types || []).find(
-                        (row) => !row?.is_table_package && Number(row?.available_count || 0) > 0
-                      );
-
-                      return (
-                        <div
-                          key={event.id}
-                          className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/75 p-4 shadow-sm"
-                        >
-                          {eventImage ? (
-                            <div className="mb-3 w-full aspect-[16/9] rounded-xl overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-950">
-                              <img
-                                src={eventImage}
-                                alt={event.event_title || event.artist_name || "Concert"}
-                                className="w-full h-full object-cover"
-                                loading="lazy"
-                              />
-                            </div>
-                          ) : null}
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              {!isFreeConcert ? (
-                                <div className="mb-2 inline-flex items-center rounded-full border border-neutral-200 dark:border-neutral-700 bg-white/80 dark:bg-neutral-900 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-500 dark:text-neutral-300">
-                                  {t("Concert Tickets")}
-                                </div>
-                              ) : null}
-                              <div className="pl-2.5">
-                                <div className="text-xl sm:text-2xl font-extrabold leading-tight text-neutral-900 dark:text-neutral-100">
-                                  {artistName || eventTitle}
-                                </div>
-                                {showEventTitle ? (
-                                  <div className="mt-0.5 text-xs sm:text-sm uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
-                                    {eventTitle}
-                                  </div>
-                                ) : null}
-                                <div className="mt-1 text-sm sm:text-base font-medium text-neutral-700 dark:text-white/90">
-                                  {eventDate}
-                                  {eventWeekday ? ` • ${eventWeekday}` : ""}
-                                  {eventTime ? ` ${eventTime}` : ""}
-                                  {!isFreeConcert ? ` • ${concertPriceLabel(event)}` : ""}
-                                </div>
-                              </div>
-                            </div>
-                            {concertBookingDeactivated || badgeSoldOut ? (
-                              <span
-                                className={`text-xs px-2 py-1 rounded-full border ${
-                                  concertBookingDeactivated
-                                    ? "border-neutral-300 bg-neutral-100 text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
-                                    : "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200"
-                                }`}
-                              >
-                                {concertBookingDeactivated ? t("Deactivated") : t("Sold Out")}
-                              </span>
-                            ) : null}
-                          </div>
-
-                          {(event?.ticket_types || []).length > 0 && !event?.hide_ticket_amount_display_badge ? (
-                            <div className="mt-2 pl-2.5 text-xs text-neutral-600 dark:text-neutral-300 space-y-1">
-                              {(event.ticket_types || []).slice(0, 4).map((ticketType) => (
-                                <div key={ticketType.id}>
-                                  {ticketType.name}
-                                  {ticketType.area_name ? ` • ${ticketType.area_name}` : ""}
-                                  {!event?.hide_ticket_amount_display_badge
-                                    ? ` • ${ticketType.available_count}/${ticketType.quantity_total}`
-                                    : ""}
-                                </div>
-                              ))}
-                            </div>
-                          ) : null}
-
-                          {(event?.area_allocations || []).length > 0 ? (
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              {(event.area_allocations || []).slice(0, 4).map((area) => (
-                                <span
-                                  key={`${event.id}-${area.id}`}
-                                  className="text-[11px] px-2 py-0.5 rounded-full border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300"
-                                >
-                                  {area.area_name} • {area.allocation_type}
-                                </span>
-                              ))}
-                            </div>
-                          ) : null}
-
-                          <div className="mt-3 grid grid-cols-1 gap-2">
-                            <button
-                              type="button"
-                              disabled={fullySoldOut || concertBookingDeactivated}
-                              onClick={() => {
-                                if (isFreeConcert) {
-                                  openFreeConcertReservationModal(event);
-                                  return;
-                                }
-                                openConcertBookingModal(event, {
-                                  bookingType: tableAvailable && tableTicketType ? "table" : "ticket",
-                                  ticketTypeId:
-                                    (tableAvailable && tableTicketType
-                                      ? tableTicketType?.id
-                                      : normalTicketType?.id || tableTicketType?.id) || "",
-                                });
-                              }}
-                              className="rounded-xl border px-3 py-2 text-sm font-semibold text-white transition disabled:opacity-45 disabled:cursor-not-allowed"
-                              style={{
-                                backgroundColor: concertReservationButtonColor,
-                                borderColor: concertReservationButtonColor,
-                              }}
-                            >
-                              {isFreeConcert ? t("Reservation") : t("Buy Ticket")}
-                            </button>
-                            {concertBookingDeactivated ? (
-                              <p className="text-xs text-neutral-600 dark:text-neutral-300">
-                                {t("Concert date is over. Booking is disabled.")}
-                              </p>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })}
-	                  </div>
-                  ) : null}
-
-              <div className="max-w-4xl mx-auto">
-              {showStoryVideoSection ? (
-                <div id="story-video-section" className="mt-6">
-                  {storyVideoTitle ? (
-                    <h2 className="mb-3 text-center text-[1.4rem] sm:text-[1.7rem] font-serif font-semibold tracking-[-0.02em] text-gray-900 dark:text-neutral-50">
-                      {storyVideoTitle}
-                    </h2>
-                  ) : null}
-                  {storyVideoYoutubePlayerUrls.length > 0 ? (
-                    <div className="mx-auto max-w-4xl space-y-4">
-                      {storyVideoYoutubePlayerUrls.map((videoUrl, index) => (
-                        <div
-                          key={`story-video-${index}`}
-                          className="overflow-hidden rounded-[28px] border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
-                        >
-                          <div className="aspect-video w-full bg-black">
-                            <iframe
-                              src={videoUrl}
-                              title={`${t("Story Video")} ${index + 1}`}
-                              className="h-full w-full"
-                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                              referrerPolicy="strict-origin-when-cross-origin"
-                              allowFullScreen
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="max-w-4xl mx-auto overflow-hidden rounded-[28px] border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
-                      <div className="aspect-video w-full bg-black">
-                        <video
-                          src={activeStoryVideo}
-                          autoPlay
-                          muted
-                          playsInline
-                          loop
-                          controls
-                          preload="metadata"
-                          className="h-full w-full object-cover"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : null}
-
-		      </div>
-
-      {/* MENU CATEGORIES */}
-      {!hideAllProducts && homeCategories.length > 0 && (
-        <div className="mt-3 max-w-3xl">
-		          {/* Search */}
-		          <div className="mt-3 mb-4">
-	            <div className="relative flex items-center gap-2">
-	              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-neutral-500" />
-	              <input
-	                value={homeSearch}
-	                onChange={(e) => setHomeSearch(e.target.value)}
-	                placeholder={t("Search")}
-	                className="w-full rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/70 shadow-sm pl-11 pr-10 py-3 text-sm text-gray-800 dark:text-neutral-100 placeholder:text-gray-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-gray-300/60 dark:focus:ring-white/10"
-	                autoComplete="off"
-	                inputMode="search"
-	              />
-	              {homeSearch ? (
-	                <button
-	                  type="button"
-	                  onClick={() => setHomeSearch("")}
-	                  className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-neutral-200 hover:bg-gray-200 dark:hover:bg-neutral-700 transition flex items-center justify-center"
-	                  aria-label={t("Clear")}
-	                >
-	                  ×
-	                </button>
-	              ) : null}
-                <button
-                  type="button"
-                  onClick={handleVoiceStart}
-                  className={`ml-3 flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow ${
-                    voiceListening
-                      ? "bg-emerald-600 text-white animate-pulse"
-                      : "bg-white border border-gray-200 text-gray-800 hover:bg-gray-50 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-100"
-                  }`}
-                >
-                  <Mic className="w-4 h-4" />
-                  <span className="hidden sm:inline">{t("Voice Order")}</span>
-                </button>
-	            </div>
-	          </div>
-
-          <div className="mt-3">
-            <CategorySlider
-              categories={homeCategories}
-              activeCategory={activeHomeCategory}
-              onCategorySelect={(cat) => setActiveHomeCategory(cat)}
-              categoryImages={homeCategoryImages}
-              apiUrl={API_URL}
-            />
+          <div className="pt-6 sm:pt-8 space-y-6 sm:space-y-8">
+            {orderedHomepageSections}
           </div>
-        </div>
-      )}
-
-      {/* PRODUCTS (2 columns) */}
-      {!hideAllProducts && homeVisibleProducts.length > 0 && (
-        <div className="mt-5 max-w-3xl">
-          <div className="grid grid-cols-2 gap-3">
-            {homeVisibleProducts.map((product) => {
-              const fallbackSrc = "/Productsfallback.jpg";
-              const img = product?.image;
-              const src = img
-                ? /^https?:\/\//.test(String(img))
-                  ? String(img)
-                  : `${API_URL}/uploads/${String(img).replace(/^\/+/, "")}`
-                : "";
-
-              return (
-                <button
-                  key={product?.id ?? `${product?.name}-${product?.price}`}
-                  type="button"
-	                  onClick={() =>
-	                    onPopularClick?.(product, {
-	                      source: "home-products",
-	                      returnToHomeAfterAdd: true,
-	                    })
-	                  }
-	                  className="group text-left rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/70 shadow-sm hover:shadow-md hover:-translate-y-[1px] transition"
-	                >
-	                  <div className="p-2">
-	                    <div className="w-full aspect-[4/5] rounded-xl overflow-hidden bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800">
-                        <img
-                          src={src || fallbackSrc}
-                          alt={product?.name || "Product"}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                          loading="lazy"
-                          onError={(e) => {
-                            e.currentTarget.onerror = null;
-                            e.currentTarget.src = fallbackSrc;
-                          }}
-                        />
-	                    </div>
-	                    <div className="mt-2 text-xs font-semibold text-neutral-800 dark:text-neutral-100 line-clamp-2 text-center">
-	                      {product?.name || "—"}
-	                    </div>
-	                    <div className="mt-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100 text-center">
-	                      {formatCurrency(parseFloat(product?.price || 0))}
-	                    </div>
-	                  </div>
-	                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-        {/* Featured products */}
-        <div className="mt-7 space-y-4 max-w-3xl mx-auto">
-          <FeaturedCard
-            slides={slides}
-            currentSlide={currentSlide}
-            setCurrentSlide={setCurrentSlide}
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-            t={t}
-          />
-        </div>
-        {tagline ? (
-          <p className="mt-4 text-sm text-gray-500 dark:text-neutral-400 max-w-xl mx-auto text-center leading-relaxed">{tagline}</p>
-        ) : null}
-
-      {/* LOYALTY CARD (optional) */}
-      {loyalty.enabled && (
-        <div className="mt-2 rounded-3xl border border-amber-200/70 dark:border-amber-800/50 bg-white/80 dark:bg-amber-950/20 p-5 shadow-sm max-w-3xl">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-lg font-semibold">⭐ {t("Loyalty Card")}</div>
-            <div className="text-sm text-right text-gray-600 dark:text-gray-300">
-              {t("Reward")}: {loyalty.reward_text || t("Free Menu Item")}
-            </div>
-          </div>
-          <button
-            onClick={handleStamp}
-            style={{ backgroundColor: loyalty.color }}
-            disabled={!canStampLoyalty}
-            className={`mt-3 mb-5 px-4 py-2 rounded-xl text-[14px] text-white font-semibold shadow transition ${
-              canStampLoyalty ? "hover:opacity-90" : "opacity-50 cursor-not-allowed"
-            }`}
-          >
-            {t("Stamp my card")}
-          </button>
-          <div className="flex items-center gap-1">
-            {Array.from({ length: loyalty.goal || 10 }).map((_, i) => {
-              const filled = i < Math.min(loyalty.points % (loyalty.goal || 10), loyalty.goal || 10);
-              return (
-                <span key={i}
-                  className={`w-5 h-5 rounded-full border ${filled ? 'bg-amber-500 border-amber-600' : 'bg-transparent border-amber-400'} inline-block`}
-                />
-              );
-            })}
-            <span className="ml-2 text-sm text-gray-500">({Math.min(loyalty.points % (loyalty.goal || 10), loyalty.goal || 10)}/{loyalty.goal})</span>
-          </div>
-        </div>
-      )}
-
-	      {/* Popular This Week */}
-	      {!hideAllProducts && c.enable_popular && popularProducts.length > 0 && (
-	        <div className="mt-6 max-w-3xl">
-	          <PopularCarousel
-	            title={`⭐ ${t("Popular This Week")}`}
-	            items={popularProducts}
-	            onProductClick={onPopularClick}
-	          />
-	        </div>
-	      )}
-	    </section>
-
-    {/* === STORY SECTION === */}
-      {showStorySection && (
-		      <section id="story-section" className="max-w-6xl mx-auto px-4 pt-3 pb-14">
-		        <div className="grid grid-cols-1 gap-6 lg:gap-10 items-center">
-		          <div className="max-w-2xl mx-auto text-center">
-		            <h2 className="text-[2rem] sm:text-[2.35rem] font-serif font-semibold tracking-[-0.03em] text-gray-900 dark:text-neutral-50">
-		              {storyTitle}
-		            </h2>
-		            {storyText ? (
-		              <p className="mt-3 text-[15px] sm:text-base text-gray-600 dark:text-neutral-300 leading-relaxed whitespace-pre-line">
-		                {storyText}
-		              </p>
-		            ) : null}
-		          </div>
-	
-		          <div className="w-full max-w-4xl mx-auto">
-		            <div
-		              className="relative overflow-hidden rounded-[28px] border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900"
-		              onTouchStart={storyImages.length > 1 ? handleStoryTouchStart : undefined}
-	              onTouchEnd={storyImages.length > 1 ? handleStoryTouchEnd : undefined}
-	              style={{ touchAction: "pan-y" }}
-	            >
-	              <div className="aspect-[4/5] sm:aspect-[16/10] md:aspect-[4/3] w-full bg-neutral-100 dark:bg-neutral-950">
-	                <div
-	                  className="flex h-full w-full transition-transform duration-700 ease-out"
-	                  style={{ transform: `translateX(-${currentStorySlide * 100}%)` }}
-	                >
-	                  {storyImages.map((image, index) => (
-	                    <div key={`${image}-${index}`} className="h-full w-full shrink-0">
-	                      <img
-	                        src={image}
-	                        alt={`${storyTitle} ${index + 1}`}
-	                        className="h-full w-full object-cover"
-	                        loading={index === 0 ? "eager" : "lazy"}
-	                      />
-	                    </div>
-	                  ))}
-	                </div>
-	              </div>
-	            </div>
-
-	            {storyImages.length > 1 ? (
-	              <div className="mt-3 flex items-center justify-center gap-2">
-	                {storyImages.map((_, index) => (
-	                  <button
-	                    key={index}
-	                    type="button"
-	                    onClick={() => setCurrentStorySlide(index)}
-	                    className={`transition-all ${
-	                      index === currentStorySlide
-	                        ? "w-6 h-1.5 rounded-full bg-neutral-900 dark:bg-neutral-100"
-	                        : "w-2 h-2 rounded-full bg-neutral-300 dark:bg-neutral-700 hover:bg-neutral-400 dark:hover:bg-neutral-500"
-	                    }`}
-	                    aria-label={`${t("Go to slide")} ${index + 1}`}
-	                  />
-	                ))}
-	              </div>
-	            ) : null}
-	          </div>
-	        </div>
-	      </section>
-      )}
-
-      {reviews.length > 0 ? (
-	    <section id="reviews-section" className="max-w-6xl mx-auto px-4 pt-2 pb-16">
-	      <h2 className="text-3xl font-serif font-bold text-gray-900 dark:text-neutral-50 mb-4">
-	        {t("Reviews")}
-	      </h2>
-
-	      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-	        {reviews.map((r, idx) => (
-	          <div
-	            key={idx}
-	            className="rounded-2xl bg-white dark:bg-neutral-900 shadow-sm border border-neutral-200 dark:border-neutral-800 p-4 flex flex-col gap-2"
-	          >
-	            <div className="flex items-center gap-2">
-	              <div className="w-8 h-8 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-xs font-semibold text-neutral-700 dark:text-neutral-200">
-	                {(r.name || "?")[0]}
-	              </div>
-	              <div>
-	                <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{r.name}</p>
-	                <p className="text-xs text-amber-500">★★★★★</p>
-	              </div>
-	            </div>
-	            <p className="text-sm text-neutral-600 dark:text-neutral-300 mt-1">{r.text}</p>
-	          </div>
-	        ))}
-	      </div>
-	    </section>
-      ) : null}
 
       {/* === BOTTOM ACTIONS === */}
-      <section className="max-w-6xl mx-auto px-4 pb-6">
+          <section className="max-w-6xl mx-auto px-4 pt-6 sm:pt-8 pb-6">
         <div className="max-w-3xl mx-auto rounded-3xl border border-neutral-200/80 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/70 backdrop-blur-sm p-3 sm:p-4 shadow-sm">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
             {phoneNumber ? (

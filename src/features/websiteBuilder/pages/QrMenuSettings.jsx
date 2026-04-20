@@ -26,6 +26,11 @@ import {
   renumberFloorPlanTables,
   syncFloorPlanLayoutWithTables,
 } from "../../floorPlan/utils/floorPlan";
+import {
+  QR_MENU_HOMEPAGE_SECTIONS,
+  QR_MENU_DEFAULT_HOMEPAGE_SECTION_ORDER,
+  normalizeQrMenuHomepageSectionOrder,
+} from "../../qrmenu/utils/homepageLayout";
 
 const extractIdentifierFromQrUrl = (value) => {
   const raw = String(value || "").trim();
@@ -43,6 +48,7 @@ const extractIdentifierFromQrUrl = (value) => {
 
 const QR_MENU_BRANDING_UPDATED_EVENT = "qr:branding-cache-updated";
 const QR_EXPORT_SIZE = 2048;
+const QR_MENU_SETTINGS_API_PATH = "/settings/qrmenu";
 
 const writeQrMenuBrandingCache = (identifier, customization) => {
   if (typeof window === "undefined") return;
@@ -431,6 +437,7 @@ export default function QrMenuSettings() {
   loyalty_reward_text: "Free Menu Item",
   loyalty_color: "#F59E0B",
   hero_slides: [],
+  display_order: QR_MENU_DEFAULT_HOMEPAGE_SECTION_ORDER,
   story_enabled: true,
   story_title: "",
   story_text: "",
@@ -619,6 +626,7 @@ export default function QrMenuSettings() {
     };
     const normalizedCustomization = {
       ...customization,
+      display_order: normalizeQrMenuHomepageSectionOrder(customization.display_order),
       call_waiter_button_enabled:
         customization.call_waiter_button_enabled ?? customization.call_button_enabled ?? true,
       app_icon: normalizeAssetValue(customization.app_icon),
@@ -771,6 +779,69 @@ export default function QrMenuSettings() {
 
 function updateField(key, value) {
   setSettings((prev) => ({ ...prev, [key]: value }));
+}
+
+const homepageSectionOrder = useMemo(
+  () => normalizeQrMenuHomepageSectionOrder(settings.display_order),
+  [settings.display_order]
+);
+
+const syncHomepageSectionOrder = React.useCallback(
+  async (nextOrder, settingsSnapshot) => {
+    const normalizedOrder = normalizeQrMenuHomepageSectionOrder(nextOrder);
+    const identifier = String(
+      extractIdentifierFromQrUrl(qrUrl) || currentRestaurantSlug || ""
+    ).trim();
+
+    if (identifier) {
+      writeQrMenuBrandingCache(identifier, {
+        ...settingsSnapshot,
+        display_order: normalizedOrder,
+      });
+    }
+
+    try {
+      await secureFetch(QR_MENU_SETTINGS_API_PATH, {
+        method: "POST",
+        body: JSON.stringify({
+          display_order: normalizedOrder,
+        }),
+      });
+    } catch (err) {
+      console.error("❌ Failed to save homepage section order:", err);
+      toast.error(err?.message || t("Failed to save homepage section order"));
+    }
+  },
+  [currentRestaurantSlug, qrUrl, t]
+);
+
+function moveHomepageSection(sectionId, direction) {
+  let nextSettingsSnapshot = null;
+
+  setSettings((prev) => {
+    const currentOrder = normalizeQrMenuHomepageSectionOrder(prev.display_order);
+    const currentIndex = currentOrder.indexOf(sectionId);
+    const targetIndex = currentIndex + direction;
+
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= currentOrder.length) {
+      return prev;
+    }
+
+    const nextOrder = [...currentOrder];
+    const [movedSection] = nextOrder.splice(currentIndex, 1);
+    nextOrder.splice(targetIndex, 0, movedSection);
+
+    nextSettingsSnapshot = {
+      ...prev,
+      display_order: nextOrder,
+    };
+
+    return nextSettingsSnapshot;
+  });
+
+  if (nextSettingsSnapshot) {
+    void syncHomepageSectionOrder(nextSettingsSnapshot.display_order, nextSettingsSnapshot);
+  }
 }
 
 function buildDeliveryCoveragePayload(currentSettings, zoneCitiesInput, fallbackProfile = {}) {
@@ -1090,13 +1161,14 @@ async function saveAllCustomization() {
       ...deliveryCoveragePayload,
       ...normalizedBookingSettings,
       custom_domain: String(customDomainInput || "").trim(),
+      display_order: normalizeQrMenuHomepageSectionOrder(settings.display_order),
       story_enabled: settings.story_enabled !== false,
       story_images: storyImages,
       story_image: storyImages[0] || "",
       story_video_youtube_urls: storyVideoYoutubeUrls,
       story_video_youtube_url: storyVideoYoutubeUrls[0] || "",
     };
-    const saveRes = await secureFetch("/settings/qr-menu-customization", {
+    const saveRes = await secureFetch(QR_MENU_SETTINGS_API_PATH, {
       method: "POST",
       body: JSON.stringify(payload),
     });
@@ -1148,7 +1220,7 @@ async function saveAllCustomization() {
         setDisabledIds(disData.disabled);
 
       // ✅ 3) LOAD QR MENU CUSTOMIZATION (THE FIX)
-      const customRes = await secureFetch("/settings/qr-menu-customization");
+      const customRes = await secureFetch(QR_MENU_SETTINGS_API_PATH);
       if (customRes?.success && customRes.customization) {
         applyLoadedCustomization(customRes.customization, customRes?.restaurant || null);
         setCustomDomainInput(String(customRes?.restaurant?.custom_domain || "").trim());
@@ -4445,6 +4517,62 @@ async function saveAllCustomization() {
         </div>
 
         {/* HERO SLIDER */}
+        <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-zinc-700 dark:bg-zinc-900/60">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h3 className="text-xl font-bold text-indigo-600">{t("Homepage Section Order")}</h3>
+              <p className="mt-1 text-sm text-slate-600 dark:text-zinc-300">
+                {t("Choose how homepage sections appear. Visibility still follows each section's existing toggle or content.")}
+              </p>
+            </div>
+            <div className="text-xs text-slate-500 dark:text-zinc-400">
+              {t("Saved with the main QR menu settings action.")}
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {homepageSectionOrder.map((sectionId, index) => {
+              const section = QR_MENU_HOMEPAGE_SECTIONS.find((entry) => entry.id === sectionId);
+              if (!section) return null;
+
+              return (
+                <div
+                  key={section.id}
+                  className="flex items-center justify-between gap-3 rounded-2xl border border-white/80 bg-white px-4 py-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-950"
+                >
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-zinc-500">
+                      {t("Position")} {index + 1}
+                    </div>
+                    <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                      {t(section.label)}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => moveHomepageSection(section.id, -1)}
+                      disabled={index === 0}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                    >
+                      {t("Up")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveHomepageSection(section.id, 1)}
+                      disabled={index === homepageSectionOrder.length - 1}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                    >
+                      {t("Down")}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="mt-6">
           <h3 className="mb-2 text-xl font-bold text-indigo-600">{t("Hero Slider")}</h3>
           <p className="mb-3 text-xs text-gray-500">
