@@ -47,6 +47,8 @@ export function createOrderStatusFlow(deps) {
               "",
             total: 0,
           };
+          const shouldBypassPhoneVerification =
+            phoneOrderDraft?.bypassPhoneVerification === true;
 
           // Avoid creating duplicate phone orders when multiple actions race.
           // If a create request is already in-flight, reuse it.
@@ -57,6 +59,9 @@ export function createOrderStatusFlow(deps) {
             const promise = (async () => {
               const result = await txApiRequest(`/orders${identifier}`, {
                 method: "POST",
+                headers: shouldBypassPhoneVerification
+                  ? { "x-skip-phone-verification": "1" }
+                  : undefined,
                 body: JSON.stringify(payload),
               });
               if (!result?.id) {

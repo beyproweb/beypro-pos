@@ -5,7 +5,7 @@ import { Toaster, toast } from "react-hot-toast";
 import { Plus, Save, Download, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import secureFetch from "../../utils/secureFetch";
-import { openCashDrawer, isCashLabel } from "../../utils/cashDrawer";
+import { openCashDrawer, logCashRegisterEvent, isCashLabel } from "../../utils/cashDrawer";
 import { useCurrency } from "../../context/CurrencyContext";
 const dateStr = (d) => new Date(d).toLocaleDateString("tr-TR");
 
@@ -796,6 +796,13 @@ const Payroll = () => {
       fetchStaffHistory(selectedStaff);
 
       if (isCashLabel(paymentMethod) && amt > 0) {
+        const staffName =
+          staffList.find((staff) => staff.id === selectedStaff)?.name || "Staff";
+        await logCashRegisterEvent({
+          type: "payroll",
+          amount: amt,
+          note: `${staffName} payroll payment`,
+        });
         await openCashDrawer();
       }
 

@@ -312,6 +312,7 @@ const handleStartOrder = async (options = {}) => {
       customer_address: addrObj.address,
       payment_method: paymentMethod,
       total: 0,
+      bypassPhoneVerification: true,
     };
 
     // Navigate instantly; TransactionScreen will create the order on first confirm.

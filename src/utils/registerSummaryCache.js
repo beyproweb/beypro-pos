@@ -102,7 +102,7 @@ const buildSummary = async () => {
 };
 
 // NEW: Load cash calculations in background (non-blocking)
-export async function loadExpectedCashInBackground(lastOpenAt) {
+export async function loadExpectedCashInBackground(lastOpenAt, openingCash = 0) {
   if (!lastOpenAt) return { expectedCash: 0, dailyCashExpense: 0 };
   
   try {
@@ -114,8 +114,10 @@ export async function loadExpectedCashInBackground(lastOpenAt) {
       fetchTodayExtraExpenses(),
     ]);
     console.log(`✅ Cash calculations loaded in ${(performance.now() - startTime).toFixed(0)}ms`);
+    const openingFloat = safeNumber(openingCash);
+    const expectedCash = openingFloat + cashSales - (dailyExpenses + extraExpenses);
     return {
-      expectedCash: cashSales,
+      expectedCash,
       dailyCashExpense: dailyExpenses + extraExpenses,
     };
   } catch (err) {

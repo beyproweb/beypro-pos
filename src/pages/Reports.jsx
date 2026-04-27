@@ -555,7 +555,7 @@ export default function Reports() {
         todayIcon={<CalendarIcon className="w-4 h-4" />}
         className="sticky top-3 z-20 rounded-[28px] border border-white/70 bg-white/80 p-3 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.45)] backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/80 sm:p-4"
       >
-        <div className="contents sm:flex sm:gap-2">
+        <div className="contents">
           <Button
             variant="outline"
             onClick={() => setShowExportModal(true)}

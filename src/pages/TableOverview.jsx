@@ -5793,6 +5793,9 @@ const kitchenReadyAtByOrderId = React.useMemo(() => {
       onClearBookings={handleClearOldFulfilledBookings}
       clearingBookings={clearingBookings}
       showSongRequestTab={canShowSongRequestFooterTab}
+      showPacketTab={canSeePacketTab}
+      onPacketTabClick={() => handleTabSelect("packet")}
+      packetOrdersCount={packetOrdersCount}
       songRequests={songRequests}
       songRequestsLoading={songRequestsLoading}
       songRequestUpdatingId={songRequestUpdatingId}

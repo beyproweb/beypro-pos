@@ -268,6 +268,19 @@ const QUICK_ACCESS_CONFIG = [
     icon: "PieChart",
   },
   {
+    id: "register",
+    labelKey: "Register",
+    defaultLabel: "Register",
+    group: "finance",
+    searchTerms: ["register", "cash register", "drawer", "cash drawer"],
+    path: "/tableoverview?tab=register",
+    color: "bg-gradient-to-r from-amber-500 to-orange-600",
+    iconColor: "text-amber-700",
+    iconRing: "ring-amber-400/40",
+    icon: "CreditCard",
+    permission: "register",
+  },
+  {
     id: "integrations",
     labelKey: "Integrations",
     defaultLabel: "Integrations",
@@ -816,6 +829,7 @@ const fetchSummaryStats = useCallback(async () => {
       "task",
       "user-management",
       "reports",
+      "register",
       "cash-history",
       "ingredient-prices",
       "history",
@@ -1053,7 +1067,7 @@ const fetchSummaryStats = useCallback(async () => {
           "border-violet-200/90 bg-white text-violet-800 shadow-sm shadow-violet-100/60 hover:-translate-y-0.5 hover:border-violet-300 hover:bg-violet-50 hover:shadow-md hover:shadow-violet-100/70 dark:border-violet-900/60 dark:bg-violet-950/20 dark:text-violet-100 dark:hover:border-violet-700 dark:hover:bg-violet-500/20 dark:hover:shadow-none",
         inactiveMetaClass: "text-violet-600/80 dark:text-violet-300/80",
         tileClass: "bg-gradient-to-br from-slate-700 to-slate-900",
-        ids: ["staff", "staff-checkin", "staff-schedule", "payroll", "task", "user-management", "role-management", "add-new-user"],
+        ids: ["staff", "staff-checkin", "staff-schedule", "task", "user-management", "role-management", "add-new-user", "maintenance"],
       },
       {
         key: "inventory",
@@ -1077,7 +1091,7 @@ const fetchSummaryStats = useCallback(async () => {
           "border-amber-200/90 bg-white text-amber-900 shadow-sm shadow-amber-100/60 hover:-translate-y-0.5 hover:border-amber-300 hover:bg-amber-50 hover:shadow-md hover:shadow-amber-100/70 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100 dark:hover:border-amber-700 dark:hover:bg-amber-500/20 dark:hover:shadow-none",
         inactiveMetaClass: "text-amber-700/80 dark:text-amber-300/80",
         tileClass: "bg-gradient-to-br from-slate-700 to-slate-900",
-        ids: ["reports", "expenses", "cash-history", "ingredient-prices"],
+        ids: ["reports", "expenses", "payroll", "register", "cash-history", "ingredient-prices"],
       },
       {
         key: "growth",
@@ -1101,7 +1115,7 @@ const fetchSummaryStats = useCallback(async () => {
           "border-slate-200/90 bg-white text-slate-800 shadow-sm shadow-slate-200/70 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-md hover:shadow-slate-200/80 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800",
         inactiveMetaClass: "text-slate-500 dark:text-slate-400",
         tileClass: "bg-gradient-to-br from-slate-700 to-slate-900",
-        ids: ["settings", "tables-settings", "transactions-settings", "qr-menu", "integrations", "notifications", "printers", "maintenance"],
+        ids: ["settings", "tables-settings", "transactions-settings", "qr-menu", "integrations", "notifications", "printers"],
       },
     ];
     const byId = new Map(allowedAccess.map((item) => [item.id, item]));

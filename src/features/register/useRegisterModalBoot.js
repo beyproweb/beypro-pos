@@ -25,20 +25,11 @@ export function useRegisterModalBoot({
 
     setCashDataLoaded(false);
     const resetHandlers = resetHandlersRef.current;
-    if (typeof resetHandlers?.setExpectedCash === "function") {
-      resetHandlers.setExpectedCash(0);
-    }
     if (typeof resetHandlers?.setDailyCashExpense === "function") {
       resetHandlers.setDailyCashExpense(0);
     }
     if (typeof resetHandlers?.setActualCash === "function") {
       resetHandlers.setActualCash("");
-    }
-    if (typeof resetHandlers?.setRegisterState === "function") {
-      resetHandlers.setRegisterState("loading");
-    }
-    if (typeof resetHandlers?.resetReconciliation === "function") {
-      resetHandlers.resetReconciliation();
     }
     if (typeof resetHandlers?.resetTerminalZReport === "function") {
       resetHandlers.resetTerminalZReport();
@@ -79,7 +70,13 @@ export function useRegisterModalBoot({
       (async () => {
         const openTime = summaryData?.lastOpenAt;
         if (openTime && typeof loadExpectedCashInBackground === "function") {
-          const result = await loadExpectedCashInBackground(openTime);
+          const result = await loadExpectedCashInBackground(
+            openTime,
+            summaryData?.openingCash ?? 0
+          );
+          if (typeof resetHandlers?.setExpectedCash === "function") {
+            resetHandlers.setExpectedCash(Number(result?.expectedCash || 0));
+          }
           if (typeof resetHandlers?.setDailyCashExpense === "function") {
             resetHandlers.setDailyCashExpense(result.dailyCashExpense);
           }
@@ -87,7 +84,7 @@ export function useRegisterModalBoot({
             openTime,
             expectedCashCandidate: Number(result?.expectedCash || 0),
             dailyCashExpense: Number(result?.dailyCashExpense || 0),
-            appliedToExpectedCash: false,
+            appliedToExpectedCash: true,
             at: new Date().toISOString(),
           });
         }

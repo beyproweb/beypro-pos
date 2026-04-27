@@ -413,6 +413,9 @@ function TablesView({
   onClearBookings,
   clearingBookings = false,
   showSongRequestTab = false,
+  showPacketTab = false,
+  onPacketTabClick = null,
+  packetOrdersCount = 0,
   songRequests = [],
   songRequestsLoading = false,
   songRequestUpdatingId = null,
@@ -1003,6 +1006,27 @@ function TablesView({
             >
               {renderAreaTabLabel(t("Free"), freeTablesCount, activeArea === AREA_FILTER_FREE)}
             </button>
+            {showPacketTab ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof onPacketTabClick === "function") onPacketTabClick();
+                }}
+                className={getAreaTabClassName(
+                  false,
+                  "border-transparent bg-gradient-to-br from-sky-500 via-blue-500 to-indigo-600 text-white ring-white/10 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(59,130,246,0.25)]",
+                  "border-slate-200/80 bg-white/72 text-slate-700 ring-white/70 backdrop-blur-xl hover:-translate-y-0.5 hover:bg-white dark:border-slate-700/80 dark:bg-slate-900/60 dark:text-slate-100 dark:ring-white/5 dark:hover:bg-slate-900/78"
+                )}
+              >
+                {renderAreaTabLabel(
+                  t("Packet"),
+                  Number.isFinite(Number(packetOrdersCount)) && Number(packetOrdersCount) > 0
+                    ? Number(packetOrdersCount)
+                    : null,
+                  false
+                )}
+              </button>
+            ) : null}
           </>
         ) : null}
         {showViewBookingTab ? (
@@ -1062,8 +1086,10 @@ function TablesView({
       handleAreaTabClick,
       onLockClick,
       paidTablesCount,
+      packetOrdersCount,
       rangeBookingCount,
       reservedTablesCount,
+      showPacketTab,
       showSongRequestTab,
       showStandardAreaTabs,
       showViewBookingTab,
@@ -1072,6 +1098,7 @@ function TablesView({
       unpaidTablesCount,
       freeTablesCount,
       formatAreaLabel,
+      onPacketTabClick,
       renderAreaTabLabel,
     ]
   );
@@ -1659,6 +1686,9 @@ const areTablesViewPropsEqual = (prevProps, nextProps) => {
     prevProps.onClearBookings === nextProps.onClearBookings &&
     prevProps.clearingBookings === nextProps.clearingBookings &&
     prevProps.showSongRequestTab === nextProps.showSongRequestTab &&
+    prevProps.showPacketTab === nextProps.showPacketTab &&
+    prevProps.onPacketTabClick === nextProps.onPacketTabClick &&
+    prevProps.packetOrdersCount === nextProps.packetOrdersCount &&
     prevProps.songRequests === nextProps.songRequests &&
     prevProps.songRequestsLoading === nextProps.songRequestsLoading &&
     prevProps.songRequestUpdatingId === nextProps.songRequestUpdatingId &&
@@ -1695,6 +1725,9 @@ const areTablesViewPropsEqual = (prevProps, nextProps) => {
         "onClearBookings",
         "clearingBookings",
         "showSongRequestTab",
+        "showPacketTab",
+        "onPacketTabClick",
+        "packetOrdersCount",
         "songRequests",
         "songRequestsLoading",
         "songRequestUpdatingId",

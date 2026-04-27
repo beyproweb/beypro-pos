@@ -17,7 +17,7 @@ export default function DateRangeSelector({
 
   return (
     <div className={`flex w-full flex-col gap-3 ${className}`}>
-      <div className="grid w-full grid-cols-5 gap-1 sm:flex sm:flex-wrap sm:gap-2">
+      <div className="grid w-full grid-cols-5 gap-1 sm:gap-2">
         <Button
           variant={range === "today" ? "default" : "outline"}
           onClick={() => onRangeChange("today")}

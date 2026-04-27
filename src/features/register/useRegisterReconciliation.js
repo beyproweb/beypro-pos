@@ -168,6 +168,28 @@ export function useRegisterReconciliation({
   }, [showRegisterModal, registerState, lastOpenAt, fetchRegisterReconciliation]);
 
   useEffect(() => {
+    const handleRefresh = () => {
+      if (!showRegisterModal) return;
+      if (registerState !== "open") return;
+      if (!lastOpenAt) return;
+      fetchRegisterReconciliation(lastOpenAt, { forceFresh: true });
+    };
+
+    window.addEventListener("register:refresh", handleRefresh);
+    window.addEventListener("reports:refresh", handleRefresh);
+
+    return () => {
+      window.removeEventListener("register:refresh", handleRefresh);
+      window.removeEventListener("reports:refresh", handleRefresh);
+    };
+  }, [
+    showRegisterModal,
+    registerState,
+    lastOpenAt,
+    fetchRegisterReconciliation,
+  ]);
+
+  useEffect(() => {
     return () => {
       delayedRefreshTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
       delayedRefreshTimeoutsRef.current.clear();
@@ -182,7 +204,9 @@ export function useRegisterReconciliation({
     reconciliation?.cashReconciliation?.expected_cash_total != null
       ? "reconciliation"
       : "fallback_state";
-  const openingFloat = Number(openingCash || reconciliation?.cashReconciliation?.opening_float || 0);
+  const openingFloat = Number(
+    reconciliation?.cashReconciliation?.opening_float ?? openingCash ?? 0
+  );
   const countedCashNumber = Number(actualCash || 0);
   const cashDifference = countedCashNumber - expectedCashComputed;
   const posCardTotal = reconciliation?.posTotals?.card_total ?? 0;
