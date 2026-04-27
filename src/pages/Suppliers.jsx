@@ -3342,14 +3342,27 @@ const sendSupplierCart = async (cartId) => {
     return "0.00";
   };
 
-const fetchSuppliers = async () => {
+const fetchSuppliers = async (preferredSupplierId = null) => {
     try {
       const data = await secureFetch("/suppliers");
-      if (Array.isArray(data)) setSuppliers(data);
-      else setSuppliers([]);
+      const nextSuppliers = Array.isArray(data) ? data : [];
+      setSuppliers(nextSuppliers);
+
+      const targetId = preferredSupplierId ?? selectedSupplier?.id ?? null;
+      if (targetId) {
+        const refreshedSelection = nextSuppliers.find(
+          (supplier) => String(supplier?.id) === String(targetId)
+        );
+        if (refreshedSelection) {
+          setSelectedSupplier(refreshedSelection);
+        }
+      }
+
+      return nextSuppliers;
     } catch (error) {
       console.error("❌ Error fetching suppliers:", error);
       setSuppliers([]);
+      return [];
     }
   };
 
@@ -5443,7 +5456,7 @@ const handlePayment = async () => {
 
       await fetchTransactions(selectedSupplier.id);
       await fetchSupplierDetails(selectedSupplier.id);
-      await fetchSuppliers();
+      await fetchSuppliers(selectedSupplier.id);
       setPaymentModalOpen(false);
 
       if (typeof window !== "undefined") {
@@ -5481,8 +5494,8 @@ const handlePayment = async () => {
       });
       if (!created?.id) throw new Error("Supplier create failed");
 
+      await fetchSuppliers(created.id);
       await fetchSupplierDetails(created.id);
-      await fetchSuppliers();
       setTransactions([]);
       setNewSupplier({
         name: "",
@@ -5838,6 +5851,24 @@ id}`, {
             {t("Delete Supplier")}
           </button>
         )}
+
+        {selectedSupplier && (
+          <div className="w-full sm:ml-auto sm:w-auto">
+            <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
+              <div className="flex items-center justify-center rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 shadow-sm dark:border-amber-500/30 dark:bg-amber-950/20 dark:text-amber-200">
+                <span>{t("Due")}: {formattedSelectedSupplierDue} TL</span>
+              </div>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-emerald-400 via-emerald-500 to-teal-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:from-emerald-500 hover:via-emerald-600 hover:to-teal-600 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => setPaymentModalOpen(true)}
+                disabled={!(Number(supplierFinancials?.outstanding ?? selectedSupplierDue) > 0)}
+              >
+                {t("Pay now")}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   </div>
@@ -6167,16 +6198,6 @@ id}`, {
                                       )}
                                     </span>
                                   </div>
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-emerald-400 via-emerald-500 to-teal-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:from-emerald-500 hover:via-emerald-600 hover:to-teal-600 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-                                    onClick={() => setPaymentModalOpen(true)}
-                                    disabled={
-                                      !(Number(supplierFinancials?.outstanding ?? selectedSupplierDue) > 0)
-                                    }
-                                  >
-                                    {t("Pay now")}
-                                  </button>
                                   <div className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-slate-900 via-indigo-600 to-indigo-400 px-5 py-2.5 text-sm font-semibold text-white shadow-md ring-1 ring-indigo-500/50 dark:from-slate-800 dark:via-indigo-500 dark:to-indigo-400">
                                     <span>{selectedSupplier.name}</span>
                                   </div>

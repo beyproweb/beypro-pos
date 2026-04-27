@@ -442,9 +442,6 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
                               onClick={item.onNameClick}
                             >
                               {item.name}
-                              <span className="ml-1.5 text-[10px] font-semibold text-slate-600 whitespace-nowrap">
-                                {item.basePriceLabel} ×{item.quantity}
-                              </span>
                             </span>
                             {item.hasProductDiscountMeta && (
                               <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600">
@@ -544,6 +541,9 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
                               >
                                 +
                               </button>
+                              <span className="ml-1 whitespace-nowrap text-[11px] leading-none text-slate-600">
+                                {item.basePriceLabel} ×{item.quantity}
+                              </span>
                             </div>
 
                             {item.isEditable && (
@@ -626,9 +626,6 @@ const CartPanel = ({ cartData, totals, actions, uiState, setUiState, variant }) 
                             <div className="min-w-0 flex-1">
                               <span className="truncate font-semibold text-slate-800 block text-[13px] leading-tight">
                                 {item.name}
-                                <span className="ml-2 text-[11px] font-medium text-slate-600">
-                                  {item.basePriceLabel} ×{item.quantity}
-                                </span>
                               </span>
                               {item.hasProductDiscountMeta && (
                                 <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600">

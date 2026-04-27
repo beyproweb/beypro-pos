@@ -1331,92 +1331,98 @@ const handleRenameCategory = async (original, value) => {
 
               {/* Group items */}
               {(group.items || []).map((item, itemIdx) => (
-                <div key={itemIdx} className="flex gap-2 mb-2">
-                  {/* Ingredient Dropdown */}
-                  <select
-                    value={item.name}
-                    onChange={(e) => {
-                      const updated = [...extrasGroups];
-                      updated[groupIdx].items[itemIdx].name = e.target.value;
+                <div
+                  key={itemIdx}
+                  className="mb-3 rounded-2xl border border-slate-200 bg-white p-3"
+                >
+                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1.6fr)_96px_96px_110px_44px] sm:items-start">
+                    {/* Ingredient Dropdown */}
+                    <select
+                      value={item.name}
+                      onChange={(e) => {
+                        const updated = [...extrasGroups];
+                        updated[groupIdx].items[itemIdx].name = e.target.value;
 
-                      // Auto-fill unit if match found
-                      const match = availableIngredients.find(
-                        (ai) => ai.name === e.target.value
-                      );
-                      if (match) {
-                        updated[groupIdx].items[itemIdx].unit = match.unit;
-                      }
+                        // Auto-fill unit if match found
+                        const match = availableIngredients.find(
+                          (ai) => ai.name === e.target.value
+                        );
+                        if (match) {
+                          updated[groupIdx].items[itemIdx].unit = match.unit;
+                        }
 
-                      setExtrasGroups(updated);
-                    }}
-                    className="flex-1 p-2 border rounded-xl"
-                  >
-                    <option value="">{t("Select Ingredient")}</option>
-                    {availableIngredients.map((ing, idx) => (
-                      <option key={idx} value={ing.name}>
-                        {ing.name} ({ing.unit})
-                      </option>
-                    ))}
-                  </select>
+                        setExtrasGroups(updated);
+                      }}
+                      className="w-full p-2 border rounded-xl"
+                    >
+                      <option value="">{t("Select Ingredient")}</option>
+                      {availableIngredients.map((ing, idx) => (
+                        <option key={idx} value={ing.name}>
+                          {ing.name} ({ing.unit})
+                        </option>
+                      ))}
+                    </select>
 
-                  {/* Price */}
-                  <input
-                    type="number"
-                    placeholder={t("Price")}
-                    value={item.price}
-                    onChange={(e) => {
-                      const updated = [...extrasGroups];
-                      updated[groupIdx].items[itemIdx].price = e.target.value;
-                      setExtrasGroups(updated);
-                    }}
-                    className="w-20 p-2 border rounded-xl"
-                  />
+                    {/* Price */}
+                    <input
+                      type="number"
+                      placeholder={t("Price")}
+                      value={item.price}
+                      onChange={(e) => {
+                        const updated = [...extrasGroups];
+                        updated[groupIdx].items[itemIdx].price = e.target.value;
+                        setExtrasGroups(updated);
+                      }}
+                      className="w-full p-2 border rounded-xl"
+                    />
 
-                  {/* Amount */}
-                  <input
-                    type="text"
-                    placeholder={t("Amount")}
-                    value={item.amount || ""}
-                    onChange={(e) => {
-                      const updated = [...extrasGroups];
-                      updated[groupIdx].items[itemIdx].amount = e.target.value;
-                      setExtrasGroups(updated);
-                    }}
-                    className="w-20 p-2 border rounded-xl"
-                  />
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder={t("Amount")}
+                      value={item.amount || ""}
+                      onChange={(e) => {
+                        const updated = [...extrasGroups];
+                        updated[groupIdx].items[itemIdx].amount = e.target.value;
+                        setExtrasGroups(updated);
+                      }}
+                      className="w-full p-2 border rounded-xl"
+                    />
 
-                  {/* Unit */}
-                  <select
-                    value={(item.unit === "piece" ? "pcs" : item.unit) || ""}
-                    onChange={(e) => {
-                      const updated = [...extrasGroups];
-                      updated[groupIdx].items[itemIdx].unit = e.target.value;
-                      setExtrasGroups(updated);
-                    }}
-                    className="w-24 p-2 border rounded-xl"
-                  >
-                    <option value="">{t("Select Unit")}</option>
-                    <option value="kg">kg</option>
-                    <option value="g">g</option>
-                    <option value="pcs">pcs</option>
-                    <option value="portion">portion</option>
-                    <option value="ml">ml</option>
-                    <option value="l">l</option>
-                  </select>
+                    {/* Unit */}
+                    <select
+                      value={(item.unit === "piece" ? "pcs" : item.unit) || ""}
+                      onChange={(e) => {
+                        const updated = [...extrasGroups];
+                        updated[groupIdx].items[itemIdx].unit = e.target.value;
+                        setExtrasGroups(updated);
+                      }}
+                      className="w-full p-2 border rounded-xl"
+                    >
+                      <option value="">{t("Select Unit")}</option>
+                      <option value="kg">kg</option>
+                      <option value="g">g</option>
+                      <option value="pcs">pcs</option>
+                      <option value="portion">portion</option>
+                      <option value="ml">ml</option>
+                      <option value="l">l</option>
+                    </select>
 
-                  {/* Delete item (local only; persisted on Save All) */}
-                  <button
-                    onClick={() => {
-                      const updated = [...extrasGroups];
-                      updated[groupIdx].items = updated[groupIdx].items.filter(
-                        (_, i) => i !== itemIdx
-                      );
-                      setExtrasGroups(updated);
-                    }}
-                    className="bg-red-500 text-white px-3 rounded-xl"
-                  >
-                    x
-                  </button>
+                    {/* Delete item (local only; persisted on Save All) */}
+                    <button
+                      onClick={() => {
+                        const updated = [...extrasGroups];
+                        updated[groupIdx].items = updated[groupIdx].items.filter(
+                          (_, i) => i !== itemIdx
+                        );
+                        setExtrasGroups(updated);
+                      }}
+                      className="rounded-xl bg-red-500 px-3 text-white"
+                    >
+                      x
+                    </button>
+                  </div>
                 </div>
               ))}
 
