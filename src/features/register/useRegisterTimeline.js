@@ -41,19 +41,15 @@ export function useRegisterTimeline({ secureFetch }) {
     async (today) => {
       const cached = getRegisterLogsCache(today);
       if (cached) {
-        console.log("📦 Loaded register logs from cache");
         setTodayRegisterEvents(cached.events || []);
         setTodayExpenses(cached.expenses || []);
         return;
       }
 
-      console.log("🔄 Fetching register logs...");
-      const startTime = performance.now();
       const [eventsRes, expensesRes] = await Promise.allSettled([
         secureFetch(`/reports/cash-register-events?from=${today}&to=${today}`),
         secureFetch(`/reports/expenses?from=${today}&to=${today}`),
       ]);
-      console.log(`✅ Register logs fetched in ${(performance.now() - startTime).toFixed(0)}ms`);
 
       const events = eventsRes.status === "fulfilled" ? eventsRes.value : [];
       const expenses = expensesRes.status === "fulfilled" ? expensesRes.value : [];

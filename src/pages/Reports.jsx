@@ -545,37 +545,41 @@ export default function Reports() {
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.14),_transparent_28%),linear-gradient(180deg,_#f8fbff_0%,_#f4f7fb_32%,_#eef2f7_100%)] px-3 py-4 sm:px-6 sm:py-8">
       <div className="mx-auto max-w-7xl space-y-5 sm:space-y-8">
-      <DateRangeSelector
-        range={dateRange}
-        onRangeChange={setDateRange}
-        customStart={customStart}
-        customEnd={customEnd}
-        onCustomStartChange={setCustomStart}
-        onCustomEndChange={setCustomEnd}
-        todayIcon={<CalendarIcon className="w-4 h-4" />}
-        className="sticky top-3 z-20 rounded-[28px] border border-white/70 bg-white/80 p-3 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.45)] backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/80 sm:p-4"
-      >
-        <div className="contents">
-          <Button
-            variant="outline"
-            onClick={() => setShowExportModal(true)}
-            className="inline-flex h-8 w-full min-w-0 items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-semibold leading-none tracking-tight whitespace-nowrap sm:h-11 sm:gap-2 sm:rounded-2xl sm:px-4 sm:text-sm sm:tracking-normal"
-          >
-            <Download className="hidden h-3.5 w-3.5 sm:block sm:h-4 sm:w-4" />
-            <span className="sm:hidden">{t("Exp")}</span>
-            <span className="hidden sm:inline">{t("Export")}</span>
-          </Button>
-          <Link to="/reports/operational" className="block w-full sm:w-auto">
+      <div className="sticky top-3 z-20 flex justify-end">
+        <DateRangeSelector
+          range={dateRange}
+          onRangeChange={setDateRange}
+          customStart={customStart}
+          customEnd={customEnd}
+          onCustomStartChange={setCustomStart}
+          onCustomEndChange={setCustomEnd}
+          todayIcon={<CalendarIcon className="w-4 h-4" />}
+          compact
+          buttonClassName="sm:min-w-[9.5rem]"
+          className="rounded-[28px] border border-white/70 bg-white/80 p-3 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.45)] backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/80 sm:p-4"
+        >
+          <div className="contents">
             <Button
-              variant="default"
-              className="h-8 w-full min-w-0 rounded-xl bg-indigo-600 px-1 text-[10px] font-semibold leading-none tracking-tight whitespace-nowrap shadow-lg shadow-indigo-500/20 hover:bg-indigo-700 sm:h-11 sm:rounded-2xl sm:px-4 sm:text-sm sm:tracking-normal"
+              variant="outline"
+              onClick={() => setShowExportModal(true)}
+              className="inline-flex h-8 w-full min-w-0 items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-semibold leading-none tracking-tight whitespace-nowrap sm:h-11 sm:min-w-[9.5rem] sm:gap-2 sm:rounded-2xl sm:px-4 sm:text-sm sm:tracking-normal"
             >
-              <span className="sm:hidden">{t("Ops")}</span>
-              <span className="hidden sm:inline">{t("Operational")}</span>
+              <Download className="hidden h-3.5 w-3.5 sm:block sm:h-4 sm:w-4" />
+              <span className="sm:hidden">{t("Exp")}</span>
+              <span className="hidden sm:inline">{t("Export")}</span>
             </Button>
-          </Link>
-        </div>
-      </DateRangeSelector>
+            <Link to="/reports/operational" className="block w-full sm:w-auto">
+              <Button
+                variant="default"
+                className="h-8 w-full min-w-0 rounded-xl bg-indigo-600 px-1 text-[10px] font-semibold leading-none tracking-tight whitespace-nowrap shadow-lg shadow-indigo-500/20 hover:bg-indigo-700 sm:h-11 sm:min-w-[9.5rem] sm:rounded-2xl sm:px-4 sm:text-sm sm:tracking-normal"
+              >
+                <span className="sm:hidden">{t("Ops")}</span>
+                <span className="hidden sm:inline">{t("Operational")}</span>
+              </Button>
+            </Link>
+          </div>
+        </DateRangeSelector>
+      </div>
 
       <SectionState
         loading={overviewLoading || cashHistoryLoading}

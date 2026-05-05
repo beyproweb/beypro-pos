@@ -10,6 +10,7 @@ import {
   fetchDriversApi,
   fetchIntegrationsSettingsApi,
   fetchKitchenCompileSettingsApi,
+  fetchOpenOrdersWithItemsApi,
   fetchOpenPhoneOrdersApi,
   fetchOrderItemsApi,
   fetchReceiptMethodsApi,
@@ -168,6 +169,25 @@ export function useOrdersController({
   const driverReportRefreshingRef = useRef(false);
   const routeRefreshingRef = useRef(false);
   const socketRefreshTimerRef = useRef(null);
+  const ordersCursorRef = useRef("");
+
+  const getRestaurantIdForBatch = useCallback(() => {
+    try {
+      const directLocal = String(window.localStorage?.getItem("restaurant_id") || "").trim();
+      if (directLocal) return directLocal;
+      const directSession = String(window.sessionStorage?.getItem("restaurant_id") || "").trim();
+      if (directSession) return directSession;
+      const userJson =
+        window.localStorage?.getItem("beyproUser") ||
+        window.sessionStorage?.getItem("beyproUser") ||
+        "{}";
+      const user = JSON.parse(userJson);
+      const derived = String(user?.restaurant_id || "").trim();
+      return derived || null;
+    } catch {
+      return null;
+    }
+  }, []);
 
   const normalizedDrinkNames = useMemo(
     () => drinksList.map((drink) => normalizeItemName(drink)),
@@ -259,7 +279,7 @@ export function useOrdersController({
         return;
       }
 
-      const { pollRetry = false } = options;
+      const { pollRetry = false, incremental = false } = options;
       if (ordersRefreshingRef.current) return;
 
       if (ordersAbortRef.current) {
@@ -273,24 +293,6 @@ export function useOrdersController({
       if (!orders.length) setLoading(true);
 
       const fetchTask = async () => {
-        const data = await fetchOpenPhoneOrdersApi(secureFetch, { signal });
-
-        const phoneOrders = data.filter((order) => {
-          const status = String(order.status || "").toLowerCase();
-          return (
-            (order.order_type === "phone" || order.order_type === "packet") &&
-            !["closed", "cancelled"].includes(status)
-          );
-        });
-
-        // Fast-path: render order cards immediately, then hydrate items in background.
-        const fastOrders = phoneOrders.map((order) =>
-          normalizeOrderWithKitchenStatus(order, [], drinksList, isKitchenExcludedItem)
-        );
-        if (!signal.aborted) {
-          setOrders((prev) => mergeOrdersById(prev, fastOrders));
-        }
-
         const shouldRetryItemsFetch = (order, fetchedItems) => {
           if (Array.isArray(fetchedItems) && fetchedItems.length > 0) return false;
           const status = String(order?.status || "").toLowerCase();
@@ -322,26 +324,92 @@ export function useOrdersController({
           return results.filter(Boolean);
         };
 
-        const withKitchenStatus = await runWithConcurrency(phoneOrders, 6, async (order) => {
-          let items = await fetchOrderItemsApi(secureFetch, order.id, { signal });
-          if (shouldRetryItemsFetch(order, items)) {
-            await waitWithAbort(ORDER_ITEMS_RETRY_DELAY_MS, signal);
-            items = await fetchOrderItemsApi(secureFetch, order.id, { signal });
-          }
-          const status = String(order?.status || "").toLowerCase();
-          if (status === "draft" && (!items || items.length === 0)) {
-            return null;
-          }
-          return normalizeOrderWithKitchenStatus(
-            order,
-            items,
-            drinksList,
-            isKitchenExcludedItem
+        const restaurantIdForBatch = getRestaurantIdForBatch();
+        let withKitchenStatus = [];
+
+        try {
+          const since = incremental ? ordersCursorRef.current : "";
+          const batchedPayload = await fetchOpenOrdersWithItemsApi(
+            secureFetch,
+            { mode: "packet", restaurantId: restaurantIdForBatch, since },
+            { signal }
           );
-        });
+          const batchedRows = Array.isArray(batchedPayload)
+            ? batchedPayload
+            : Array.isArray(batchedPayload?.orders)
+              ? batchedPayload.orders
+              : [];
+
+          withKitchenStatus = batchedRows
+            .map((order) => {
+              const items = Array.isArray(order?.items) ? order.items : [];
+              const status = String(order?.status || "").toLowerCase();
+              if (status === "draft" && items.length === 0) return null;
+              return normalizeOrderWithKitchenStatus(
+                order,
+                items,
+                drinksList,
+                isKitchenExcludedItem
+              );
+            })
+            .filter(Boolean);
+          const nextCursor = withKitchenStatus.reduce((latest, order) => {
+            const candidate = order?.updated_at || order?.created_at || "";
+            const candidateMs = Date.parse(candidate);
+            const latestMs = Date.parse(latest || "");
+            if (Number.isFinite(candidateMs) && (!Number.isFinite(latestMs) || candidateMs >= latestMs)) {
+              return new Date(candidateMs).toISOString();
+            }
+            return latest;
+          }, since || ordersCursorRef.current || "");
+          if (nextCursor) {
+            ordersCursorRef.current = nextCursor;
+          }
+        } catch (batchedErr) {
+          if (isAbortError(batchedErr)) throw batchedErr;
+
+          const data = await fetchOpenPhoneOrdersApi(secureFetch, { signal });
+
+          const phoneOrders = data.filter((order) => {
+            const status = String(order.status || "").toLowerCase();
+            return (
+              (order.order_type === "phone" || order.order_type === "packet") &&
+              !["closed", "cancelled"].includes(status)
+            );
+          });
+
+          // Render immediately, then hydrate items only on the fallback path.
+          const fastOrders = phoneOrders.map((order) =>
+            normalizeOrderWithKitchenStatus(order, [], drinksList, isKitchenExcludedItem)
+          );
+          if (!signal.aborted) {
+            setOrders((prev) => mergeOrdersById(prev, fastOrders));
+          }
+
+          withKitchenStatus = await runWithConcurrency(phoneOrders, 6, async (order) => {
+            let items = await fetchOrderItemsApi(secureFetch, order.id, { signal });
+            if (shouldRetryItemsFetch(order, items)) {
+              await waitWithAbort(ORDER_ITEMS_RETRY_DELAY_MS, signal);
+              items = await fetchOrderItemsApi(secureFetch, order.id, { signal });
+            }
+            const status = String(order?.status || "").toLowerCase();
+            if (status === "draft" && (!items || items.length === 0)) {
+              return null;
+            }
+            return normalizeOrderWithKitchenStatus(
+              order,
+              items,
+              drinksList,
+              isKitchenExcludedItem
+            );
+          });
+        }
 
         if (signal.aborted) return;
-        setOrders((prev) => mergeOrdersById(prev, withKitchenStatus));
+        setOrders((prev) => {
+          if (!incremental) return withKitchenStatus;
+          return mergeOrdersById(prev, withKitchenStatus);
+        });
         setError("");
       };
 
@@ -365,7 +433,16 @@ export function useOrdersController({
         }
       }
     },
-    [drinksList, hasPropOrders, isKitchenExcludedItem, log, orders.length, propOrders, secureFetch]
+    [
+      drinksList,
+      getRestaurantIdForBatch,
+      hasPropOrders,
+      isKitchenExcludedItem,
+      log,
+      orders.length,
+      propOrders,
+      secureFetch,
+    ]
   );
 
   useEffect(() => {
@@ -940,14 +1017,14 @@ export function useOrdersController({
       socketRefreshTimerRef.current = setTimeoutFn(async () => {
         socketRefreshTimerRef.current = null;
         if (!mounted || ordersRefreshingRef.current) return;
-        await fetchOrders({ pollRetry: true });
+        await fetchOrders({ pollRetry: true, incremental: true });
       }, 400);
     };
 
     const runPollingRefresh = async () => {
       if (hasPropOrders) return;
       if (!mounted || ordersRefreshingRef.current) return;
-      await fetchOrders({ pollRetry: true });
+      await fetchOrders({ pollRetry: true, incremental: true });
     };
 
     if (!hasPropOrders) {
@@ -957,9 +1034,17 @@ export function useOrdersController({
     }
 
     const handleOrderClosed = (payload = {}) => {
-      const closedId = Number(payload.orderId);
+      const closedId = Number(payload.orderId ?? payload.order_id ?? payload?.order?.id);
       if (Number.isFinite(closedId)) {
         setOrders((prev) => prev.filter((order) => Number(order.id) !== closedId));
+      }
+      scheduleSocketRefresh();
+    };
+
+    const handleOrderCancelled = (payload = {}) => {
+      const cancelledId = Number(payload.orderId ?? payload.order_id ?? payload?.order?.id);
+      if (Number.isFinite(cancelledId)) {
+        setOrders((prev) => prev.filter((order) => Number(order.id) !== cancelledId));
       }
       scheduleSocketRefresh();
     };
@@ -971,10 +1056,14 @@ export function useOrdersController({
     if (!hasPropOrders) {
       socket.on("orders_updated", scheduleSocketRefresh);
       socket.on("order_closed", handleOrderClosed);
+      socket.on("order_cancelled", handleOrderCancelled);
       socket.on("connect", handleConnect);
 
       if (pollingEnabled) {
-        intervalId = setIntervalFn(runPollingRefresh, pollingIntervalMs);
+        intervalId = setIntervalFn(() => {
+          if (socket.connected) return;
+          runPollingRefresh();
+        }, pollingIntervalMs);
       }
     }
 
@@ -983,6 +1072,7 @@ export function useOrdersController({
       if (intervalId) clearIntervalFn(intervalId);
       socket.off("orders_updated", scheduleSocketRefresh);
       socket.off("order_closed", handleOrderClosed);
+      socket.off("order_cancelled", handleOrderCancelled);
       socket.off("connect", handleConnect);
       if (socketRefreshTimerRef.current) {
         clearTimeoutFn(socketRefreshTimerRef.current);

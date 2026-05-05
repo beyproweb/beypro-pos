@@ -2,6 +2,18 @@ export async function fetchOpenPhoneOrdersApi(secureFetch, requestOptions = {}) 
   return secureFetch("/orders?status=open_phone", requestOptions);
 }
 
+export async function fetchOpenOrdersWithItemsApi(
+  secureFetch,
+  { mode = "both", restaurantId = null, since = "" } = {},
+  requestOptions = {}
+) {
+  const params = new URLSearchParams();
+  if (mode) params.set("mode", mode);
+  if (restaurantId) params.set("restaurant_id", restaurantId);
+  if (since) params.set("since", since);
+  return secureFetch(`/orders/open/with-items?${params.toString()}`, requestOptions);
+}
+
 export async function fetchOrderItemsApi(secureFetch, orderId, requestOptions = {}) {
   return secureFetch(`/orders/${orderId}/items`, requestOptions);
 }

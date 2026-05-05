@@ -246,7 +246,23 @@ export default function useTableOrdersData() {
   const ordersFetchSeqRef = useRef(0);
   const isMountedRef = useRef(true);
   const activeFetchControllerRef = useRef(null);
+  const ordersCursorRef = useRef("");
+  const reservationsCursorRef = useRef("");
   const { getTimersSnapshot, persistTimers, getConfirmedSinceMs } = useConfirmedTimers();
+
+  const getLatestCursor = useCallback((rows, fallback = "") => {
+    let latestMs = Number.isFinite(Date.parse(fallback)) ? Date.parse(fallback) : 0;
+    let latestValue = fallback || "";
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      const candidate = row?.updated_at || row?.created_at || "";
+      const candidateMs = Date.parse(candidate);
+      if (Number.isFinite(candidateMs) && candidateMs >= latestMs) {
+        latestMs = candidateMs;
+        latestValue = new Date(candidateMs).toISOString();
+      }
+    });
+    return latestValue;
+  }, []);
 
   useEffect(() => {
     writeReservationsTodayCache(Array.isArray(reservationsToday) ? reservationsToday : []);
@@ -367,6 +383,7 @@ export default function useTableOrdersData() {
 
   const refreshOrders = useCallback(async (options = {}) => {
     const skipHydration = options?.skipHydration === true;
+    const incremental = options?.incremental === true;
     const isDev = import.meta.env.DEV;
     const t0 = isDev ? performance.now() : 0;
     const controller = new AbortController();
@@ -376,16 +393,21 @@ export default function useTableOrdersData() {
       activeFetchControllerRef.current = controller;
       const seq = ++ordersFetchSeqRef.current;
       const isInitialLoad = !didInitialOrdersLoadRef.current;
+      const orderSince = incremental ? ordersCursorRef.current : "";
+      const reservationSince = incremental ? reservationsCursorRef.current : "";
       setOrdersLoading(true);
 
+      const today = formatLocalYmd(new Date());
+      const ordersPath = orderSince
+        ? `/orders?since=${encodeURIComponent(orderSince)}`
+        : "/orders";
+      const reservationsPath = reservationSince
+        ? `/orders/reservations?start_date=${today}&since=${encodeURIComponent(reservationSince)}`
+        : `/orders/reservations?start_date=${today}`;
+
       const [ordersRes, reservationsRes] = await Promise.allSettled([
-        secureFetch("/orders", { signal }),
-        (async () => {
-          const today = formatLocalYmd(new Date());
-          // Include upcoming reservations too; TableOverview cards should still show reserved
-          // even when reservation date is not today (e.g., empty cart reserved tables).
-          return secureFetch(`/orders/reservations?start_date=${today}`, { signal });
-        })(),
+        secureFetch(ordersPath, { signal }),
+        secureFetch(reservationsPath, { signal }),
       ]);
       if (signal.aborted || ordersFetchSeqRef.current !== seq) return;
 
@@ -436,8 +458,25 @@ export default function useTableOrdersData() {
           ? normalizeReservationList(reservationsRes.value)
           : [];
 
+      ordersCursorRef.current = getLatestCursor(data, orderSince);
+      reservationsCursorRef.current = getLatestCursor(reservationsList, reservationSince);
+
       if (isMountedRef.current) {
-        setReservationsToday(reservationsList);
+        setReservationsToday((prev) => {
+          if (!incremental) return reservationsList;
+          const next = new Map(
+            (Array.isArray(prev) ? prev : []).map((row) => [
+              Number(row?.id ?? row?.order_id ?? row?.orderId),
+              row,
+            ])
+          );
+          reservationsList.forEach((row) => {
+            const key = Number(row?.id ?? row?.order_id ?? row?.orderId);
+            if (!Number.isFinite(key)) return;
+            next.set(key, row);
+          });
+          return Array.from(next.values());
+        });
       }
 
       const reservationsByOrderId = new Map();
@@ -670,7 +709,11 @@ export default function useTableOrdersData() {
                 }
               }
               return acc;
-            }, {})
+            }, incremental
+              ? Object.fromEntries(
+                  Array.from(prevByTable.entries()).map(([key, value]) => [key, { ...value }])
+                )
+              : {})
           );
 
           const sorted = merged
@@ -813,7 +856,7 @@ export default function useTableOrdersData() {
             .map((n) => String(n))
         );
         for (const prevKey of prevByTable.keys()) {
-          if (!nextTableKeys.has(String(prevKey))) delete nextTimers[String(prevKey)];
+          if (!incremental && !nextTableKeys.has(String(prevKey))) delete nextTimers[String(prevKey)];
         }
 
         const nextOrders = mergedByTable.map((o) => {
@@ -848,6 +891,26 @@ export default function useTableOrdersData() {
             }),
           };
         });
+
+        if (incremental) {
+          const touchedTableKeys = new Set(
+            mergedByTable
+              .map((order) => getOrderTableNumber(order))
+              .filter(Number.isFinite)
+              .map((value) => String(value))
+          );
+          (Array.isArray(prev) ? prev : []).forEach((order) => {
+            const tableNumber = getOrderTableNumber(order);
+            if (!Number.isFinite(tableNumber)) {
+              nextOrders.push(order);
+              return;
+            }
+            if (!touchedTableKeys.has(String(tableNumber))) {
+              nextOrders.push(order);
+            }
+          });
+          nextOrders.sort((a, b) => getOrderTableNumber(a) - getOrderTableNumber(b));
+        }
         persistTimers(nextTimers);
         writeTableOrdersCache(nextOrders);
 
@@ -864,18 +927,26 @@ export default function useTableOrdersData() {
     } catch (err) {
       if (isAbortError(err)) return;
       console.error("❌ Fetch open orders failed:", err);
-      if (isMountedRef.current) {
+      if (isMountedRef.current && !incremental) {
         setOrders([]);
         setReservationsToday([]);
       }
-      toast.error("Could not load open orders");
+      if (!incremental) {
+        toast.error("Could not load open orders");
+      }
     } finally {
       if (activeFetchControllerRef.current === controller) {
         activeFetchControllerRef.current = null;
       }
       if (isMountedRef.current) setOrdersLoading(false);
     }
-  }, [getConfirmedSinceMs, getTimersSnapshot, hydrateOrderItemsInBackground, persistTimers]);
+  }, [
+    getConfirmedSinceMs,
+    getLatestCursor,
+    getTimersSnapshot,
+    hydrateOrderItemsInBackground,
+    persistTimers,
+  ]);
 
   useEffect(() => {
     isMountedRef.current = true;

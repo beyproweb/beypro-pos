@@ -5828,6 +5828,17 @@ id}`, {
           {t("Add Supplier")}
         </button>
 
+        <button
+          type="button"
+          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold shadow-md transition active:scale-[0.98] border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+          onClick={() => {
+            setActiveTab("suppliers");
+            scrollToId("transaction-history");
+          }}
+        >
+          {t("Transaction History")}
+        </button>
+
         {selectedSupplier && (
           <button
             type="button"

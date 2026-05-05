@@ -2,6 +2,7 @@ import { toast } from "react-toastify";
 import React, { useMemo, useState } from "react";
 import secureFetch from "../utils/secureFetch";
 import { clearRegisterSummaryCache } from "../utils/registerSummaryCache";
+import { clearRegisterDataCache } from "../utils/registerDataCache";
 import RegisterReconciliationPanel from "../features/register/RegisterReconciliationPanel";
 import TerminalZReportPanel from "../features/register/TerminalZReportPanel";
 import RegisterTimelinePanel from "../features/register/RegisterTimelinePanel";
@@ -441,11 +442,12 @@ function RegisterModal(props) {
                           return;
                         }
                         try {
+                          const numericEntryAmount = Number(entryAmount);
                           await secureFetch("/reports/cash-register-log", {
                             method: "POST",
                             body: JSON.stringify({
                               type: "entry",
-                              amount: Number(entryAmount),
+                              amount: numericEntryAmount,
                               note: entryReason || undefined,
                             }),
                           });
@@ -454,8 +456,13 @@ function RegisterModal(props) {
                           setEntryAmount("");
                           setEntryReason("");
                           setShowEntryForm(false);
-                          setShowRegisterModal(false);
-                          setTimeout(() => setShowRegisterModal(true), 350);
+                          clearRegisterSummaryCache();
+                          clearRegisterDataCache();
+                          refreshRegisterState(true);
+                          if (typeof window !== "undefined") {
+                            window.dispatchEvent(new Event("register:refresh"));
+                            window.dispatchEvent(new Event("reports:refresh"));
+                          }
                         } catch (err) {
                           console.error("❌ Failed to add cash entry:", err);
                           toast.error(err.message || "Failed to add cash entry");

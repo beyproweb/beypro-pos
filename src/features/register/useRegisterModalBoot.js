@@ -20,7 +20,6 @@ export function useRegisterModalBoot({
 
   const loadRegisterData = useCallback(async () => {
     const today = formatLocalYmd(new Date());
-    console.log("📘 Starting Register Modal Data Load...");
     const modalStartTime = performance.now();
 
     setCashDataLoaded(false);
@@ -53,8 +52,6 @@ export function useRegisterModalBoot({
       summaryData = criticalResults[1].value;
     }
 
-    const criticalLoadTime = performance.now() - modalStartTime;
-    console.log(`⚡ Critical data loaded in ${criticalLoadTime.toFixed(0)}ms - Modal should display now`);
     setCashDataLoaded(true);
 
     Promise.allSettled([
@@ -80,20 +77,10 @@ export function useRegisterModalBoot({
           if (typeof resetHandlers?.setDailyCashExpense === "function") {
             resetHandlers.setDailyCashExpense(result.dailyCashExpense);
           }
-          console.log("💵 [ui] background cash calc", {
-            openTime,
-            expectedCashCandidate: Number(result?.expectedCash || 0),
-            dailyCashExpense: Number(result?.dailyCashExpense || 0),
-            appliedToExpectedCash: true,
-            at: new Date().toISOString(),
-          });
         }
       })(),
     ])
-      .then(() => {
-        const totalTime = performance.now() - modalStartTime;
-        console.log(`✅ All background data loaded in ${totalTime.toFixed(0)}ms total`);
-      })
+      .then(() => {})
       .catch((err) => console.warn("⚠️ Background register data fetch failed:", err));
   }, [
     fetchLastCloseReceipt,

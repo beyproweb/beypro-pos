@@ -30,6 +30,14 @@ const fetchDailyCashTotal = async (openTime) => {
   return safeNumber(res?.cash_total);
 };
 
+const fetchDailyCashEntryTotal = async (openTime) => {
+  if (!openTime) return 0;
+  const res = await secureFetch(
+    `/reports/daily-cash-entry-total?openTime=${encodeURIComponent(openTime)}`
+  ).catch(() => ({ entry_total: 0 }));
+  return safeNumber(res?.entry_total);
+};
+
 const fetchDailyCashExpenses = async (openTime) => {
   if (!openTime) return 0;
   const res = await secureFetch(
@@ -61,7 +69,6 @@ const buildSummary = async () => {
 
   // FAST: Check status cache first (5 sec TTL)
   if (statusCache && Date.now() - statusCacheTime < STATUS_CACHE_TTL_MS) {
-    console.log("📦 Status loaded from cache (5s TTL)");
     const { status, opening_cash, yesterday_close, last_open_at } = statusCache;
     summary.registerState = (status || "closed").toLowerCase();
     summary.openingCash = opening_cash !== undefined && opening_cash !== null ? String(opening_cash) : "";
@@ -71,10 +78,7 @@ const buildSummary = async () => {
   }
 
   // Fetch status
-  console.log("⏳ Fetching register status...");
-  const statusStartTime = performance.now();
   const statusData = await secureFetch("/reports/cash-register-status");
-  console.log(`✅ Status fetched in ${(performance.now() - statusStartTime).toFixed(0)}ms`);
   
   if (!statusData) return summary;
 
@@ -106,16 +110,14 @@ export async function loadExpectedCashInBackground(lastOpenAt, openingCash = 0) 
   if (!lastOpenAt) return { expectedCash: 0, dailyCashExpense: 0 };
   
   try {
-    console.log("🔄 Loading cash calculations in background...");
-    const startTime = performance.now();
-    const [cashSales, dailyExpenses, extraExpenses] = await Promise.all([
+    const [cashSales, cashEntries, dailyExpenses, extraExpenses] = await Promise.all([
       fetchDailyCashTotal(lastOpenAt),
+      fetchDailyCashEntryTotal(lastOpenAt),
       fetchDailyCashExpenses(lastOpenAt),
       fetchTodayExtraExpenses(),
     ]);
-    console.log(`✅ Cash calculations loaded in ${(performance.now() - startTime).toFixed(0)}ms`);
     const openingFloat = safeNumber(openingCash);
-    const expectedCash = openingFloat + cashSales - (dailyExpenses + extraExpenses);
+    const expectedCash = openingFloat + cashSales + cashEntries - (dailyExpenses + extraExpenses);
     return {
       expectedCash,
       dailyCashExpense: dailyExpenses + extraExpenses,

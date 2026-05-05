@@ -12,16 +12,21 @@ export default function DateRangeSelector({
   todayIcon = null,
   children,
   className = "",
+  compact = false,
+  buttonClassName = "",
 }) {
   const { t } = useTranslation();
+  const sharedButtonClass = compact ? `sm:min-w-[9.5rem] ${buttonClassName}`.trim() : buttonClassName;
 
   return (
-    <div className={`flex w-full flex-col gap-3 ${className}`}>
-      <div className="grid w-full grid-cols-5 gap-1 sm:gap-2">
+    <div
+      className={`flex flex-col gap-3 ${compact ? "w-full max-w-full lg:ml-auto lg:w-auto" : "w-full"} ${className}`}
+    >
+      <div className={`grid w-full grid-cols-5 gap-1 sm:gap-2 ${compact ? "lg:w-auto" : ""}`}>
         <Button
           variant={range === "today" ? "default" : "outline"}
           onClick={() => onRangeChange("today")}
-          className="inline-flex h-8 w-full min-w-0 items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-semibold leading-none tracking-tight whitespace-nowrap sm:h-11 sm:gap-2 sm:rounded-2xl sm:px-4 sm:text-sm sm:tracking-normal"
+          className={`inline-flex h-8 w-full min-w-0 items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-semibold leading-none tracking-tight whitespace-nowrap sm:h-11 sm:gap-2 sm:rounded-2xl sm:px-4 sm:text-sm sm:tracking-normal ${sharedButtonClass}`}
         >
           {todayIcon ? <span className="hidden sm:inline-flex">{todayIcon}</span> : null}
           <span>{t("Today")}</span>
@@ -29,7 +34,7 @@ export default function DateRangeSelector({
         <Button
           variant={range === "week" ? "default" : "outline"}
           onClick={() => onRangeChange("week")}
-          className="h-8 w-full min-w-0 rounded-xl px-1 text-[10px] font-semibold leading-none tracking-tight whitespace-nowrap sm:h-11 sm:rounded-2xl sm:px-4 sm:text-sm sm:tracking-normal"
+          className={`h-8 w-full min-w-0 rounded-xl px-1 text-[10px] font-semibold leading-none tracking-tight whitespace-nowrap sm:h-11 sm:rounded-2xl sm:px-4 sm:text-sm sm:tracking-normal ${sharedButtonClass}`}
         >
           <span className="sm:hidden">{t("Week")}</span>
           <span className="hidden sm:inline">{t("This Week")}</span>
@@ -37,7 +42,7 @@ export default function DateRangeSelector({
         <Button
           variant={range === "custom" ? "default" : "outline"}
           onClick={() => onRangeChange("custom")}
-          className="h-8 w-full min-w-0 rounded-xl px-1 text-[10px] font-semibold leading-none tracking-tight whitespace-nowrap sm:h-11 sm:rounded-2xl sm:px-4 sm:text-sm sm:tracking-normal"
+          className={`h-8 w-full min-w-0 rounded-xl px-1 text-[10px] font-semibold leading-none tracking-tight whitespace-nowrap sm:h-11 sm:rounded-2xl sm:px-4 sm:text-sm sm:tracking-normal ${sharedButtonClass}`}
         >
           <span className="sm:hidden">{t("Custom")}</span>
           <span className="hidden sm:inline">{t("Custom Range")}</span>
@@ -47,7 +52,9 @@ export default function DateRangeSelector({
       </div>
 
       {range === "custom" && (
-        <div className="flex w-full flex-col gap-3 rounded-2xl border border-slate-200/70 bg-white/80 p-3 sm:flex-row sm:flex-wrap sm:items-center dark:border-slate-700/70 dark:bg-slate-900/60">
+        <div
+          className={`flex w-full flex-col gap-3 rounded-2xl border border-slate-200/70 bg-white/80 p-3 sm:flex-row sm:flex-wrap sm:items-center dark:border-slate-700/70 dark:bg-slate-900/60 ${compact ? "lg:ml-auto lg:w-auto" : ""}`}
+        >
           <label className="text-sm font-medium text-slate-600 dark:text-slate-300">
             {t("From")}
           </label>

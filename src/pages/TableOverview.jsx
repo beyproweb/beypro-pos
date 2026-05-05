@@ -623,6 +623,8 @@ export default function TableOverview() {
   const packetFetchRef = useRef({ requestId: 0, controller: null });
   const packetCountFetchRef = useRef({ requestId: 0, controller: null });
   const kitchenFetchRef = useRef({ requestId: 0, controller: null });
+  const openOrdersSyncRef = useRef({ packet: "", kitchen: "" });
+  const tableConfigsCursorRef = useRef("");
   const tableConfigsFetchRef = useRef({ requestId: 0, controller: null });
   const recentlyClosedRef = useRef(new Map()); // Track recently closed orders: key=orderId|tableNumber, value=timestamp
   const [closedOrdersVersion, setClosedOrdersVersion] = useState(0); // Increment to force ordersByTable recompute
@@ -2706,18 +2708,39 @@ const isLatestRequest = useCallback(
   []
 );
 
+const getLatestOpenOrdersCursor = useCallback((rows, fallback = "") => {
+  let latestMs = Number.isFinite(Date.parse(fallback)) ? Date.parse(fallback) : 0;
+  let latestValue = fallback || "";
+  (Array.isArray(rows) ? rows : []).forEach((order) => {
+    const candidate =
+      order?.updated_at ||
+      order?.kitchen_status_updated_at ||
+      order?.created_at ||
+      "";
+    const candidateMs = Date.parse(candidate);
+    if (Number.isFinite(candidateMs) && candidateMs >= latestMs) {
+      latestMs = candidateMs;
+      latestValue = new Date(candidateMs).toISOString();
+    }
+  });
+  return latestValue;
+}, []);
+
 const upsertOpenOrdersForMode = useCallback(
-  (mode, nextOrders) => {
+  (mode, nextOrders, options = {}) => {
+    const replaceMode = options?.replaceMode !== false;
     const modeTypes = OPEN_ORDER_TYPES[mode] || OPEN_ORDER_TYPES.kitchen;
     setOpenOrdersById((prev) => {
       const next = { ...(prev || {}) };
 
-      Object.keys(next).forEach((idKey) => {
-        const prevType = String(next[idKey]?.order_type || "")
-          .trim()
-          .toLowerCase();
-        if (modeTypes.includes(prevType)) delete next[idKey];
-      });
+      if (replaceMode) {
+        Object.keys(next).forEach((idKey) => {
+          const prevType = String(next[idKey]?.order_type || "")
+            .trim()
+            .toLowerCase();
+          if (modeTypes.includes(prevType)) delete next[idKey];
+        });
+      }
 
       (Array.isArray(nextOrders) ? nextOrders : []).forEach((order) => {
         const idNum = Number(order?.id);
@@ -2731,23 +2754,29 @@ const upsertOpenOrdersForMode = useCallback(
 
       return next;
     });
-    writeOpenOrdersCache(mode, Array.isArray(nextOrders) ? nextOrders : []);
+    if (replaceMode) {
+      writeOpenOrdersCache(mode, Array.isArray(nextOrders) ? nextOrders : []);
+    }
   },
   []
 );
 
 const fetchOpenOrdersBatch = useCallback(
-  async (mode, signal) => {
+  async (mode, signal, options = {}) => {
     const params = new window.URLSearchParams();
     params.set("mode", mode || "both");
     const restaurantId = getRestaurantIdForBatch();
     if (restaurantId) params.set("restaurant_id", restaurantId);
+    if (options?.since) {
+      params.set("since", options.since);
+    }
 
     const payload = await secureFetch(`/orders/open/with-items?${params.toString()}`, { signal });
     const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.orders) ? payload.orders : [];
     const normalized = rows
       .map(normalizeOpenOrder)
       .filter(Boolean);
+    const nextCursor = getLatestOpenOrdersCursor(normalized, options?.since || "");
 
     if (import.meta.env.DEV) {
       const totalItems = normalized.reduce(
@@ -2755,13 +2784,13 @@ const fetchOpenOrdersBatch = useCallback(
         0
       );
       console.log(
-        `[TableOverview] open orders fetched: mode=${mode} orders=${normalized.length} items=${totalItems} calls=1`
+        `[TableOverview] open orders fetched: mode=${mode} orders=${normalized.length} items=${totalItems} calls=1 since=${options?.since || "-"}`
       );
     }
 
-    return normalized;
+    return { orders: normalized, nextCursor };
   },
-  [getRestaurantIdForBatch, normalizeOpenOrder]
+  [getLatestOpenOrdersCursor, getRestaurantIdForBatch, normalizeOpenOrder]
 );
 
 const fetchPacketOrdersLegacy = useCallback(
@@ -2890,12 +2919,18 @@ const fetchKitchenOpenOrdersLegacy = useCallback(
   [normalizeOpenOrder]
 );
 
-const fetchPacketOrders = useCallback(async () => {
+const fetchPacketOrders = useCallback(async (options = {}) => {
   const { requestId, controller } = startLatestRequest(packetFetchRef);
+  const since = options?.incremental ? openOrdersSyncRef.current.packet : "";
   try {
-    const batched = await fetchOpenOrdersBatch("packet", controller.signal);
+    const { orders: batched, nextCursor } = await fetchOpenOrdersBatch("packet", controller.signal, {
+      since,
+    });
     if (!isLatestRequest(packetFetchRef, requestId)) return;
-    upsertOpenOrdersForMode("packet", batched);
+    upsertOpenOrdersForMode("packet", batched, { replaceMode: !since });
+    if (nextCursor) {
+      openOrdersSyncRef.current.packet = nextCursor;
+    }
     setPacketOrdersCount(batched.length);
   } catch (err) {
     if (isAbortError(err)) return;
@@ -2904,11 +2939,13 @@ const fetchPacketOrders = useCallback(async () => {
         onPartial: (partialRows) => {
           if (!isLatestRequest(packetFetchRef, requestId)) return;
           upsertOpenOrdersForMode("packet", partialRows);
+          openOrdersSyncRef.current.packet = getLatestOpenOrdersCursor(partialRows);
           setPacketOrdersCount(partialRows.length);
         },
       });
       if (!isLatestRequest(packetFetchRef, requestId)) return;
       upsertOpenOrdersForMode("packet", fallbackRows);
+      openOrdersSyncRef.current.packet = getLatestOpenOrdersCursor(fallbackRows);
       setPacketOrdersCount(fallbackRows.length);
     } catch (fallbackErr) {
       if (isAbortError(fallbackErr)) return;
@@ -2919,6 +2956,7 @@ const fetchPacketOrders = useCallback(async () => {
 }, [
   fetchOpenOrdersBatch,
   fetchPacketOrdersLegacy,
+  getLatestOpenOrdersCursor,
   isLatestRequest,
   startLatestRequest,
   t,
@@ -2978,7 +3016,7 @@ const fetchPacketOrdersCount = useCallback(async () => {
   if (!canSeePacketTab) return;
   const { requestId, controller } = startLatestRequest(packetCountFetchRef);
   try {
-    const batched = await fetchOpenOrdersBatch("packet", controller.signal);
+    const { orders: batched } = await fetchOpenOrdersBatch("packet", controller.signal);
     if (!isLatestRequest(packetCountFetchRef, requestId)) return;
     setPacketOrdersCount(batched.length);
   } catch (err) {
@@ -3929,19 +3967,28 @@ useEffect(() => {
     };
   }, [activeTab, fetchOrders, isStressModeActive]);
 
-const fetchKitchenOpenOrders = useCallback(async () => {
+const fetchKitchenOpenOrders = useCallback(async (options = {}) => {
   const { requestId, controller } = startLatestRequest(kitchenFetchRef);
+  const since = options?.incremental ? openOrdersSyncRef.current.kitchen : "";
   try {
     setKitchenOpenOrdersLoading(true);
-    const batched = await fetchOpenOrdersBatch("kitchen", controller.signal);
+    const { orders: batched, nextCursor } = await fetchOpenOrdersBatch(
+      "kitchen",
+      controller.signal,
+      { since }
+    );
     if (!isLatestRequest(kitchenFetchRef, requestId)) return;
-    upsertOpenOrdersForMode("kitchen", batched);
+    upsertOpenOrdersForMode("kitchen", batched, { replaceMode: !since });
+    if (nextCursor) {
+      openOrdersSyncRef.current.kitchen = nextCursor;
+    }
   } catch (err) {
     if (isAbortError(err)) return;
     try {
       const fallbackRows = await fetchKitchenOpenOrdersLegacy(controller.signal);
       if (!isLatestRequest(kitchenFetchRef, requestId)) return;
       upsertOpenOrdersForMode("kitchen", fallbackRows);
+      openOrdersSyncRef.current.kitchen = getLatestOpenOrdersCursor(fallbackRows);
     } catch (fallbackErr) {
       if (isAbortError(fallbackErr)) return;
       console.error("❌ Fetch kitchen open orders failed:", fallbackErr);
@@ -3954,22 +4001,29 @@ const fetchKitchenOpenOrders = useCallback(async () => {
 }, [
   fetchKitchenOpenOrdersLegacy,
   fetchOpenOrdersBatch,
+  getLatestOpenOrdersCursor,
   isLatestRequest,
   startLatestRequest,
   upsertOpenOrdersForMode,
 ]);
 
 // Fetch table configurations when viewing tables (inside component)
-const fetchTableConfigs = useCallback(async () => {
+const fetchTableConfigs = useCallback(async (options = {}) => {
   const { requestId, controller } = startLatestRequest(tableConfigsFetchRef);
+  const since = options?.incremental ? tableConfigsCursorRef.current : "";
   try {
     if (import.meta.env.DEV) console.log("[TableOverview] fetchTableConfigs start", { requestId });
-    const rows = await secureFetch("/tables", { signal: controller.signal });
+    const path = since ? `/tables?since=${encodeURIComponent(since)}` : "/tables";
+    const rows = await secureFetch(path, { signal: controller.signal });
     if (!isLatestRequest(tableConfigsFetchRef, requestId)) return;
     const arr = Array.isArray(rows) ? rows : [];
+    const nextCursor = getLatestOpenOrdersCursor(arr, since);
+    if (nextCursor) {
+      tableConfigsCursorRef.current = nextCursor;
+    }
     const active = arr.filter((t) => t.active !== false);
     setTableConfigs((prev) => {
-      const merged = mergeTableConfigsByNumber(prev, active);
+      const merged = since ? mergeTableConfigsByNumber(prev, active) : mergeTableConfigsByNumber(prev, active);
       try {
         localStorage.setItem(getTableConfigsCacheKey(), JSON.stringify(merged));
         localStorage.setItem(getTableCountCacheKey(), String(merged.length));
@@ -4081,6 +4135,7 @@ const handleToggleTableLock = useCallback(
   const loadDataForTab = useCallback(
     (tab, options = {}) => {
       const fastTablesOnly = options?.fastTablesOnly === true;
+      const incremental = options?.incremental === true;
       if (tab === "tables") {
         fetchOrders(fastTablesOnly ? { skipHydration: true } : undefined);
         fetchSongRequests();
@@ -4090,14 +4145,14 @@ const handleToggleTableLock = useCallback(
         return;
       }
       if (tab === "kitchen" || tab === "open") {
-        fetchKitchenOpenOrders();
+        fetchKitchenOpenOrders({ incremental });
         return;
       }
       if (tab === "history") {
         return;
       }
       if (tab === "packet") {
-        fetchPacketOrders();
+        fetchPacketOrders({ incremental });
         return;
       }
       if (tab === "takeaway") {
@@ -4122,15 +4177,21 @@ useEffect(() => {
   let bgRefetchTimeoutId = null;
   let bgRefetchIdleId = null;
   // ⚡ Instant refresh without animation frame delay for local events
-  const instantRefetch = ({ fastTablesOnly = false } = {}) => {
+  const instantRefetch = ({ fastTablesOnly = false, incremental = false } = {}) => {
     if (activeTab !== "packet") fetchPacketOrdersCount();
     if (activeTab === "tables") {
-      fetchOrders(fastTablesOnly ? { skipHydration: true } : undefined);
-      loadConcertBookingsForOverview();
-      loadReservationBookingsForOverview();
+      fetchOrders(
+        fastTablesOnly || incremental
+          ? { skipHydration: fastTablesOnly, incremental }
+          : undefined
+      );
+      if (!fastTablesOnly && !incremental) {
+        loadConcertBookingsForOverview();
+        loadReservationBookingsForOverview();
+      }
       return;
     }
-    loadDataForTab(activeTab, { fastTablesOnly });
+    loadDataForTab(activeTab, { fastTablesOnly, incremental });
   };
 
   const scheduleBackgroundRefetch = () => {
@@ -4158,11 +4219,7 @@ useEffect(() => {
   const refetch = () => {
     if (rafId) window.cancelAnimationFrame(rafId);
     rafId = window.requestAnimationFrame(() => {
-      instantRefetch({ fastTablesOnly: true });
-      if (activeTab === "tables") {
-        // Follow fast socket refresh with one coalesced full refresh for item-level reconciliation.
-        scheduleBackgroundRefetch();
-      }
+      instantRefetch({ fastTablesOnly: true, incremental: true });
     });
   };
 
@@ -4731,6 +4788,92 @@ useEffect(() => {
     refetch();
   };
 
+  const onReservationRemovedSocket = (payload = {}) => {
+    const tableNumber = Number(
+      payload?.table_number ??
+        payload?.reservation?.table_number ??
+        payload?.order?.table_number
+    );
+    const reservationId = Number(
+      payload?.reservation_id ??
+        payload?.reservationId ??
+        payload?.reservation?.id ??
+        payload?.id
+    );
+    const orderId = Number(
+      payload?.order_id ??
+        payload?.orderId ??
+        payload?.reservation?.order_id ??
+        payload?.reservation?.orderId ??
+        payload?.order?.id
+    );
+    const nextStatus = normalizeOrderStatus(
+      payload?.status ?? payload?.reservation?.status ?? payload?.order?.status ?? "cancelled"
+    );
+    removeReservationShadow({
+      reservationId: Number.isFinite(reservationId) ? reservationId : null,
+      orderId: Number.isFinite(orderId) ? orderId : null,
+      tableNumber: Number.isFinite(tableNumber) ? tableNumber : null,
+    });
+    removeBookingFromViewBookingLists({ tableNumber, reservationId, orderId });
+    setReservationsToday((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      return list.filter((row) => {
+        const rowTableNumber = normalizeTableKey(row?.table_number ?? row?.tableNumber ?? row?.table);
+        const rowReservationId = Number(row?.id);
+        const rowOrderId = Number(row?.order_id ?? row?.orderId);
+        if (Number.isFinite(tableNumber) && isSameTableNumber(rowTableNumber, tableNumber)) {
+          return false;
+        }
+        if (Number.isFinite(reservationId) && rowReservationId === reservationId) {
+          return false;
+        }
+        if (Number.isFinite(orderId) && rowOrderId === orderId) {
+          return false;
+        }
+        return true;
+      });
+    });
+    const didPatch = patchTableOrderLocally({
+      status: nextStatus || "cancelled",
+      tableNumber,
+      orderId,
+      patch: { total: 0 },
+    });
+    if (didPatch) {
+      scheduleBackgroundRefetch();
+      return;
+    }
+    refetch();
+  };
+
+  const onTableConfigUpdatedSocket = (payload = {}) => {
+    const table = payload?.table;
+    const tableNumber = Number(table?.number ?? payload?.table_number);
+    if (!Number.isFinite(tableNumber)) {
+      fetchTableConfigs({ incremental: true });
+      return;
+    }
+    upsertTableConfigLocal(tableNumber, table || payload);
+  };
+
+  const onTablesUpdatedSocket = () => {
+    fetchTableConfigs({ incremental: true });
+  };
+
+  const onTableMovedSocket = (payload = {}) => {
+    const from = Number(payload?.from);
+    const to = Number(payload?.to);
+    if (Number.isFinite(from)) {
+      setOrders((prev) => (Array.isArray(prev) ? prev.filter((order) => getOrderTableNumber(order) !== from) : prev));
+    }
+    if (Number.isFinite(to)) {
+      fetchOrders({ incremental: true, skipHydration: true });
+    } else {
+      refetch();
+    }
+  };
+
   socket.on("orders_updated", refetch);
   // Some backend flows (e.g. closing empty orders) emit `order_closed` without `orders_updated`.
   socket.on("order_closed", onOrderClosedSocket);
@@ -4738,6 +4881,11 @@ useEffect(() => {
   socket.on("payment_made", onPaymentMadeSocket);
   socket.on("order_cancelled", onOrderCancelledSocket);
   socket.on("reservation_checked_out", onReservationCheckedOutSocket);
+  socket.on("reservation_cancelled", onReservationRemovedSocket);
+  socket.on("reservation_deleted", onReservationRemovedSocket);
+  socket.on("tables_updated", onTablesUpdatedSocket);
+  socket.on("table_config_updated", onTableConfigUpdatedSocket);
+  socket.on("table_moved", onTableMovedSocket);
   socket.on("song_request_updated", fetchSongRequests);
   // ⚡ Immediate local refreshes (dispatched from TransactionScreen)
   const handleLocalRefresh = (event) => {
@@ -4770,6 +4918,11 @@ useEffect(() => {
     socket.off("payment_made", onPaymentMadeSocket);
     socket.off("order_cancelled", onOrderCancelledSocket);
     socket.off("reservation_checked_out", onReservationCheckedOutSocket);
+    socket.off("reservation_cancelled", onReservationRemovedSocket);
+    socket.off("reservation_deleted", onReservationRemovedSocket);
+    socket.off("tables_updated", onTablesUpdatedSocket);
+    socket.off("table_config_updated", onTableConfigUpdatedSocket);
+    socket.off("table_moved", onTableMovedSocket);
     socket.off("song_request_updated", fetchSongRequests);
     window.removeEventListener("beypro:orders-local-refresh", handleLocalRefresh);
   };

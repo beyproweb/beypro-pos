@@ -44,11 +44,6 @@ export function useRegisterReconciliation({
     async (openTime, options = {}) => {
       if (!openTime) return null;
       const forceFresh = options?.forceFresh === true;
-      console.log("💵 [ui] fetchRegisterReconciliation:start", {
-        openTime,
-        forceFresh,
-        at: new Date().toISOString(),
-      });
 
       const cached = forceFresh ? null : getReconciliationCache(openTime);
       if (cached) {
@@ -56,14 +51,6 @@ export function useRegisterReconciliation({
         if (cached?.cashReconciliation?.expected_cash_total != null) {
           setExpectedCash(Number(cached.cashReconciliation.expected_cash_total || 0));
         }
-        console.log("💵 [ui] fetchRegisterReconciliation:cache-hit", {
-          openTime,
-          snapshotMode: cached?.snapshot_mode,
-          expected: cached?.cashReconciliation?.expected_cash_total,
-          posCash: cached?.posTotals?.cash_total,
-          cardGrand: cached?.cardByOrderType?.grand_total,
-          at: new Date().toISOString(),
-        });
         setReconLoading(false);
         return cached;
       }
@@ -81,16 +68,6 @@ export function useRegisterReconciliation({
         if (data?.cashReconciliation?.expected_cash_total != null) {
           setExpectedCash(Number(data.cashReconciliation.expected_cash_total || 0));
         }
-        console.log("💵 [ui] fetchRegisterReconciliation:fresh", {
-          openTime,
-          forceFresh,
-          snapshotMode: data?.snapshot_mode,
-          expected: data?.cashReconciliation?.expected_cash_total,
-          posCash: data?.posTotals?.cash_total,
-          cardGrand: data?.cardByOrderType?.grand_total,
-          errors: data?.errors,
-          at: new Date().toISOString(),
-        });
 
         setReconciliationCache(openTime, data);
 
@@ -109,15 +86,6 @@ export function useRegisterReconciliation({
               if (fresh?.cashReconciliation?.expected_cash_total != null) {
                 setExpectedCash(Number(fresh.cashReconciliation.expected_cash_total || 0));
               }
-              console.log("💵 [ui] fetchRegisterReconciliation:delayed-refresh", {
-                openTime: openTimeKey,
-                snapshotMode: fresh?.snapshot_mode,
-                expected: fresh?.cashReconciliation?.expected_cash_total,
-                posCash: fresh?.posTotals?.cash_total,
-                cardGrand: fresh?.cardByOrderType?.grand_total,
-                errors: fresh?.errors,
-                at: new Date().toISOString(),
-              });
             } catch {
               // ignore background refresh failures
             }
@@ -131,12 +99,6 @@ export function useRegisterReconciliation({
         return data;
       } catch (err) {
         console.error("❌ Failed to load register reconciliation:", err);
-        console.error("💵 [ui] fetchRegisterReconciliation:error", {
-          openTime,
-          forceFresh,
-          message: err?.message,
-          at: new Date().toISOString(),
-        });
         setReconError(err?.message || "Failed to load reconciliation");
         return null;
       } finally {
@@ -218,35 +180,6 @@ export function useRegisterReconciliation({
   const riskScore = reconciliation?.risk?.risk_score ?? 0;
   const riskFlags = Array.isArray(reconciliation?.risk?.flags) ? reconciliation.risk.flags : [];
   const cardBreakdown = reconciliation?.cardByOrderType || {};
-
-  useEffect(() => {
-    if (!showRegisterModal) return;
-    if (registerState !== "open") return;
-    console.log("💵 [ui] expected-cash state", {
-      openTime: lastOpenAt,
-      source: expectedCashSource,
-      expectedCashState: Number(expectedCash || 0),
-      expectedFromReconciliation: reconciliation?.cashReconciliation?.expected_cash_total,
-      cashRefundTotal,
-      expectedComputedBase: expectedCashComputedBase,
-      expectedComputed: expectedCashComputed,
-      posCash: reconciliation?.posTotals?.cash_total,
-      cardGrand: reconciliation?.cardByOrderType?.grand_total,
-      snapshotMode: reconciliation?.snapshot_mode,
-      errors: reconciliation?.errors,
-      at: new Date().toISOString(),
-    });
-  }, [
-    showRegisterModal,
-    registerState,
-    lastOpenAt,
-    expectedCash,
-    expectedCashSource,
-    cashRefundTotal,
-    expectedCashComputedBase,
-    expectedCashComputed,
-    reconciliation,
-  ]);
 
   const resetReconciliation = useCallback(() => {
     setReconciliation(null);

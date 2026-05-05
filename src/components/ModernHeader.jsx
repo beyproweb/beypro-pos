@@ -19,6 +19,7 @@ import { checkRegisterOpen } from "../utils/checkRegisterOpen";
 import { useAuth } from "../context/AuthContext";
 import { isPublicShellPath } from "../utils/routeScope";
 import secureFetch from "../utils/secureFetch";
+import socket from "../utils/socket";
 
 const ORDERS_BADGE_POLL_MS = 45000;
 
@@ -347,6 +348,7 @@ export default function ModernHeader({
     currentUser?.username,
   ]);
   const [aggregatedOrdersCount, setAggregatedOrdersCount] = React.useState(0);
+  const badgeRefreshTimerRef = React.useRef(null);
   const [ordersBadgeResetAtCount, setOrdersBadgeResetAtCount] = React.useState(() => {
     if (typeof window === "undefined") return 0;
     try {
@@ -427,8 +429,19 @@ export default function ModernHeader({
     void refreshOrdersBadgeCount();
 
     const intervalId = window.setInterval(() => {
+      if (socket.connected) return;
       void refreshOrdersBadgeCount();
     }, ORDERS_BADGE_POLL_MS);
+
+    const scheduleRefresh = () => {
+      if (badgeRefreshTimerRef.current) {
+        window.clearTimeout(badgeRefreshTimerRef.current);
+      }
+      badgeRefreshTimerRef.current = window.setTimeout(() => {
+        badgeRefreshTimerRef.current = null;
+        void refreshOrdersBadgeCount();
+      }, 300);
+    };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
@@ -436,11 +449,32 @@ export default function ModernHeader({
       }
     };
 
+    socket.on("orders_updated", scheduleRefresh);
+    socket.on("order_closed", scheduleRefresh);
+    socket.on("order_cancelled", scheduleRefresh);
+    socket.on("payment_made", scheduleRefresh);
+    socket.on("reservation_deleted", scheduleRefresh);
+    socket.on("reservation_cancelled", scheduleRefresh);
+    socket.on("reservation_checked_out", scheduleRefresh);
+    socket.on("table_moved", scheduleRefresh);
+
     window.addEventListener("focus", refreshOrdersBadgeCount);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       window.clearInterval(intervalId);
+      if (badgeRefreshTimerRef.current) {
+        window.clearTimeout(badgeRefreshTimerRef.current);
+        badgeRefreshTimerRef.current = null;
+      }
+      socket.off("orders_updated", scheduleRefresh);
+      socket.off("order_closed", scheduleRefresh);
+      socket.off("order_cancelled", scheduleRefresh);
+      socket.off("payment_made", scheduleRefresh);
+      socket.off("reservation_deleted", scheduleRefresh);
+      socket.off("reservation_cancelled", scheduleRefresh);
+      socket.off("reservation_checked_out", scheduleRefresh);
+      socket.off("table_moved", scheduleRefresh);
       window.removeEventListener("focus", refreshOrdersBadgeCount);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
@@ -467,10 +501,10 @@ export default function ModernHeader({
     const tabs = [
       { kind: "nav", key: "dashboard", label: t("Dashboard") },
       ...(canSeeTablesTab ? [{ kind: "nav", key: "tables", label: tableLabelText }] : []),
+      { kind: "section", key: "transaction-history", label: t("Transaction History (T')") },
       { kind: "switch", key: "suppliers", label: t("Add Product") },
       { kind: "switch", key: "cart", label: t("Supplier Cart") },
       { kind: "section", key: "supplier-overview", label: t("Overview") },
-      { kind: "section", key: "transaction-history", label: t("Transactions") },
       { kind: "section", key: "price-tracking", label: t("Price") },
       { kind: "section", key: "profile-balance", label: t("Profile") },
     ];

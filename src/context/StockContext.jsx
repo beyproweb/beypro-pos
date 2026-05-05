@@ -44,88 +44,6 @@ const normalizeStockList = (payload) => {
   return [];
 };
 
-const normalizeIngredientPrices = (payload) => {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.prices)) return payload.prices;
-  if (Array.isArray(payload?.ingredient_prices)) return payload.ingredient_prices;
-  if (Array.isArray(payload?.ingredientPrices)) return payload.ingredientPrices;
-  if (Array.isArray(payload?.data)) return payload.data;
-  return [];
-};
-
-const normalizeSupplierTransactions = (payload) => {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.transactions)) return payload.transactions;
-  if (Array.isArray(payload?.items)) return payload.items;
-  if (Array.isArray(payload?.data)) return payload.data;
-  return [];
-};
-
-const makePriceKey = (name, unit, supplier) => {
-  const n = String(name || "").trim().toLowerCase();
-  const u = String(unit || "").trim().toLowerCase();
-  const s = String(supplier || "").trim().toLowerCase();
-  return `${n}|${u}|${s}`;
-};
-
-const makeNameUnitKey = (name, unit) => {
-  const n = String(name || "").trim().toLowerCase();
-  const u = String(unit || "").trim().toLowerCase();
-  return `${n}|${u}`;
-};
-
-const resolveTxnDate = (txn) =>
-  txn?.delivery_date || txn?.created_at || txn?.updated_at || txn?.date || null;
-
-const toTxnTime = (txn) => {
-  const raw = resolveTxnDate(txn);
-  if (!raw) return 0;
-  const parsed = new Date(raw);
-  const time = parsed.getTime();
-  return Number.isNaN(time) ? 0 : time;
-};
-
-const computeTxnRowPrice = (row) => {
-  const direct = toNumber(row?.price_per_unit ?? row?.unit_price);
-  if (direct > 0) return direct;
-  const qty = toNumber(row?.quantity);
-  const total = toNumber(row?.total_cost ?? row?.totalCost);
-  if (qty > 0 && total > 0) return total / qty;
-  return 0;
-};
-
-const collectTxnRows = (txn) => {
-  const rows = [];
-  if (!txn) return rows;
-  const time = toTxnTime(txn);
-
-  if (Array.isArray(txn.items) && txn.items.length > 0) {
-    txn.items.forEach((item) => {
-      const name = item?.ingredient ?? item?.name ?? item?.product_name;
-      const unit = item?.unit;
-      rows.push({
-        name,
-        unit,
-        quantity: item?.quantity,
-        total_cost: item?.total_cost ?? item?.totalCost,
-        price_per_unit: item?.price_per_unit ?? item?.unit_price,
-        _time: time,
-      });
-    });
-    return rows;
-  }
-
-  rows.push({
-    name: txn?.ingredient ?? txn?.name ?? txn?.product_name,
-    unit: txn?.unit,
-    quantity: txn?.quantity,
-    total_cost: txn?.total_cost ?? txn?.totalCost,
-    price_per_unit: txn?.price_per_unit ?? txn?.unit_price,
-    _time: time,
-  });
-  return rows;
-};
-
 const getPricePerUnit = (item) => {
   const direct =
     item?.price_per_unit ??
@@ -180,43 +98,109 @@ export const StockProvider = ({ children }) => {
   const autoAddLocks = useRef(new Set());
   const debugLoggedRef = useRef(false);
   const debugGroupedLoggedRef = useRef(false);
-  const ingredientPriceCacheRef = useRef({ map: null, fetchedAt: 0 });
-  const supplierTxnPriceCacheRef = useRef({ bySupplierId: new Map() });
-  const recipeCostCacheRef = useRef({ byNameUnit: null, byName: null, fetchedAt: 0 });
+  const socketRefreshTimerRef = useRef(null);
+  const stockCursorRef = useRef("");
 
-  const normalizeUnitLoose = (unit) => {
-    const u = String(unit || "").trim().toLowerCase();
-    if (u === "pieces") return "piece";
-    return u;
-  };
+  const buildGroupedStock = useCallback((rows) => {
+    const grouped = Object.values(
+      (Array.isArray(rows) ? rows : []).reduce((acc, item) => {
+        const nameKey = String(item?.name || "").trim().toLowerCase();
+        const unitKey = String(item?.unit || "").trim().toLowerCase();
+        const key = `${nameKey}_${unitKey}`;
+        const quantity = toNumber(item?.quantity);
+        const pricePerUnit = getPricePerUnit(item);
 
-  const UNIT_CONVERSIONS = {
-    g: { g: 1, kg: 1 / 1000, mg: 1000 },
-    kg: { kg: 1, g: 1000 },
-    mg: { mg: 1, g: 1 / 1000 },
-    ml: { ml: 1, l: 1 / 1000, lt: 1 / 1000 },
-    l: { l: 1, ml: 1000, lt: 1 },
-    lt: { lt: 1, l: 1, ml: 1000 },
-    pcs: { pcs: 1, piece: 1, unit: 1 },
-    piece: { piece: 1, pcs: 1, unit: 1 },
-    unit: { unit: 1, pcs: 1, piece: 1 },
-    portion: { portion: 1 },
-  };
+        if (!acc[key]) {
+          acc[key] = {
+            name: item?.name || "",
+            quantity: 0,
+            unit: item?.unit || "",
+            suppliers: new Set(),
+            critical_quantity: item?.critical_quantity || 0,
+            reorder_quantity: item?.reorder_quantity || 0,
+            supplier_id: item?.supplier_id || null,
+            supplier_name: item?.supplier_name || "",
+            stock_id: item?.id,
+            expiry_date: item?.expiry_date || null,
+            _total_value: 0,
+          };
+        }
 
-  const convertQuantity = (value, fromUnit, toUnit) => {
-    const from = normalizeUnitLoose(fromUnit);
-    const to = normalizeUnitLoose(toUnit);
-    if (!UNIT_CONVERSIONS[from]) return null;
-    const factor = UNIT_CONVERSIONS[from][to];
-    if (typeof factor !== "number") return null;
-    return value * factor;
-  };
+        acc[key].quantity += quantity;
+        if (item?.supplier_name) {
+          acc[key].suppliers.add(item.supplier_name);
+        }
+        acc[key]._total_value += quantity * pricePerUnit;
 
-  const convertPricePerUnit = (pricePerFromUnit, fromUnit, toUnit) => {
-    const factor = convertQuantity(1, toUnit, fromUnit);
-    if (factor === null) return null;
-    return toNumber(pricePerFromUnit) * factor;
-  };
+        if (item?.expiry_date) {
+          const candidate = new Date(item.expiry_date);
+          if (!Number.isNaN(candidate.getTime())) {
+            const existing = acc[key].expiry_date ? new Date(acc[key].expiry_date) : null;
+            if (!existing || candidate < existing) {
+              acc[key].expiry_date = item.expiry_date;
+            }
+          }
+        }
+
+        return acc;
+      }, {})
+    ).map((entry) => {
+      const totalValue = entry._total_value || 0;
+      const qty = entry.quantity || 0;
+      return {
+        name: entry.name,
+        quantity: entry.quantity,
+        unit: entry.unit,
+        critical_quantity: entry.critical_quantity,
+        reorder_quantity: entry.reorder_quantity,
+        supplier_id: entry.supplier_id,
+        supplier_name: entry.supplier_name,
+        stock_id: entry.stock_id,
+        expiry_date: entry.expiry_date,
+        supplier: Array.from(entry.suppliers).join(", "),
+        price_per_unit: qty > 0 ? totalValue / qty : 0,
+      };
+    });
+
+    if (import.meta.env.DEV && !debugGroupedLoggedRef.current) {
+      debugGroupedLoggedRef.current = true;
+      const sampleGrouped = grouped?.[0];
+      console.log("🧾 Stock debug (grouped)", {
+        groupedCount: Array.isArray(grouped) ? grouped.length : 0,
+        sampleGroupedKeys:
+          sampleGrouped && typeof sampleGrouped === "object"
+            ? Object.keys(sampleGrouped)
+            : [],
+        sampleGrouped,
+      });
+    }
+
+    return grouped;
+  }, []);
+
+  const commitStockRows = useCallback(
+    (rows) => {
+      const normalized = normalizeStockList(rows);
+      setStock(normalized);
+      setGroupedData(buildGroupedStock(normalized));
+      return normalized;
+    },
+    [buildGroupedStock]
+  );
+
+  const getLatestStockCursor = useCallback((rows, fallback = "") => {
+    let latestValue = fallback || "";
+    let latestMs = Number.isFinite(Date.parse(fallback)) ? Date.parse(fallback) : 0;
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      const candidate = row?.updated_at || row?.created_at || "";
+      const candidateMs = Date.parse(candidate);
+      if (Number.isFinite(candidateMs) && candidateMs >= latestMs) {
+        latestMs = candidateMs;
+        latestValue = new Date(candidateMs).toISOString();
+      }
+    });
+    return latestValue;
+  }, []);
 
   // ✅ Add to cart helper
   const handleAddToCart = useCallback(
@@ -288,12 +272,34 @@ export const StockProvider = ({ children }) => {
   );
 
   // ✅ Fetch stock & auto-add if below critical
-  const fetchStock = useCallback(async () => {
+  const fetchStock = useCallback(async (options = {}) => {
     try {
-      setLoading(true);
-      const raw = await secureFetch("/stock");
-      const data = normalizeStockList(raw);
-      setStock(data);
+      const incremental = options?.incremental === true;
+      const since = incremental ? stockCursorRef.current : "";
+      setLoading((prev) => (incremental ? prev : true));
+      const path = since ? `/stock?since=${encodeURIComponent(since)}` : "/stock";
+      const raw = await secureFetch(path);
+      const normalized = normalizeStockList(raw);
+      const data = incremental
+        ? (() => {
+            // Socket payloads patch locally first; this incremental fetch only reconciles missed rows.
+            let merged = normalized;
+            setStock((prev) => {
+              const prevList = Array.isArray(prev) ? prev : [];
+              const nextById = new Map(prevList.map((item) => [Number(item?.id), item]));
+              normalized.forEach((item) => {
+                const stockId = Number(item?.id);
+                if (!Number.isFinite(stockId)) return;
+                nextById.set(stockId, item);
+              });
+              merged = Array.from(nextById.values());
+              setGroupedData(buildGroupedStock(merged));
+              return merged;
+            });
+            return merged;
+          })()
+        : commitStockRows(normalized);
+      stockCursorRef.current = getLatestStockCursor(normalized, since || stockCursorRef.current);
 
       if (import.meta.env.DEV && !debugLoggedRef.current) {
         debugLoggedRef.current = true;
@@ -325,26 +331,25 @@ export const StockProvider = ({ children }) => {
         });
       }
 
-      // Load existing cart items per supplier
-      const supplierCartMap = {};
       const supplierIds = [...new Set(data.map((d) => d.supplier_id).filter(Boolean))];
-      for (const sid of supplierIds) {
-        try {
-          const cartData = await secureFetch(`/supplier-carts/items?supplier_id=${sid}`);
-          supplierCartMap[sid] = cartData.items;
-        } catch {}
-      }
+      const supplierCartEntries = await Promise.all(
+        supplierIds.map(async (sid) => {
+          try {
+            const cartData = await secureFetch(`/supplier-carts/items?supplier_id=${sid}`);
+            return [sid, Array.isArray(cartData?.items) ? cartData.items : []];
+          } catch {
+            return [sid, []];
+          }
+        })
+      );
+      const supplierCartMap = Object.fromEntries(supplierCartEntries);
 
       for (const item of data) {
         if (!item.supplier_id || !item.reorder_quantity) continue;
 
         try {
-          const { stock } = await secureFetch(`/stock/${item.id}`);
-
-          if (!stock) continue;
-
-          const quantity = toNumber(stock.quantity);
-          const critical = toNumber(stock.critical_quantity);
+          const quantity = toNumber(item.quantity);
+          const critical = toNumber(item.critical_quantity);
 
           if (quantity > critical) {
             if (import.meta.env.DEV) {
@@ -368,7 +373,7 @@ export const StockProvider = ({ children }) => {
             continue;
           }
 
-          const lastAuto = stock.last_auto_add_at ? new Date(stock.last_auto_add_at) : null;
+          const lastAuto = item.last_auto_add_at ? new Date(item.last_auto_add_at) : null;
           const now = new Date();
           const timeSinceLast = lastAuto ? now - lastAuto : Infinity;
 
@@ -394,11 +399,10 @@ export const StockProvider = ({ children }) => {
               supplier_id: item.supplier_id,
             });
 
-          await secureFetch(`/stock/${item.id}/flag-auto-added`, {
-  method: "PATCH",
-  body: JSON.stringify({ last_auto_add_at: new Date().toISOString() }),
-});
-
+            await secureFetch(`/stock/${item.id}/flag-auto-added`, {
+              method: "PATCH",
+              body: JSON.stringify({ last_auto_add_at: new Date().toISOString() }),
+            });
 
             autoAddLocks.current.delete(item.id);
           } else {
@@ -411,449 +415,67 @@ export const StockProvider = ({ children }) => {
         }
       }
 
-      // Regroup for UI (include price_per_unit so Stock page can show value)
-      const refreshedRaw = await secureFetch("/stock");
-      const refreshed = normalizeStockList(refreshedRaw);
-      const missingPriceExamples = import.meta.env.DEV
-        ? refreshed.filter((it) => getPricePerUnit(it) <= 0).slice(0, 10)
-        : [];
-
-      let ingredientPriceMap = null;
-      const needsPriceFallback = refreshed.some((it) => getPricePerUnit(it) <= 0);
-      if (needsPriceFallback) {
-        const nowMs = Date.now();
-        const cached = ingredientPriceCacheRef.current;
-        const cacheFresh = cached?.map && nowMs - (cached.fetchedAt || 0) < 5 * 60 * 1000;
-        if (cacheFresh) {
-          ingredientPriceMap = cached.map;
-        } else {
-        try {
-          const pricesRaw = await secureFetch("/ingredient-prices");
-          const pricesList = normalizeIngredientPrices(pricesRaw);
-          ingredientPriceMap = new Map();
-          for (const p of pricesList) {
-            const price = getPricePerUnit(p);
-            if (!(price > 0)) continue;
-            const supplier = p?.supplier_name ?? p?.supplier ?? "";
-            ingredientPriceMap.set(makePriceKey(p?.name, p?.unit, supplier), price);
-            ingredientPriceMap.set(makePriceKey(p?.name, p?.unit, ""), price);
-          }
-          ingredientPriceCacheRef.current = { map: ingredientPriceMap, fetchedAt: nowMs };
-
-          if (import.meta.env.DEV) {
-            console.log("🧾 Stock debug (price fallback)", {
-              ingredientPricesCount: Array.isArray(pricesList) ? pricesList.length : 0,
-              ingredientPriceMapSize: ingredientPriceMap.size,
-              missingPriceExamples: missingPriceExamples.map((it) => ({
-                id: it?.id,
-                name: it?.name,
-                unit: it?.unit,
-                supplier_name: it?.supplier_name,
-                raw_price_per_unit: it?.price_per_unit,
-              })),
-            });
-          }
-        } catch (e) {
-          if (import.meta.env.DEV) {
-            console.warn("⚠️ Stock price fallback failed (/ingredient-prices).", e);
-          }
-        }
-        }
-      }
-
-      let supplierTxnPriceMapsBySupplierId = null;
-      const needsSupplierTxnFallback = refreshed.some((it) => {
-        const directPrice = getPricePerUnit(it);
-        if (directPrice > 0) return false;
-        if (!ingredientPriceMap) return true;
-        const supplier = it?.supplier_name ?? "";
-        const priceFromIngredientMap =
-          ingredientPriceMap.get(makePriceKey(it?.name, it?.unit, supplier)) ??
-          ingredientPriceMap.get(makePriceKey(it?.name, it?.unit, ""));
-        return !(toNumber(priceFromIngredientMap) > 0);
-      });
-
-      if (needsSupplierTxnFallback) {
-        const supplierIdsToFetch = Array.from(
-          new Set(
-            refreshed
-              .filter((it) => {
-                if (!(it?.supplier_id > 0)) return false;
-                const directPrice = getPricePerUnit(it);
-                if (directPrice > 0) return false;
-                if (!ingredientPriceMap) return true;
-                const supplier = it?.supplier_name ?? "";
-                const priceFromIngredientMap =
-                  ingredientPriceMap.get(makePriceKey(it?.name, it?.unit, supplier)) ??
-                  ingredientPriceMap.get(makePriceKey(it?.name, it?.unit, ""));
-                return !(toNumber(priceFromIngredientMap) > 0);
-              })
-              .map((it) => it.supplier_id)
-          )
-        );
-
-        if (supplierIdsToFetch.length > 0) {
-          supplierTxnPriceMapsBySupplierId = new Map();
-          const cache = supplierTxnPriceCacheRef.current;
-          const nowMs = Date.now();
-
-          for (const sid of supplierIdsToFetch) {
-            const cachedEntry = cache.bySupplierId.get(sid);
-            const isFresh =
-              cachedEntry?.map && nowMs - (cachedEntry.fetchedAt || 0) < 5 * 60 * 1000;
-
-            if (isFresh) {
-              supplierTxnPriceMapsBySupplierId.set(sid, cachedEntry.map);
-              continue;
-            }
-
-            try {
-              const txRaw = await secureFetch(`/suppliers/${sid}/transactions`);
-              const txns = normalizeSupplierTransactions(txRaw);
-
-              const latestByNameUnit = new Map(); // name|unit -> { time, price }
-              txns.forEach((txn) => {
-                const rows = collectTxnRows(txn);
-                rows.forEach((row) => {
-                  const name = String(row?.name || "").trim();
-                  const unit = String(row?.unit || "").trim();
-                  if (!name || !unit) return;
-                  if (name === "Payment" || name === "Compiled Receipt") return;
-
-                  const price = computeTxnRowPrice(row);
-                  if (!(price > 0)) return;
-
-                  const time = toNumber(row?._time);
-                  const k = makeNameUnitKey(name, unit);
-                  const existing = latestByNameUnit.get(k);
-                  if (!existing || time >= existing.time) {
-                    latestByNameUnit.set(k, { time, price });
-                  }
-                });
-              });
-
-              const priceMap = new Map();
-              latestByNameUnit.forEach((v, k) => priceMap.set(k, v.price));
-
-              supplierTxnPriceMapsBySupplierId.set(sid, priceMap);
-              cache.bySupplierId.set(sid, { map: priceMap, fetchedAt: nowMs });
-            } catch (e) {
-              if (import.meta.env.DEV) {
-                console.warn(`⚠️ Stock supplier txn price fallback failed (supplier_id=${sid}).`, e);
-              }
-            }
-          }
-
-          if (import.meta.env.DEV) {
-            const potato = refreshed.find(
-              (it) => String(it?.name || "").trim().toLowerCase() === "potato"
-            );
-            const potatoSid = potato?.supplier_id;
-            const potatoTxPrice =
-              potatoSid && supplierTxnPriceMapsBySupplierId?.get(potatoSid)
-                ? supplierTxnPriceMapsBySupplierId
-                    .get(potatoSid)
-                    .get(makeNameUnitKey(potato?.name, potato?.unit)) || 0
-                : 0;
-
-            console.log("🧾 Stock debug (supplier txn fallback)", {
-              supplierIdsFetched: supplierIdsToFetch,
-              suppliersWithPriceMaps: supplierTxnPriceMapsBySupplierId.size,
-              potatoSupplierId: potatoSid ?? null,
-              potatoTxnFallbackPrice: potatoTxPrice,
-            });
-          }
-        }
-      }
-
-      // --- Production recipe fallback (finished product cost/unit) ---
-      // If a stock item has no direct/ingredient/supplier txn price, try computing from recipe ingredients.
-      let recipeCostByNameUnit = null; // `${name}|${unit}` -> costPerUnit
-      let recipeCostByName = null; // name -> [{ unit, cost }]
-      const needsRecipeFallback = refreshed.some((it) => getPricePerUnit(it) <= 0);
-
-      if (needsRecipeFallback) {
-        const nowMs = Date.now();
-        const cached = recipeCostCacheRef.current;
-        const cacheFresh =
-          cached?.byNameUnit &&
-          cached?.byName &&
-          nowMs - (cached.fetchedAt || 0) < 5 * 60 * 1000;
-
-        if (cacheFresh) {
-          recipeCostByNameUnit = cached.byNameUnit;
-          recipeCostByName = cached.byName;
-        } else {
-          try {
-            const tenantId =
-              typeof window !== "undefined"
-                ? window.localStorage.getItem("restaurant_id")
-                : null;
-            const recipeEndpoint = tenantId
-              ? `/production/recipes?restaurant_id=${tenantId}`
-              : "/production/recipes";
-
-            const recipesRaw = await secureFetch(recipeEndpoint);
-            const recipes = Array.isArray(recipesRaw)
-              ? recipesRaw
-              : Array.isArray(recipesRaw?.data)
-                ? recipesRaw.data
-                : Array.isArray(recipesRaw?.items)
-                  ? recipesRaw.items
-                  : [];
-
-            // Build a "best known" ingredient price index from current stock + ingredient prices + supplier txn fallback.
-            const bestPriceByName = new Map(); // name -> [{ unit, price }]
-            const bestPriceByNameUnit = new Map(); // `${name}|${unit}` -> price
-
-            const getBestPriceForItem = (it) => {
-              const direct = getPricePerUnit(it);
-              if (direct > 0) return direct;
-
-              const supplier = it?.supplier_name ?? "";
-              const fromIngredientMap = ingredientPriceMap
-                ? ingredientPriceMap.get(makePriceKey(it?.name, it?.unit, supplier)) ??
-                  ingredientPriceMap.get(makePriceKey(it?.name, it?.unit, ""))
-                : 0;
-              if (toNumber(fromIngredientMap) > 0) return toNumber(fromIngredientMap);
-
-              const fromSupplierTxn =
-                supplierTxnPriceMapsBySupplierId && it?.supplier_id
-                  ? supplierTxnPriceMapsBySupplierId
-                      .get(it.supplier_id)
-                      ?.get(makeNameUnitKey(it?.name, it?.unit)) || 0
-                  : 0;
-
-              return toNumber(fromSupplierTxn);
-            };
-
-            (Array.isArray(refreshed) ? refreshed : []).forEach((it) => {
-              const name = String(it?.name || "").trim();
-              const unit = String(it?.unit || "").trim();
-              if (!name || !unit) return;
-              const price = getBestPriceForItem(it);
-              if (!(price > 0)) return;
-
-              const k = makeNameUnitKey(name, unit);
-              bestPriceByNameUnit.set(k, price);
-              const nameKey = String(name).trim().toLowerCase();
-              const list = bestPriceByName.get(nameKey) || [];
-              list.push({ unit, price });
-              bestPriceByName.set(nameKey, list);
-            });
-
-            const resolveIngredientPrice = (ingredientName, desiredUnit) => {
-              const nameKey = String(ingredientName || "").trim().toLowerCase();
-              const desired = String(desiredUnit || "").trim().toLowerCase();
-              if (!nameKey || !desired) return 0;
-
-              const exact =
-                bestPriceByNameUnit.get(makeNameUnitKey(ingredientName, desiredUnit)) || 0;
-              if (exact > 0) return exact;
-
-              const candidates = bestPriceByName.get(nameKey) || [];
-              for (const cand of candidates) {
-                const converted = convertPricePerUnit(cand.price, cand.unit, desired);
-                if (converted !== null && converted > 0) return converted;
-              }
-              return 0;
-            };
-
-            recipeCostByNameUnit = new Map();
-            recipeCostByName = new Map();
-
-            recipes.forEach((recipe) => {
-              const name = String(recipe?.name || "").trim();
-              if (!name) return;
-              const nameKey = name.toLowerCase();
-              const baseQty = toNumber(recipe?.base_quantity ?? recipe?.baseQuantity ?? 0);
-              if (!(baseQty > 0)) return;
-
-              const outputUnit = String(recipe?.output_unit ?? recipe?.outputUnit ?? "").trim();
-              const outputUnitKey = String(outputUnit || "").trim().toLowerCase();
-              if (!outputUnitKey) return;
-
-              const ingredients = Array.isArray(recipe?.ingredients) ? recipe.ingredients : [];
-              const totalCost = ingredients.reduce((sum, ing) => {
-                const ingName = ing?.name ?? ing?.ingredient_name ?? ing?.ingredientName;
-                const ingUnit = ing?.unit;
-                const amount = toNumber(
-                  ing?.amountPerBatch ??
-                    ing?.amount_per_batch ??
-                    ing?.amount ??
-                    ing?.qty ??
-                    ing?.quantity ??
-                    0
-                );
-                if (!ingName || !(amount > 0) || !ingUnit) return sum;
-                const ppu = resolveIngredientPrice(ingName, ingUnit);
-                return sum + amount * toNumber(ppu);
-              }, 0);
-
-              const costPerUnit = totalCost / baseQty;
-              if (!(costPerUnit > 0)) return;
-
-              const key = `${nameKey}|${outputUnitKey}`;
-              recipeCostByNameUnit.set(key, costPerUnit);
-
-              const existing = recipeCostByName.get(nameKey) || [];
-              existing.push({ unit: outputUnitKey, cost: costPerUnit });
-              recipeCostByName.set(nameKey, existing);
-            });
-
-            recipeCostCacheRef.current = {
-              byNameUnit: recipeCostByNameUnit,
-              byName: recipeCostByName,
-              fetchedAt: nowMs,
-            };
-          } catch (e) {
-            if (import.meta.env.DEV) {
-              console.warn("⚠️ Stock recipe cost fallback failed (/production/recipes).", e);
-            }
-            recipeCostByNameUnit = null;
-            recipeCostByName = null;
-          }
-        }
-      }
-
-      const grouped = Object.values(
-        refreshed.reduce((acc, item) => {
-          const nameKey = String(item?.name || "").toLowerCase();
-          const unitKey = String(item?.unit || "");
-          const key = `${nameKey}_${unitKey}`;
-          const quantity = toNumber(item?.quantity);
-          const directPricePerUnit = getPricePerUnit(item);
-          const fallbackPricePerUnit = ingredientPriceMap
-            ? ingredientPriceMap.get(
-                makePriceKey(item?.name, item?.unit, item?.supplier_name ?? "")
-              ) ??
-              ingredientPriceMap.get(makePriceKey(item?.name, item?.unit, ""))
-            : 0;
-          const supplierTxnFallbackPricePerUnit =
-            supplierTxnPriceMapsBySupplierId && item?.supplier_id
-              ? supplierTxnPriceMapsBySupplierId
-                  .get(item.supplier_id)
-                  ?.get(makeNameUnitKey(item?.name, item?.unit)) || 0
-              : 0;
-
-          const pricePerUnit =
-            directPricePerUnit > 0
-              ? directPricePerUnit
-              : toNumber(fallbackPricePerUnit) > 0
-                ? toNumber(fallbackPricePerUnit)
-                : supplierTxnFallbackPricePerUnit;
-
-          let resolvedPricePerUnit = pricePerUnit;
-          if (!(resolvedPricePerUnit > 0) && recipeCostByNameUnit && recipeCostByName) {
-            const stockUnitKey = String(item?.unit || "").trim().toLowerCase();
-            const directRecipe = recipeCostByNameUnit.get(`${nameKey}|${stockUnitKey}`) || 0;
-            if (directRecipe > 0) {
-              resolvedPricePerUnit = directRecipe;
-            } else {
-              const candidates = recipeCostByName.get(nameKey) || [];
-              for (const cand of candidates) {
-                const converted = convertPricePerUnit(cand.cost, cand.unit, stockUnitKey);
-                if (converted !== null && converted > 0) {
-                  resolvedPricePerUnit = converted;
-                  break;
-                }
-              }
-            }
-          }
-
-          if (!acc[key]) {
-            acc[key] = {
-              name: item.name,
-              quantity: 0,
-              unit: item.unit,
-              suppliers: new Set(),
-              critical_quantity: item.critical_quantity || 0,
-              reorder_quantity: item.reorder_quantity || 0,
-              supplier_id: item.supplier_id || null,
-              supplier_name: item.supplier_name || "",
-              stock_id: item.id,
-              expiry_date: item.expiry_date || null,
-              // track aggregate value to compute average price per unit
-              _total_value: 0,
-            };
-          }
-
-          acc[key].quantity += quantity;
-          acc[key].suppliers.add(item.supplier_name);
-          acc[key]._total_value += quantity * resolvedPricePerUnit;
-
-          if (item.expiry_date) {
-            const candidate = new Date(item.expiry_date);
-            if (!Number.isNaN(candidate.getTime())) {
-              const existing = acc[key].expiry_date
-                ? new Date(acc[key].expiry_date)
-                : null;
-              if (!existing || candidate < existing) {
-                acc[key].expiry_date = item.expiry_date;
-              }
-            }
-          }
-          return acc;
-        }, {})
-      ).map((i) => {
-        const totalValue = i._total_value || 0;
-        const qty = i.quantity || 0;
-        const avgPricePerUnit = qty ? totalValue / qty : 0;
-
-        return {
-          name: i.name,
-          quantity: i.quantity,
-          unit: i.unit,
-          critical_quantity: i.critical_quantity,
-          reorder_quantity: i.reorder_quantity,
-          supplier_id: i.supplier_id,
-          supplier_name: i.supplier_name,
-          stock_id: i.stock_id,
-          expiry_date: i.expiry_date,
-          supplier: Array.from(i.suppliers).join(", "),
-          price_per_unit: avgPricePerUnit,
-        };
-      });
-
-      if (import.meta.env.DEV && !debugGroupedLoggedRef.current) {
-        debugGroupedLoggedRef.current = true;
-        const sampleGrouped = grouped?.[0];
-        console.log("🧾 Stock debug (grouped)", {
-          groupedCount: Array.isArray(grouped) ? grouped.length : 0,
-          sampleGroupedKeys:
-            sampleGrouped && typeof sampleGrouped === "object"
-              ? Object.keys(sampleGrouped)
-              : [],
-          sampleGrouped,
-          computed: sampleGrouped
-            ? {
-                quantity: toNumber(sampleGrouped.quantity),
-                price_per_unit: toNumber(sampleGrouped.price_per_unit),
-                total_value:
-                  toNumber(sampleGrouped.quantity) *
-                  toNumber(sampleGrouped.price_per_unit),
-              }
-            : null,
-        });
-      }
-
-      setGroupedData(grouped);
     } catch (error) {
       console.error("❌ fetchStock error:", error.message);
     } finally {
       setLoading(false);
     }
-  }, [handleAddToCart]);
+  }, [buildGroupedStock, commitStockRows, getLatestStockCursor, handleAddToCart]);
 
-  // ✅ Socket listener for real-time auto-add
- useEffect(() => {
-  const onStockUpdated = () => {
-    console.log("📡 Stock updated event → refreshing...");
-    fetchStock();
-  };
-  socket.on("stock-updated", onStockUpdated);
-  return () => socket.off("stock-updated", onStockUpdated);
-}, [fetchStock]);
+  const applyStockDelta = useCallback(
+    (payload = {}) => {
+      const stockRow = payload?.stock && typeof payload.stock === "object" ? payload.stock : null;
+      const stockId = Number(payload?.stockId ?? stockRow?.id);
+      if (!Number.isFinite(stockId)) return false;
+
+      setStock((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        const next = payload?.deleted
+          ? list.filter((item) => Number(item?.id) !== stockId)
+          : (() => {
+              let found = false;
+              const mapped = list.map((item) => {
+                if (Number(item?.id) !== stockId) return item;
+                found = true;
+                return { ...item, ...stockRow };
+              });
+              if (!found && stockRow) mapped.push(stockRow);
+              return mapped;
+            })();
+        setGroupedData(buildGroupedStock(next));
+        return next;
+      });
+      return true;
+    },
+    [buildGroupedStock]
+  );
+
+  useEffect(() => {
+    const scheduleRefresh = () => {
+      if (socketRefreshTimerRef.current) {
+        window.clearTimeout(socketRefreshTimerRef.current);
+      }
+      socketRefreshTimerRef.current = window.setTimeout(() => {
+        socketRefreshTimerRef.current = null;
+        fetchStock({ incremental: true });
+      }, 350);
+    };
+
+    const onStockUpdated = (payload = {}) => {
+      if (!applyStockDelta(payload)) {
+        scheduleRefresh();
+      }
+    };
+
+    socket.on("stock-updated", onStockUpdated);
+    return () => {
+      socket.off("stock-updated", onStockUpdated);
+      if (socketRefreshTimerRef.current) {
+        window.clearTimeout(socketRefreshTimerRef.current);
+        socketRefreshTimerRef.current = null;
+      }
+    };
+  }, [applyStockDelta, fetchStock]);
 
 
   return (

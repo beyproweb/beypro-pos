@@ -330,6 +330,13 @@ export default function Layout({
   const currentTitle = translatedTitle || "Beypro";
   const headerPreviousRoute = (() => {
     if (normalizedPath === "/scan-ticket") return "/dashboard";
+    if (
+      normalizedPath === "/user-management" ||
+      normalizedPath === "/role-management" ||
+      normalizedPath === "/add-new-user"
+    ) {
+      return "/dashboard";
+    }
     return undefined;
   })();
 
