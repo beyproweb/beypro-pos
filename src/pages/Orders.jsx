@@ -265,6 +265,10 @@ export default function Orders({ orders: propOrders }) {
     openRouteForDriver(selectedDriverId);
   }, [openRouteForDriver, selectedDriverId]);
 
+  const handleOpenTableOverview = useCallback(() => {
+    navigate("/tableoverview?tab=tables");
+  }, [navigate]);
+
   const uiActions = useMemo(
     () => ({
       openDrinkModal,
@@ -273,12 +277,14 @@ export default function Orders({ orders: propOrders }) {
       handleStatusFilterChange,
       handleSelectedDriverChange,
       handleOpenRoute,
+      handleOpenTableOverview,
       openCancelModalForOrder,
       openPaymentModalForOrder,
     }),
     [
       closeDrinkModal,
       handleOpenRoute,
+      handleOpenTableOverview,
       handleSelectedDriverChange,
       handleStatusFilterChange,
       openCancelModalForOrder,
@@ -424,6 +430,7 @@ export default function Orders({ orders: propOrders }) {
         assignedOrderCountForSelectedDriver={assignedOrderCountForSelectedDriver}
         selectedDriverId={selectedDriverId}
         onSelectedDriverChange={uiActions.handleSelectedDriverChange}
+        onOpenTableOverview={uiActions.handleOpenTableOverview}
         onLockClick={handleManualLock}
         t={t}
       />

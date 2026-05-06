@@ -20,7 +20,6 @@ import {
   useCustomerAuth,
   useHeaderDrawer,
 } from "../features/qrmenu/header-drawer";
-import { VoiceOrderController } from "../features/voiceOrder";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import secureFetch, { getAuthToken } from "../utils/secureFetch";
@@ -5088,14 +5087,6 @@ export default function QrMenu() {
     tableScanError,
     menuSearch,
     setMenuSearch,
-    qrVoiceListening,
-    qrVoiceParsing,
-    qrVoiceTranscript,
-    setQrVoiceTranscript,
-    qrVoiceResult,
-    qrVoiceError,
-    qrVoiceModalOpen,
-    setQrVoiceModalOpen,
     takeaway,
     setTakeaway,
     showQrPrompt,
@@ -5110,9 +5101,6 @@ export default function QrMenu() {
     handleMenuCategorySelect,
     handleMenuCategoryClick,
     handleMenuProductOpen,
-    parseQrVoiceTranscript,
-    startQrVoiceCapture,
-    injectQrVoiceItemsToCart,
     openTableScanner,
     selectTableDirectly,
     closeTableScanner,
@@ -5958,7 +5946,6 @@ export default function QrMenu() {
     setPendingPopularProduct(null);
     setEditingCartItemId(null);
     setSelectedProduct(null);
-    setQrVoiceModalOpen(false);
     setIsRequestSongViewOpen(false);
     setForceHome(true);
     handleCloseAppHeaderDrawer();
@@ -5974,7 +5961,6 @@ export default function QrMenu() {
     setMenuSearch,
     setOrderType,
     setPendingPopularProduct,
-    setQrVoiceModalOpen,
     setSelectedProduct,
     setShowDeliveryForm,
     setShowOrderTypePrompt,
@@ -6001,7 +5987,6 @@ export default function QrMenu() {
     setShowTakeawayForm(false);
     setEditingCartItemId(null);
     setSelectedProduct(null);
-    setQrVoiceModalOpen(false);
     setIsRequestSongViewOpen(false);
     setForceHome(false);
     handleCloseAppHeaderDrawer();
@@ -6017,7 +6002,6 @@ export default function QrMenu() {
     setIsMenuBrowseMode,
     setMenuSearch,
     setOrderType,
-    setQrVoiceModalOpen,
     setSelectedProduct,
     setShowDeliveryForm,
     setShowStatus,
@@ -6129,12 +6113,10 @@ export default function QrMenu() {
     setEditingCartItemId(null);
     setShowAddModal(false);
     setSelectedProduct(null);
-    setQrVoiceModalOpen(false);
   }, [
     reservationPendingCheckIn,
     setCart,
     setEditingCartItemId,
-    setQrVoiceModalOpen,
     setSelectedProduct,
     setShowAddModal,
     storage,
@@ -6551,20 +6533,39 @@ export default function QrMenu() {
     [setCustomerInfo, setTakeaway, storage]
   );
 
+  const readStoredPhoneVerificationToken = useCallback(
+    (phone) => {
+      const normalizedPhone = normalizeQrPhone(phone);
+      if (!QR_PHONE_REGEX.test(normalizedPhone)) return "";
+      try {
+        const trust = JSON.parse(storage.getItem("qr_phone_verification_trust") || "null");
+        const trustedPhone = normalizeQrPhone(trust?.phone || "");
+        const token = String(trust?.token || "").trim();
+        const expiresAtMs = Number(trust?.expiresAtMs || 0);
+        if (
+          trustedPhone === normalizedPhone &&
+          token &&
+          Number.isFinite(expiresAtMs) &&
+          expiresAtMs > Date.now()
+        ) {
+          return token;
+        }
+      } catch {
+        // Ignore malformed verification cache and force OTP fallback.
+      }
+      return "";
+    },
+    [storage]
+  );
+
   async function ensureVerifiedPhoneForFlow({ phone, flowLabel = "" }) {
     const normalizedPhone = normalizeQrPhone(phone);
-
-    const sessionPhone = normalizeQrPhone(qrCustomerSession?.phone || "");
-    const sessionAlreadyVerified =
-      isCustomerLoggedInEffective &&
-      qrCustomerSession?.phone_verified === true &&
-      QR_PHONE_REGEX.test(sessionPhone) &&
-      sessionPhone === normalizedPhone;
-    if (sessionAlreadyVerified) {
+    const storedToken = readStoredPhoneVerificationToken(normalizedPhone);
+    if (storedToken) {
       return {
         ok: true,
         phone: normalizedPhone,
-        phoneVerificationToken: "",
+        phoneVerificationToken: storedToken,
       };
     }
 
@@ -6574,11 +6575,18 @@ export default function QrMenu() {
           phone: normalizedPhone,
         });
         if (status?.verified) {
-          return {
-            ok: true,
-            phone: normalizedPhone,
-            phoneVerificationToken: String(status?.phoneVerificationToken || "").trim(),
-          };
+          const phoneVerificationToken =
+            String(status?.phoneVerificationToken || "").trim() ||
+            readStoredPhoneVerificationToken(normalizedPhone);
+          if (phoneVerificationToken) {
+            return {
+              ok: true,
+              phone: normalizedPhone,
+              phoneVerificationToken,
+            };
+          }
+          // A verified flag without a checkout token is not enough for /orders;
+          // fall through to the OTP modal so the submit never 403s.
         }
       } catch {
         // If status check fails we still allow OTP modal fallback.
@@ -6590,10 +6598,17 @@ export default function QrMenu() {
       flowLabel,
     });
     if (modalResult?.verified) {
+      const modalToken =
+        String(modalResult.phoneVerificationToken || "").trim() ||
+        readStoredPhoneVerificationToken(modalResult.phone || normalizedPhone);
+      if (!modalToken) {
+        toast.error(t("Phone verification is required before checkout."));
+        return { ok: false, phone: normalizeQrPhone(modalResult.phone || normalizedPhone) };
+      }
       return {
         ok: true,
         phone: normalizeQrPhone(modalResult.phone || normalizedPhone),
-        phoneVerificationToken: String(modalResult.phoneVerificationToken || "").trim(),
+        phoneVerificationToken: modalToken,
       };
     }
     return { ok: false, phone: normalizedPhone };
@@ -7483,8 +7498,7 @@ export default function QrMenu() {
     setShowStatus(false);
     setForceHome(false);
     window.dispatchEvent(new Event("qr:voice-order-close"));
-    setQrVoiceModalOpen(false);
-  }, [setForceHome, setQrVoiceModalOpen, setShowStatus, setShowTakeawayForm, setTakeaway]);
+  }, [setForceHome, setShowStatus, setShowTakeawayForm, setTakeaway]);
   const handleTakeawayFormSubmit = useCallback(async (form) => {
     if (!form) {
       setTakeaway({
@@ -7573,7 +7587,6 @@ export default function QrMenu() {
         });
         setShowTakeawayForm(false);
         window.dispatchEvent(new Event("qr:voice-order-close"));
-        setQrVoiceModalOpen(false);
         setOrderType("table");
         storage.setItem("qr_orderType", "table");
         if (Number.isFinite(resolvedTableNumber) && resolvedTableNumber > 0) {
@@ -7618,7 +7631,6 @@ export default function QrMenu() {
     setOrderId,
     setOrderStatus,
     setOrderType,
-    setQrVoiceModalOpen,
     setShowTakeawayForm,
     setShowStatus,
     setSubmitting,
@@ -7952,7 +7964,6 @@ export default function QrMenu() {
                       appendIdentifier={appendIdentifier}
                       layout="panel"
                       storage={storage}
-                      voiceListening={qrVoiceListening}
                     />
                   </aside>
                 )}
@@ -8019,7 +8030,6 @@ export default function QrMenu() {
           onEditItem={handleEditCartItem}
           appendIdentifier={appendIdentifier}
           storage={storage}
-          voiceListening={qrVoiceListening}
           hideFloatingButton={true}
         />
       )}
@@ -8158,151 +8168,6 @@ export default function QrMenu() {
           </div>
         </div>
       ) : null}
-
-      <VoiceOrderController
-        restaurantId={restaurantIdentifier || id || slug}
-        tableId={resolvedTableForActions || table}
-        products={visibleVoiceProducts}
-        onAddToCart={handleVoiceDraftAddToCart}
-        onSyncDraftToCart={syncVoiceDraftToSharedCart}
-        onOpenSharedCart={onOpenSharedCartFromVoice}
-        onOpenCatalogProduct={onOpenCatalogProductFromVoice}
-        onConfirmOrder={orderType ? handleVoiceDraftConfirmOrder : undefined}
-        language={lang}
-        paymentMethod={paymentMethod}
-        onPaymentMethodChange={setPaymentMethod}
-        canStartVoiceOrder={
-          Boolean(resolvedOrderTypeForActions) &&
-          (!showHome || showStatus) &&
-          !reservationPendingCheckIn
-        }
-        onRequireOrderType={handleVoiceRequireOrderType}
-        forceMinimized={Boolean(showStatus)}
-        hideMiniButton={true}
-        openEventName={!isDesktopLayout ? "qr:voice-order-open" : ""}
-        closeEventName={!isDesktopLayout ? "qr:voice-order-close" : ""}
-      />
-
-      {qrVoiceModalOpen && (
-        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl border border-gray-200 p-5 space-y-4 dark:bg-neutral-900 dark:border-neutral-800">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center dark:bg-indigo-950/30">
-                  <Mic className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="text-sm font-semibold text-gray-800 dark:text-neutral-100">
-                    {t("Voice order")}
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-neutral-400">
-                    {qrVoiceListening
-                      ? t("Listening…")
-                      : qrVoiceParsing
-                        ? t("Parsing…")
-                        : t("Review and confirm")}
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => setQrVoiceModalOpen(false)}
-                className="rounded-full bg-gray-100 px-3 py-1 text-sm font-semibold text-gray-700 hover:bg-gray-200 dark:bg-neutral-800 dark:text-neutral-200"
-              >
-                {t("Close")}
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-gray-600 dark:text-neutral-300">
-                {t("Transcript")}
-              </label>
-              <textarea
-                value={qrVoiceTranscript}
-                onChange={(e) => setQrVoiceTranscript(e.target.value)}
-                rows={3}
-                className="w-full rounded-xl border border-gray-200 bg-white p-3 text-sm text-gray-800 shadow-inner focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-100"
-                placeholder={t("Press the mic and speak, or type here…")}
-              />
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={startQrVoiceCapture}
-                  className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-white font-semibold shadow hover:bg-indigo-700 disabled:opacity-60"
-                  disabled={qrVoiceListening || qrVoiceParsing}
-                >
-                  {qrVoiceListening ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                  {t("Speak again")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => parseQrVoiceTranscript(qrVoiceTranscript)}
-                  className="rounded-xl bg-gray-900 text-white px-4 py-2 text-sm font-semibold shadow hover:bg-gray-800 disabled:opacity-60"
-                  disabled={!qrVoiceTranscript || qrVoiceParsing}
-                >
-                  {qrVoiceParsing ? t("Parsing…") : t("Parse")}
-                </button>
-              </div>
-              {qrVoiceError ? (
-                <div className="rounded-lg bg-rose-50 text-rose-700 px-3 py-2 text-sm border border-rose-100 dark:bg-rose-900/30 dark:text-rose-100 dark:border-rose-800/50">
-                  {qrVoiceError}
-                </div>
-              ) : null}
-            </div>
-
-            {!qrVoiceParsing && qrVoiceResult ? (
-              <div className="space-y-3">
-                {qrVoiceResult.clarification_required ? (
-                  <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800 dark:bg-amber-900/20 dark:border-amber-800/50 dark:text-amber-100">
-                    {qrVoiceResult.clarification_question || t("We need clarification.")}
-                  </div>
-                ) : null}
-                <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-3 dark:border-neutral-800 dark:bg-neutral-900/60">
-                  <div className="text-xs font-semibold text-gray-500 mb-2 dark:text-neutral-300">
-                    {t("We understood")}:
-                  </div>
-                  <ul className="space-y-2">
-                    {(qrVoiceResult.items || []).map((it, idx) => (
-                      <li
-                        key={idx}
-                        className="rounded-lg bg-white border border-gray-200 px-3 py-2 text-sm flex flex-col gap-1 shadow-sm dark:bg-neutral-800 dark:border-neutral-700"
-                      >
-                        <div className="font-semibold text-gray-800 dark:text-neutral-100">
-                          {it.quantity}x {it.product_name}
-                        </div>
-                        {it.size ? (
-                          <div className="text-xs text-gray-500">
-                            {t("Size")}: {it.size}
-                          </div>
-                        ) : null}
-                        {Array.isArray(it.modifiers) && it.modifiers.length > 0 ? (
-                          <div className="text-xs text-gray-600 dark:text-neutral-300">
-                            {it.modifiers.map((m, i) => (
-                              <span key={i} className="inline-block mr-2">
-                                {m.type === "remove" ? "-" : "+"}
-                                {m.value}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="flex flex-wrap gap-2 justify-end">
-                  <button
-                    type="button"
-                    onClick={() => injectQrVoiceItemsToCart(qrVoiceResult.items)}
-                    className="rounded-xl bg-emerald-600 text-white px-4 py-2 text-sm font-semibold shadow hover:bg-emerald-700"
-                    disabled={!qrVoiceResult.items || qrVoiceResult.items.length === 0}
-                  >
-                    {t("Confirm order")}
-                  </button>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      )}
 
       <ProductModal
         open={showAddModal}

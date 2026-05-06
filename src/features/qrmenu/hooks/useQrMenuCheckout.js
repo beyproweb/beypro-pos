@@ -62,13 +62,22 @@ export function useQrMenuCheckout({
     storage.setItem("qr_payment_method", paymentMethod);
   }, [paymentMethod, storage]);
 
+  const getQrCustomerAuthorizationHeader = useCallback(() => {
+    const rawToken = String(storage.getItem("qr_customer_token") || "").trim();
+    if (!rawToken) return "";
+    return rawToken.startsWith("Bearer ") ? rawToken : `Bearer ${rawToken}`;
+  }, [storage]);
+
   const postJSON = useCallback(async (url, body) => {
+    const customerAuthorization = getQrCustomerAuthorizationHeader();
     try {
       const json = await secureFetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: "",
+          // QR checkout must not leak staff/admin auth, but a QR customer
+          // token lets the backend accept an already-verified customer phone.
+          Authorization: customerAuthorization,
         },
         body: JSON.stringify(body),
       });
@@ -76,7 +85,7 @@ export function useQrMenuCheckout({
     } catch (err) {
       throw new Error(err.message || "Request failed");
     }
-  }, []);
+  }, [getQrCustomerAuthorizationHeader]);
 
   const parseOrderItemsPayload = useCallback((raw) => {
     if (Array.isArray(raw)) return raw;

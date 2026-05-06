@@ -13,13 +13,14 @@ const OrdersActionBar = memo(function OrdersActionBar({
   assignedOrderCountForSelectedDriver,
   selectedDriverId,
   onSelectedDriverChange,
+  onOpenTableOverview,
   onLockClick,
   t,
 }) {
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 w-full border-t border-slate-200/70 bg-slate-50/90 px-3 py-2.5 backdrop-blur-md dark:border-slate-800/70 dark:bg-slate-950/75">
       <div className="mx-auto w-full max-w-6xl">
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-6 xl:grid-cols-7">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-6 xl:grid-cols-8">
           <OrdersFiltersBar
             statusFilter={statusFilter}
             onStatusFilterChange={onStatusFilterChange}
@@ -92,6 +93,16 @@ const OrdersActionBar = memo(function OrdersActionBar({
               </svg>
             </span>
           </div>
+
+          <button
+            type="button"
+            onClick={onOpenTableOverview}
+            aria-label={t("Tables")}
+            title={t("Tables")}
+            className="inline-flex h-[46px] items-center justify-center rounded-xl border border-sky-300/70 bg-gradient-to-br from-sky-500 via-cyan-500 to-teal-500 px-4 text-base font-semibold text-white shadow-md transition hover:from-sky-600 hover:to-teal-600 active:scale-[0.98]"
+          >
+            {t("Tables")}
+          </button>
 
           {onLockClick && (
             <button
