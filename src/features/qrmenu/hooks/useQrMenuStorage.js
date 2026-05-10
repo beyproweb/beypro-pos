@@ -157,9 +157,9 @@ export function useQrMenuStorage({
 
   useEffect(() => {
     const handler = (e) => {
-      // Temporarily disabled — let the browser handle install natively.
-      setDeferredPrompt(null);
-      setCanInstall(false);
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setCanInstall(true);
     };
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
@@ -260,6 +260,7 @@ export function useQrMenuStorage({
     getSavedDeliveryInfo,
     handleInstallClick,
     handleDownloadQr,
+    markQrSaved,
   };
 }
 

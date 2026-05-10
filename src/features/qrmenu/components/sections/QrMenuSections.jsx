@@ -457,13 +457,20 @@ function DownloadQrModal({
   open,
   onClose,
   t,
+  platform,
+  canInstall,
   onInstall,
   onDownloadImage,
 }) {
   if (!open) return null;
   const installLabel = t("Install App");
   const title = t("Download App");
-  const subtitle = t("Open the Beypro app for the best experience.");
+  const subtitle =
+    platform === "ios"
+      ? t("Open this page in Safari, then add it to your Home Screen.")
+      : canInstall
+        ? t("Install this menu app in Chrome for the best experience.")
+        : t("Open this page in Chrome or Safari, then install it as an app.");
 
   return createPortal(
     <div className="fixed inset-0 z-[999] bg-black/60 flex items-center justify-center p-4">

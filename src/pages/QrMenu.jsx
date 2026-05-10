@@ -65,7 +65,7 @@ import {
   buildReservationBookingPath,
 } from "../features/qrmenu/publicBookingRoutes";
 import QuantityStepperCard from "../features/floorPlan/components/QuantityStepperCard";
-import { isInStandaloneMode, isIos } from "../utils/pwaMode";
+import { isInStandaloneMode } from "../utils/pwaMode";
 import { DEFAULT_LANGUAGE, resolvePreferredLanguage } from "../utils/language";
 import {
   APP_RESTAURANT_BASE_URL,
@@ -5065,6 +5065,7 @@ export default function QrMenu() {
     setShowTakeawayForm,
     orderSelectCustomization,
     setOrderSelectCustomization,
+    qrCustomizationLoaded,
     showDeliveryForm,
     setShowDeliveryForm,
     pendingPopularProduct,
@@ -5093,7 +5094,10 @@ export default function QrMenu() {
     setShowQrPrompt,
     qrPromptMode,
     setQrPromptMode,
+    deferredPrompt,
     canInstall,
+    handleInstallClick,
+    markQrSaved,
     isDesktopLayout,
     appendIdentifier,
     triggerOrderType,
@@ -5165,6 +5169,7 @@ export default function QrMenu() {
   const [showStandaloneSplash, setShowStandaloneSplash] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [downloadQrModalOpen, setDownloadQrModalOpen] = useState(false);
+  const autoDownloadQrPromptOpenedRef = useRef(false);
   const {
     isOpen: isAppHeaderDrawerOpen,
     openDrawer: openAppHeaderDrawer,
@@ -5746,6 +5751,10 @@ export default function QrMenu() {
   const allowTableOrder = boolish(orderSelectCustomization?.table_order_enabled, true);
   const tableQrScanEnabled = boolish(orderSelectCustomization?.table_qr_scan_enabled, true);
   const hideAllQrProducts = boolish(orderSelectCustomization?.disable_all_products, false);
+  const qrDownloadPopupEnabled = boolish(
+    orderSelectCustomization?.qr_download_popup_enabled,
+    true
+  );
   const editingCartItem = useMemo(
     () =>
       editingCartItemId
@@ -7277,15 +7286,39 @@ export default function QrMenu() {
   }, []);
 
   const openDownloadQrModal = useCallback(() => {
-    setDownloadQrModalOpen(false);
+    if (qrDownloadPopupEnabled) {
+      setDownloadQrModalOpen(true);
+      return;
+    }
     handleDownloadQrImage();
-  }, [handleDownloadQrImage]);
+  }, [handleDownloadQrImage, qrDownloadPopupEnabled]);
 
   useEffect(() => {
+    if (!qrCustomizationLoaded) return;
+    if (!qrDownloadPopupEnabled) {
+      setDownloadQrModalOpen(false);
+      return;
+    }
     if (!showQrPrompt) return;
-    setShowQrPrompt(false);
-    setQrPromptMode("default");
-  }, [setQrPromptMode, setShowQrPrompt, showQrPrompt]);
+
+    if (isInStandaloneMode()) {
+      markQrSaved();
+      setShowQrPrompt(false);
+      setQrPromptMode("default");
+      return;
+    }
+
+    if (autoDownloadQrPromptOpenedRef.current) return;
+    autoDownloadQrPromptOpenedRef.current = true;
+    setDownloadQrModalOpen(true);
+  }, [
+    markQrSaved,
+    qrCustomizationLoaded,
+    qrDownloadPopupEnabled,
+    setQrPromptMode,
+    setShowQrPrompt,
+    showQrPrompt,
+  ]);
 
   const handleShareFromModal = useCallback(() => {
     shareCurrentMenu();
@@ -7298,10 +7331,19 @@ export default function QrMenu() {
   }, [copyCurrentMenuLink]);
 
   const handleInstallFromModal = useCallback(() => {
+    if (deferredPrompt) {
+      handleInstallClick();
+      setDownloadQrModalOpen(false);
+      return;
+    }
+    if (platform === "ios") {
+      setShowHelp(true);
+      setDownloadQrModalOpen(false);
+      return;
+    }
     openRealAppLink();
     setDownloadQrModalOpen(false);
-    setShowQrPrompt(false);
-  }, [openRealAppLink, setShowQrPrompt]);
+  }, [deferredPrompt, handleInstallClick, openRealAppLink, platform, setShowHelp]);
 
   const handleDownloadImageFromModal = useCallback(async () => {
     await handleDownloadQrImage();
@@ -7775,6 +7817,8 @@ export default function QrMenu() {
         open={downloadQrModalOpen}
         onClose={() => setDownloadQrModalOpen(false)}
         t={t}
+        platform={platform}
+        canInstall={canInstall}
         onInstall={handleInstallFromModal}
         onDownloadImage={handleDownloadImageFromModal}
       />

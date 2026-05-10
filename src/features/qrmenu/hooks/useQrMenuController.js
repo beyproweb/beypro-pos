@@ -29,6 +29,7 @@ const DEFAULT_QR_MENU_BRANDING = {
   reservation_guest_composition_validation_message: "",
   table_order_enabled: true,
   disable_all_products: false,
+  qr_download_popup_enabled: true,
   table_geo_enabled: false,
   table_geo_radius_meters: 150,
   pwa_primary_color: "#4F46E5",
@@ -791,6 +792,7 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
     getSavedDeliveryInfo,
     handleInstallClick,
     handleDownloadQr,
+    markQrSaved,
   } = useQrMenuStorage({
     slug,
     id,
@@ -936,14 +938,17 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
     ...DEFAULT_QR_MENU_BRANDING,
     ...(cachedBranding || {}),
   }));
+  const [qrCustomizationLoaded, setQrCustomizationLoaded] = useState(false);
 
   // Load public customization to extract the brand title for header.
   useEffect(() => {
     if (!restaurantIdentifier) {
       setBrandName("");
       setOrderSelectCustomization({ ...DEFAULT_QR_MENU_BRANDING });
+      setQrCustomizationLoaded(true);
       return;
     }
+    setQrCustomizationLoaded(false);
 
     const applyCustomization = (nextCustomization) => {
       const customization =
@@ -968,16 +973,27 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
     };
 
     const cachedCustomization = readCachedQrMenuBranding(restaurantIdentifier);
-    applyCustomization(cachedCustomization);
+    if (cachedCustomization) {
+      applyCustomization(cachedCustomization);
+    } else {
+      applyCustomization(null);
+    }
+
+    let cancelled = false;
 
     (async () => {
       try {
         const res = await secureFetch(`/public/qr-menu-customization/${encodeURIComponent(restaurantIdentifier)}`);
         const c = res?.customization || {};
+        if (cancelled) return;
         writeCachedQrMenuBranding(restaurantIdentifier, c);
         applyCustomization(c);
       } catch (err) {
         // Ignore network failures and keep the cached brand if we have one.
+      } finally {
+        if (!cancelled) {
+          setQrCustomizationLoaded(true);
+        }
       }
     })();
 
@@ -1003,6 +1019,7 @@ const isReservationPendingCheckIn = (entry, fallbackStatus = null, checkedInOrde
     return () => {
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener(QR_MENU_BRANDING_UPDATED_EVENT, handleBrandingUpdate);
+      cancelled = true;
     };
   }, [restaurantIdentifier, storage]);
 
@@ -3737,6 +3754,7 @@ function handleReset(options = null) {
     setShowTakeawayForm,
     orderSelectCustomization,
     setOrderSelectCustomization,
+    qrCustomizationLoaded,
     showDeliveryForm,
     setShowDeliveryForm,
     pendingPopularProduct,
@@ -3816,6 +3834,7 @@ function handleReset(options = null) {
     handleReset,
     handleInstallClick,
     handleDownloadQr,
+    markQrSaved,
     showHome,
     showTableSelector,
     filteredOccupied,
