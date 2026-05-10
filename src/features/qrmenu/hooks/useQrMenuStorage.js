@@ -82,10 +82,12 @@ export function useQrMenuStorage({
     const detectedPlatform =
       typeof getPlatform === "function" ? getPlatform() : "other";
     const iosSafari = isIosSafari();
-    const iosInApp = detectedPlatform === "ios" && isLikelyInAppBrowser();
+    const inAppBrowser = isLikelyInAppBrowser();
+    const iosInApp = detectedPlatform === "ios" && inAppBrowser;
     return {
       platform: detectedPlatform,
       isIosSafari: iosSafari,
+      isInAppBrowser: inAppBrowser,
       isIosInAppBrowser: iosInApp,
     };
   }, [getPlatform]);
@@ -93,6 +95,9 @@ export function useQrMenuStorage({
   const [platform, setPlatform] = useState(() => resolveInstallSurface().platform);
   const [isIosSafariBrowser, setIsIosSafariBrowser] = useState(
     () => resolveInstallSurface().isIosSafari
+  );
+  const [isInAppBrowser, setIsInAppBrowser] = useState(
+    () => resolveInstallSurface().isInAppBrowser
   );
   const [isIosInAppBrowser, setIsIosInAppBrowser] = useState(
     () => resolveInstallSurface().isIosInAppBrowser
@@ -129,6 +134,7 @@ export function useQrMenuStorage({
       const next = resolveInstallSurface();
       setPlatform(next.platform);
       setIsIosSafariBrowser(next.isIosSafari);
+      setIsInAppBrowser(next.isInAppBrowser);
       setIsIosInAppBrowser(next.isIosInAppBrowser);
     };
 
@@ -248,6 +254,7 @@ export function useQrMenuStorage({
     platform,
     setPlatform,
     isIosSafariBrowser,
+    isInAppBrowser,
     isIosInAppBrowser,
     showQrPrompt,
     setShowQrPrompt,

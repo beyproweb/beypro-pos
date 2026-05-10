@@ -5098,6 +5098,7 @@ export default function QrMenu() {
     canInstall,
     handleInstallClick,
     markQrSaved,
+    isInAppBrowser,
     isDesktopLayout,
     appendIdentifier,
     triggerOrderType,
@@ -7230,6 +7231,28 @@ export default function QrMenu() {
     }
   }, [brandedShareUrl, t]);
 
+  const openCurrentMenuInBrowser = useCallback(() => {
+    if (typeof window === "undefined") return;
+
+    const url = brandedShareUrl || window.location.href;
+    if (platform === "android") {
+      try {
+        const parsed = new URL(url);
+        const intentTarget = `${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
+        window.location.href =
+          `intent://${intentTarget}` +
+          `#Intent;scheme=${parsed.protocol.replace(":", "")};package=com.android.chrome;` +
+          `S.browser_fallback_url=${encodeURIComponent(url)};end`;
+        return;
+      } catch {
+        // Fall through to copy/share guidance.
+      }
+    }
+
+    setShowHelp(true);
+    copyCurrentMenuLink();
+  }, [brandedShareUrl, copyCurrentMenuLink, platform, setShowHelp]);
+
   const shareCurrentMenu = useCallback(() => {
     if (typeof window === "undefined") return;
     const url = brandedShareUrl || window.location.href;
@@ -7331,6 +7354,11 @@ export default function QrMenu() {
   }, [copyCurrentMenuLink]);
 
   const handleInstallFromModal = useCallback(() => {
+    if (isInAppBrowser) {
+      openCurrentMenuInBrowser();
+      setDownloadQrModalOpen(false);
+      return;
+    }
     if (deferredPrompt) {
       handleInstallClick();
       setDownloadQrModalOpen(false);
@@ -7343,7 +7371,15 @@ export default function QrMenu() {
     }
     openRealAppLink();
     setDownloadQrModalOpen(false);
-  }, [deferredPrompt, handleInstallClick, openRealAppLink, platform, setShowHelp]);
+  }, [
+    deferredPrompt,
+    handleInstallClick,
+    isInAppBrowser,
+    openCurrentMenuInBrowser,
+    openRealAppLink,
+    platform,
+    setShowHelp,
+  ]);
 
   const handleDownloadImageFromModal = useCallback(async () => {
     await handleDownloadQrImage();
@@ -7819,6 +7855,7 @@ export default function QrMenu() {
         t={t}
         platform={platform}
         canInstall={canInstall}
+        isInAppBrowser={isInAppBrowser}
         onInstall={handleInstallFromModal}
         onDownloadImage={handleDownloadImageFromModal}
       />

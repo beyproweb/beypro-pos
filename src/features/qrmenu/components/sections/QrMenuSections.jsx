@@ -459,14 +459,21 @@ function DownloadQrModal({
   t,
   platform,
   canInstall,
+  isInAppBrowser,
   onInstall,
   onDownloadImage,
 }) {
   if (!open) return null;
-  const installLabel = t("Install App");
+  const installLabel = isInAppBrowser
+    ? platform === "ios"
+      ? t("Open in Safari")
+      : t("Open in Chrome")
+    : t("Install App");
   const title = t("Download App");
   const subtitle =
-    platform === "ios"
+    isInAppBrowser
+      ? t("Instagram browser cannot install the app. Open this menu in Chrome or Safari first.")
+      : platform === "ios"
       ? t("Open this page in Safari, then add it to your Home Screen.")
       : canInstall
         ? t("Install this menu app in Chrome for the best experience.")
