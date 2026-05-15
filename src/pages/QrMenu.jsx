@@ -7251,14 +7251,15 @@ export default function QrMenu() {
     }
     if (platform === "ios") {
       try {
-        const chromeUrl = url
-          .replace(/^https:\/\//i, "googlechromes://")
-          .replace(/^http:\/\//i, "googlechrome://");
-        window.location.href = chromeUrl;
+        const absoluteUrl = new URL(url, window.location.href).toString();
+        const chromeUrl = `googlechrome-x-callback://x-callback-url/open/?url=${encodeURIComponent(
+          absoluteUrl
+        )}`;
+        window.location.assign(chromeUrl);
         window.setTimeout(() => {
           setShowHelp(true);
           copyCurrentMenuLink();
-        }, 900);
+        }, 1400);
         return;
       } catch {
         // Fall through to copy/share guidance.
