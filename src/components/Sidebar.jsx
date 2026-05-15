@@ -657,7 +657,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
     const isDragOver = canDrag && dragOverKey === item.labelKey && dragKey !== item.labelKey;
 
     return item.action === "logout" ? (
-      <>
+      <React.Fragment key={item.labelKey}>
         {/* Lock Button - above logout */}
         {onLockClick && (
           <button
@@ -678,7 +678,6 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
           </button>
         )}
         <button
-          key={item.labelKey}
           onClick={handleLogout}
           className={`group relative mx-1.5 my-0.5 flex items-center gap-2.5 rounded-xl px-2.5 py-2
             text-white hover:bg-white/10 hover:text-white transition shadow-lg relative
@@ -688,7 +687,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLockClick }) {
           <Icon size={20} />
           {isOpen && <span className="truncate text-sm font-medium">{label}</span>}
         </button>
-      </>
+      </React.Fragment>
     ) : (
       <NavLink
         key={item.labelKey}

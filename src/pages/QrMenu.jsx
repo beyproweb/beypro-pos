@@ -5098,6 +5098,7 @@ export default function QrMenu() {
     canInstall,
     handleInstallClick,
     markQrSaved,
+    isIosSafariBrowser,
     isInAppBrowser,
     isDesktopLayout,
     appendIdentifier,
@@ -7248,6 +7249,21 @@ export default function QrMenu() {
         // Fall through to copy/share guidance.
       }
     }
+    if (platform === "ios") {
+      try {
+        const chromeUrl = url
+          .replace(/^https:\/\//i, "googlechromes://")
+          .replace(/^http:\/\//i, "googlechrome://");
+        window.location.href = chromeUrl;
+        window.setTimeout(() => {
+          setShowHelp(true);
+          copyCurrentMenuLink();
+        }, 900);
+        return;
+      } catch {
+        // Fall through to copy/share guidance.
+      }
+    }
 
     setShowHelp(true);
     copyCurrentMenuLink();
@@ -7354,6 +7370,11 @@ export default function QrMenu() {
   }, [copyCurrentMenuLink]);
 
   const handleInstallFromModal = useCallback(() => {
+    if (isIosSafariBrowser) {
+      openCurrentMenuInBrowser();
+      setDownloadQrModalOpen(false);
+      return;
+    }
     if (isInAppBrowser) {
       openCurrentMenuInBrowser();
       setDownloadQrModalOpen(false);
@@ -7374,6 +7395,7 @@ export default function QrMenu() {
   }, [
     deferredPrompt,
     handleInstallClick,
+    isIosSafariBrowser,
     isInAppBrowser,
     openCurrentMenuInBrowser,
     openRealAppLink,
@@ -7856,6 +7878,7 @@ export default function QrMenu() {
         platform={platform}
         canInstall={canInstall}
         isInAppBrowser={isInAppBrowser}
+        preferChrome={isIosSafariBrowser}
         onInstall={handleInstallFromModal}
         onDownloadImage={handleDownloadImageFromModal}
       />

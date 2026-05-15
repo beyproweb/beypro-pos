@@ -460,18 +460,23 @@ function DownloadQrModal({
   platform,
   canInstall,
   isInAppBrowser,
+  preferChrome,
   onInstall,
   onDownloadImage,
 }) {
   if (!open) return null;
-  const installLabel = isInAppBrowser
+  const installLabel = preferChrome
+    ? t("Open in Chrome")
+    : isInAppBrowser
     ? platform === "ios"
       ? t("Open in Safari")
       : t("Open in Chrome")
     : t("Install App");
   const title = t("Download App");
   const subtitle =
-    isInAppBrowser
+    preferChrome
+      ? t("Open this menu in Chrome, then tap Download App again.")
+      : isInAppBrowser
       ? t("Instagram browser cannot install the app. Open this menu in Chrome or Safari first.")
       : platform === "ios"
       ? t("Open this page in Safari, then add it to your Home Screen.")
@@ -500,13 +505,7 @@ function DownloadQrModal({
             >
               {installLabel}
             </button>
-            <button
-              type="button"
-              onClick={onDownloadImage}
-              className="w-full py-3 rounded-2xl bg-white dark:bg-neutral-950 border border-gray-300 dark:border-neutral-800 text-gray-900 dark:text-neutral-100 font-semibold shadow-sm hover:bg-gray-50 dark:hover:bg-neutral-800 transition"
-            >
-              {t("Download QR Image")}
-            </button>
+          
           </div>
         </div>
 
